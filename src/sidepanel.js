@@ -694,7 +694,7 @@ let sessionStats = { conversations: 0, debates: 0, totalChars: 0, models: {} };
 const SERVICE_COLORS = {
   claude: "#d4a574", gemini: "#4285f4", chatgpt: "#10a37f",
   deepseek: "#4d6bfe", doubao: "#ff6a3d", qwen: "#6236ff",
-  kimi: "#1a1a2e", yuanbao: "#0052d9", grok: "#191919"
+  kimi: "#5b6af0", yuanbao: "#0052d9", grok: "#888888"
 };
 const SERVICE_NAMES = {
   claude: "Claude", gemini: "Gemini", chatgpt: "GPT",
