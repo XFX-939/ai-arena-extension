@@ -7,9 +7,7 @@ chrome.runtime.sendMessage({ type: "getSelectors", platform: SITE }, (resp) => {
   if (resp) selectors = resp;
 });
 
-function stripMarkers(text) {
-  return text.replace(/ARENA_START_R\d+/g, '').replace(/ARENA_DONE_R\d+/g, '').trim();
-}
+// v2.1.0: marker 已移除
 
 const _reportedFailures = new Set();
 // 按优先级尝试选择器数组，返回第一个匹配的元素
@@ -74,14 +72,12 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     }
     if (msg.action === "checkCompletion") {
       const text = getLastResponseText();
-      const startMarker = msg.startMarker || "ARENA_START";
-      const doneMarker = msg.doneMarker || "ARENA_DONE";
-      const tail = text.trimEnd().slice(-200);
+      const streamingEl = queryBySelectors("streaming");
+      const isStreaming = !!(streamingEl && streamingEl.getBoundingClientRect?.().width > 0);
       sendResponse({
         site: SITE,
-        hasStart: text.includes(startMarker),
-        hasDone: tail.includes(doneMarker),
-        textLength: text.length
+        textLength: text.length,
+        isStreaming
       });
       return false;
     }
@@ -176,7 +172,7 @@ async function readLatestResponse() {
 
   // 多策略读取最后一条 AI 回答
   const text = getLastAssistantText();
-  return stripMarkers(text);
+  return text;
 }
 
 function getLastAssistantText() {
