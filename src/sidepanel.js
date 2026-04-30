@@ -242,23 +242,16 @@ function checkAllReadyAndConfirm() {
   }
 }
 
-// ── 标记驱动轮询（纯标记+字符数，无CSS选择器） ──
+// ── 无标记轮询（文本稳定 + streaming 状态） ──
 let pollStartTime = 0, pollErrorCount = 0, pollReadyCount = 0;
 let pollDelayTimer = null;
 let prevLengths = {}; // { participantId: number }
-let pollNoMarkerReported = false;
+let stableCounts = {}; // { participantId: consecutiveStablePolls }
 const POLL_MAX_DURATION = 10 * 60 * 1000;
 const POLL_MAX_ERRORS = 10;
-const POLL_READY_THRESHOLD = 2;
+const POLL_READY_THRESHOLD = 3; // 连续3次稳定才判定完成
 const POLL_INITIAL_DELAY = 2000;
-const POLL_INTERVAL = 250; // 0.25 秒轮询，字数实时刷新更流畅
-let lastPromptLength = 0; // 用于动态计算无标记超时
-
-// 根据 prompt 长度动态计算无标记超时（短问题60秒，长问题更久）
-function getNoMarkerTimeout() {
-  // 基础60秒 + 每100字符加5秒，上限300秒
-  return Math.min(60000 + Math.floor(lastPromptLength / 100) * 5000, 300000);
-}
+const POLL_INTERVAL = 500; // 0.5秒轮询（无标记后适当放慢）
 
 function startStreamingPoll(promptLength) {
   stopStreamingPoll();
@@ -266,8 +259,7 @@ function startStreamingPoll(promptLength) {
   pollErrorCount = 0;
   pollReadyCount = 0;
   prevLengths = {};
-  pollNoMarkerReported = false;
-  if (promptLength) lastPromptLength = promptLength;
+  stableCounts = {};
   pollDelayTimer = setTimeout(() => {
     pollDelayTimer = null;
     schedulePollTick();
@@ -297,22 +289,25 @@ function schedulePollTick() {
           const p = participants.find(p => p.id === id);
           if (p) {
             p._textLength = v.textLength;
-            if (v.hasDone) {
-              if (p._pollStatus !== "ready") {
+
+            if (v.textLength > 0 && !lengthChanged && !v.isStreaming) {
+              // 文本非空 + 长度不变 + stop button 已消失 → 累计稳定次数
+              stableCounts[id] = (stableCounts[id] || 0) + 1;
+              if (stableCounts[id] >= POLL_READY_THRESHOLD && p._pollStatus !== "ready") {
                 p._pollStatus = "ready";
                 chrome.runtime.sendMessage({ type: "readOneResponse", participantId: id }).then(resp => {
                   if (resp?.ok) {
                     if (resp.text) trackChars(resp.text.length);
                     addLog(`${p.name} 回复已自动提取`, "success");
-                    // 刷新 StateMachine 数据以更新 ✓/✗ 状态
                     chrome.runtime.sendMessage({ type: "getState" }).then(state => {
                       if (state) { mergeParticipants(state.participants); renderParticipants(); }
                     });
                   }
                 }).catch(() => {});
               }
-            } else if (lengthChanged || v.hasStart) {
-              p._pollStatus = "streaming";
+            } else if (lengthChanged || v.isStreaming) {
+              stableCounts[id] = 0;
+              p._pollStatus = v.textLength > 0 ? "streaming" : "waiting";
             } else {
               p._pollStatus = "waiting";
             }
@@ -321,23 +316,14 @@ function schedulePollTick() {
         }
         renderParticipants();
 
-        // 动态超时：长时间无标记 → 提示异常
-        const hasAnyStart = Object.values(s).some(v => v.hasStart);
-        const noMarkerTimeout = getNoMarkerTimeout();
-        if (!hasAnyStart && Date.now() - pollStartTime > noMarkerTimeout && !pollNoMarkerReported) {
-          pollNoMarkerReported = true;
-          addLog(`⚠️ ${Math.round(noMarkerTimeout/1000)}秒内未检测到标记，疑似异常，建议手动查看`, "error");
-          // 不停止轮询，继续检测，用户可用手动确认按钮
-        }
-
         if (allDone && hasOnline) {
           pollReadyCount++;
-          if (pollReadyCount >= POLL_READY_THRESHOLD) {
-            addLog("所有 AI 已回答完毕（标记确认），读取回复...", "success");
+          if (pollReadyCount >= 2) {
+            addLog("所有 AI 已回答完毕，读取回复...", "success");
             stopStreamingPoll();
             await readAllResponses();
             if (Notification.permission === "granted") {
-              try { new Notification("AI Arena", { body: "所有 AI 已回答完毕，可以开始辩论", icon: "icons/icon128.png" }); } catch {}
+              try { new Notification("AI Arena", { body: "所有 AI 已回答完毕", icon: "icons/icon128.png" }); } catch {}
             }
           }
         } else { pollReadyCount = 0; }
@@ -808,7 +794,6 @@ function buildBroadcastPreview() {
   if (scenarios.length > 0) text += "\n\n" + scenarios.map(s => `【要求】${s}`).join("\n");
   if (pendingFiles.length > 0) text += pendingFiles.map(f => `\n\n📄 文件: ${f.name}`).join("");
   if (pendingImages.length > 0) text += `\n\n🖼️ ${pendingImages.length}张图片`;
-  text += "\n\n（请在回答的最开头输出 ARENA_START_R{n}，最末尾输出 ARENA_DONE_R{n} 作为标记，不要解释这些标记）";
   return truncateMiddle(text, 500);
 }
 

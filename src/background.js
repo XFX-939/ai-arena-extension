@@ -193,7 +193,6 @@ async function removeParticipant(id) {
 // ── 广播（状态机驱动） ──
 
 async function handleBroadcast(text, images) {
-  nextMarkerRound(); // 递增标记轮次，防止跨轮污染
   StateMachine.debateSession.originalQuestion = text;
   StateMachine.debateSession.rounds = [];
   StateMachine.debateSession.summaryText = "";
@@ -218,7 +217,7 @@ async function handleBroadcast(text, images) {
       if (images && images.length > 0) {
         await chrome.tabs.sendMessage(p.tabId, { action: "injectImages", images });
       }
-      const result = await chrome.tabs.sendMessage(p.tabId, { action: "inject", text: text + buildMarkerInstruction() });
+      const result = await chrome.tabs.sendMessage(p.tabId, { action: "inject", text });
       return { name: p.name, ...result };
     };
     try {
@@ -263,7 +262,7 @@ async function retryInjectParticipant(id) {
       return { ok: false, error: "页面未就绪" };
     }
     const text = StateMachine.debateSession.originalQuestion;
-    const result = await chrome.tabs.sendMessage(p.tabId, { action: "inject", text: text + buildMarkerInstruction() });
+    const result = await chrome.tabs.sendMessage(p.tabId, { action: "inject", text });
     const success = result.status !== "error";
     return { ok: success, result };
   } catch (e) {
@@ -284,7 +283,7 @@ async function sendToOneParticipant(participantId) {
     const rounds = StateMachine.debateSession.rounds;
     if (rounds.length === 0) {
       // 初始广播阶段：发原始问题
-      text = (StateMachine.debateSession.originalQuestion || "") + buildMarkerInstruction();
+      text = StateMachine.debateSession.originalQuestion || "";
     } else {
       // 辩论阶段：构建该参与者的辩论 prompt
       const lastRound = rounds[rounds.length - 1];
@@ -306,7 +305,6 @@ async function sendToOneParticipant(participantId) {
 // ── 辩论（状态机驱动） ──
 
 async function handleDebateRound(style = "free", guidance = "", concise = false) {
-  nextMarkerRound(); // 递增标记轮次
   if (StateMachine.participants.length < 2) {
     notifyStatus("至少需要 2 个参与者");
     return { ok: false, error: "参与者不足" };
@@ -365,7 +363,6 @@ async function handleDebateRound(style = "free", guidance = "", concise = false)
 // ── 辩论总结 ──
 
 async function handleSummary(judgeId, customInstruction = "") {
-  nextMarkerRound();
   if (StateMachine.participants.length < 2) { notifyStatus("至少需要 2 个参与者"); return { ok: false }; }
   const judge = StateMachine.getParticipant(judgeId);
   if (!judge?.tabId) { notifyStatus("裁判未打开"); return { ok: false }; }
@@ -397,18 +394,16 @@ async function handleSummary(judgeId, customInstruction = "") {
   } catch (e) { notifyStatus(`总结失败: ${e.message}`); return { ok: false }; }
 }
 
-// ── 标记驱动的完成检测 ──
+// ── 无标记完成检测（文本稳定 + stop button 消失） ──
 
 async function checkAllCompletion() {
-  const startMarker = currentStartMarker();
-  const doneMarker = currentDoneMarker();
   const statuses = {};
   await Promise.all(StateMachine.participants.map(async (p) => {
-    if (!p.tabId) { statuses[p.id] = { name: p.name, status: "offline", hasStart: false, hasDone: false, textLength: 0 }; return; }
+    if (!p.tabId) { statuses[p.id] = { name: p.name, status: "offline", textLength: 0, isStreaming: false }; return; }
     try {
-      const r = await chrome.tabs.sendMessage(p.tabId, { action: "checkCompletion", startMarker, doneMarker });
-      statuses[p.id] = { name: p.name, hasStart: r.hasStart || false, hasDone: r.hasDone || false, textLength: r.textLength || 0 };
-    } catch { statuses[p.id] = { name: p.name, status: "offline", hasStart: false, hasDone: false, textLength: 0 }; }
+      const r = await chrome.tabs.sendMessage(p.tabId, { action: "checkCompletion" });
+      statuses[p.id] = { name: p.name, textLength: r.textLength || 0, isStreaming: !!r.isStreaming };
+    } catch { statuses[p.id] = { name: p.name, status: "offline", textLength: 0, isStreaming: false }; }
   }));
   return statuses;
 }
@@ -422,9 +417,9 @@ async function readOneResponse(participantId) {
     const r = await sendMessageWithTimeout(p.tabId, { action: "readResponse" }, 30000);
     const text = r?.text || "";
     if (text) {
-      StateMachine.setParticipantResponse(p.id, stripMarkers(text));
+      StateMachine.setParticipantResponse(p.id, text);
     }
-    return { ok: true, text: stripMarkers(text) };
+    return { ok: true, text };
   } catch (e) {
     return { ok: false, text: "", error: e.message };
   }
