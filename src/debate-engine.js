@@ -1,15 +1,6 @@
 // debate-engine.js — 辩论轮次编排、prompt 组装
 
-// ── 标记协议（每轮唯一，防止跨轮污染） ──
-function nextMarkerRound() { StateMachine.markerRound++; StateMachine.save(); return StateMachine.markerRound; }
-function currentStartMarker() { return `ARENA_START_R${StateMachine.markerRound}`; }
-function currentDoneMarker() { return `ARENA_DONE_R${StateMachine.markerRound}`; }
-function buildMarkerInstruction() {
-  return `\n（请在回答的最开头输出 ${currentStartMarker()}，最末尾输出 ${currentDoneMarker()} 作为标记，不要解释这些标记）`;
-}
-function stripMarkers(text) {
-  return text.replace(/ARENA_START_R\d+/g, '').replace(/ARENA_DONE_R\d+/g, '').trim();
-}
+// v2.1.0: marker 已移除，完成检测改用 fetch hook + MutationObserver
 
 const DEBATE_STYLES = {
   free: { name: "自由辩论", prompt: "以下是其他 AI 对同一问题的回答，请分析他们的观点，指出你认同和不认同的地方，并给出你的改进回答。" },
@@ -59,7 +50,7 @@ const DebateEngine = {
 
     let prompt = `${roundHint}\n\n${styleConfig.prompt}\n\n${contextText}${conciseRule}`;
     if (guidance) prompt = `用户补充要求：${guidance}\n\n${prompt}`;
-    return prompt + buildMarkerInstruction();
+    return prompt;
   },
 
   buildSummaryPrompt(originalQuestion, rounds, responses, customInstruction) {
@@ -106,7 +97,7 @@ ${allText}
 要求：客观公正，不偏袒任何一方，重点是综合各家之长得出最优答案。`;
 
     if (customInstruction?.trim()) prompt += `\n\n## 额外要求\n${customInstruction.trim()}`;
-    return prompt + buildMarkerInstruction();
+    return prompt;
   },
 
 };
