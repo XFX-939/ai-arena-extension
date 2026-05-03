@@ -1,4 +1,4 @@
-// AI Arena — Side Panel v2.4.0
+// AI Arena — Side Panel v2.5.0
 
 const $ = (s) => document.querySelector(s);
 const $$ = (s) => document.querySelectorAll(s);
