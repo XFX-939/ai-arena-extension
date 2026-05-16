@@ -8,7 +8,7 @@
 <body data-theme="C">
   <div class="header">
     <h1>AI Arena</h1>
-    <span class="version">v2.5.0</span>
+    <span class="version">v2.5.1</span>
     <div class="theme-switcher">
       <button class="theme-btn" id="btn-theme">🎨</button>
       <div class="theme-menu" id="theme-menu">
@@ -63,8 +63,6 @@
         📎 文件
         <input type="file" id="file-input" multiple hidden>
       </label>
-      <button class="btn btn-tiny btn-ppt-mode" id="btn-ppt-mode" type="button"
-              title="开启后：广播 prompt 自动加严格 JSON 输出约束 + AI 回复后卡片显示 ✅/⚠️ 校验徽章和 📋复制JSON 按钮，配合 PPT-Assistant 工具使用">📑 PPT 模式</button>
       <button class="btn btn-primary" id="btn-send" style="flex:1">发送给全部</button>
     </div>
   </div>
@@ -75,7 +73,6 @@
     <div class="debate-mode-toggle">
       <button class="mode-btn active" data-mode="free">⚔️ 自由辩论<span class="hover-tip">各AI相互质疑、反驳对方观点，找出核心分歧，通过交锋逐步逼近真相</span></button>
       <button class="mode-btn" data-mode="collab">🤝 群策群力<span class="hover-tip">各AI取长补短、吸收彼此亮点，协作迭代出更完善的综合方案</span></button>
-      <button class="mode-btn" data-mode="self">🔄 自审改进<span class="hover-tip">每个AI只看自己的上一轮回答，独立审视并改进，不受其他AI影响</span></button>
     </div>
     <details class="custom-details">
       <summary class="custom-summary">引导注入（可选）</summary>
@@ -105,6 +102,29 @@
       <button class="btn btn-secondary" id="btn-export" style="flex:1">📤 导出</button>
       <button class="btn btn-secondary" id="btn-hard-reset" style="flex:1;color:#ef4444;border-color:#fca5a5">⚡ 重置</button>
     </div>
+  </div>
+
+  <!-- PPT 制作 -->
+  <div class="section ppt-workshop">
+    <div class="section-title">PPT 制作</div>
+    <div class="ppt-action-row">
+      <button class="btn btn-secondary" id="btn-ppt-copy" type="button">文案生成</button>
+      <div class="ppt-template-wrap">
+        <button class="btn btn-secondary ppt-menu-trigger" id="btn-ppt-image-menu" type="button">图片生成 ▾</button>
+        <div class="ppt-template-menu" id="ppt-template-menu">
+          <button type="button" class="ppt-template-item" data-template="intro"><span class="ppt-template-name">技术介绍</span><span class="ppt-template-desc">核心原理</span></button>
+          <button type="button" class="ppt-template-item" data-template="topic"><span class="ppt-template-name">技术专题</span><span class="ppt-template-desc">总分结构</span></button>
+          <button type="button" class="ppt-template-item" data-template="compare"><span class="ppt-template-name">技术对比</span><span class="ppt-template-desc">As-Is / To-Be</span></button>
+          <button type="button" class="ppt-template-item" data-template="insight"><span class="ppt-template-name">技术洞察</span><span class="ppt-template-desc">新技术科普</span></button>
+          <button type="button" class="ppt-template-item" data-template="landscape"><span class="ppt-template-name">技术全景</span><span class="ppt-template-desc">领域沙盘</span></button>
+        </div>
+      </div>
+      <button class="btn btn-secondary" id="btn-pptx-prompt" type="button">PPT生成</button>
+    </div>
+    <textarea id="ppt-prompt-box" class="ppt-prompt-box"
+              placeholder="先点“文案生成”整理本次 AI 讨论；再点“图片生成”选择模板生成生图 prompt；最后点“PPT生成”生成图片转 PPTX prompt。"></textarea>
+    <button class="btn btn-primary ppt-start-btn" id="btn-ppt-start" type="button">开始生成</button>
+    <div class="ppt-hint">默认发送给 ChatGPT。请先添加 GPT 参与者并打开 chatgpt.com 标签页。</div>
   </div>
 
   <!-- 状态日志 -->
@@ -142,7 +162,7 @@
   <div class="dynamic-tip" id="dynamic-tip"></div>
   <div class="footer">
     <div class="shortcuts-hint">快捷键: Ctrl+Enter 发送 | Ctrl+Shift+D 辩论</div>
-    AI Arena v2.5.0
+    AI Arena v2.5.1
   </div>
   <script src="sidepanel.js"></script>
 </body>

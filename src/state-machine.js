@@ -16,15 +16,18 @@ const StateMachine = {
   nextId: 1,
   debateSession: { originalQuestion: "", rounds: [], summaryText: "" },
   markerRound: 0,
+  // 每个参与者最近一次"刚发出去"的 prompt，用于 readOneResponse sanity check（防把用户消息当成 AI 回复）
+  lastSentByPid: {},
 
   // ── 初始化（从 storage 恢复） ──
   async init() {
-    const data = await chrome.storage.local.get(["sm_flowState", "sm_participants", "sm_nextId", "sm_debateSession", "sm_markerRound"]);
+    const data = await chrome.storage.local.get(["sm_flowState", "sm_participants", "sm_nextId", "sm_debateSession", "sm_markerRound", "sm_lastSentByPid"]);
     if (data.sm_flowState) this.flowState = data.sm_flowState;
     if (data.sm_participants) this.participants = data.sm_participants;
     if (data.sm_nextId) this.nextId = data.sm_nextId;
     if (data.sm_debateSession) this.debateSession = data.sm_debateSession;
     if (data.sm_markerRound) this.markerRound = data.sm_markerRound;
+    if (data.sm_lastSentByPid) this.lastSentByPid = data.sm_lastSentByPid;
   },
 
   save() {
@@ -33,7 +36,8 @@ const StateMachine = {
       sm_participants: this.participants,
       sm_nextId: this.nextId,
       sm_debateSession: this.debateSession,
-      sm_markerRound: this.markerRound
+      sm_markerRound: this.markerRound,
+      sm_lastSentByPid: this.lastSentByPid
     });
   },
 
@@ -82,6 +86,7 @@ const StateMachine = {
     this.debateSession = { originalQuestion: "", rounds: [], summaryText: "" };
     this.flowState = FlowState.IDLE;
     this.markerRound = 0;
+    this.lastSentByPid = {};
     this.participants.forEach(p => {
       p.response = null;
       p.responsePreview = null;
@@ -95,6 +100,12 @@ const StateMachine = {
     this.debateSession = { originalQuestion: "", rounds: [], summaryText: "" };
     this.flowState = FlowState.IDLE;
     this.markerRound = 0;
+    this.lastSentByPid = {};
+    this.save();
+  },
+
+  setLastSent(pid, text) {
+    this.lastSentByPid[pid] = text || "";
     this.save();
   },
 

@@ -1,4 +1,4 @@
-// AI Arena — Background Service Worker v2.5.0
+// AI Arena — Background Service Worker v2.5.1
 
 // 从 sidepanel 缓存的屏幕尺寸（用于并列模式，替代 chrome.system.display）
 let lastKnownScreen = { width: 1920, height: 1080, left: 0, top: 0 };
@@ -107,6 +107,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         case "checkAllCompletion": sendResponse(await checkAllCompletion()); break;
         case "focusTab":          sendResponse(await handleFocusTab(msg.id)); break;
         case "readOneResponse":   sendResponse(await readOneResponse(msg.participantId)); break;
+        case "sendPromptToService": sendResponse(await sendPromptToService(msg.service || "chatgpt", msg.text || "")); break;
         case "exportSession":     sendResponse(exportSession()); break;
         case "getState":          sendResponse(StateMachine.getFullState()); break;
         case "getSelectors":      sendResponse(DEFAULT_SELECTORS[msg.platform] || {}); break;
@@ -213,6 +214,8 @@ async function handleBroadcast(text, images) {
       results[p.id] = { name: p.name, status: "error", error: "未打开" };
       return;
     }
+    // 记录"刚发给该 p 的 prompt"——readOneResponse 用此校验防把用户消息当成 AI 回复
+    StateMachine.setLastSent(p.id, text);
     const tryInject = async () => {
       const ready = await waitForContentScript(p.tabId);
       if (!ready) return { name: p.name, status: "error", error: "页面未就绪" };
@@ -297,8 +300,39 @@ async function sendToOneParticipant(participantId) {
     }
 
     if (!text) return { ok: false, error: "无可发送内容" };
+    // 记录"刚发给该 p 的 prompt"——sanity check 用
+    StateMachine.setLastSent(participantId, text);
     const result = await chrome.tabs.sendMessage(p.tabId, { action: "inject", text });
     return { ok: result.status !== "error", result };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+}
+
+// ── 向指定服务单独发送任意 prompt（PPT 制作默认 ChatGPT） ──
+async function sendPromptToService(service, text) {
+  const prompt = (text || "").trim();
+  if (!prompt) return { ok: false, error: "prompt 为空" };
+  const p = StateMachine.participants.find(x => x.service === service);
+  if (!p?.tabId) return { ok: false, error: `未找到已打开的 ${PROVIDERS[service]?.name || service} 参与者` };
+
+  try {
+    const ready = await waitForContentScript(p.tabId);
+    if (!ready) return { ok: false, error: "页面未就绪" };
+
+    p.response = null;
+    p.responsePreview = null;
+    StateMachine.setLastSent(p.id, prompt);
+    StateMachine.setFlowState(FlowState.BROADCASTING);
+    StateMachine.save();
+    StateMachine._broadcastStateUpdate();
+
+    const result = await chrome.tabs.sendMessage(p.tabId, { action: "inject", text: prompt });
+    if (result.status === "error") return { ok: false, error: result.error || "注入失败" };
+
+    StateMachine.setFlowState(FlowState.AWAITING_RESPONSES);
+    notifyStatus(`已发送给 ${p.name}`);
+    return { ok: true, participantId: p.id, name: p.name, result };
   } catch (e) {
     return { ok: false, error: e.message };
   }
@@ -343,6 +377,8 @@ async function handleDebateRound(style = "free", guidance = "", concise = false)
     const p = StateMachine.getParticipant(id);
     if (!p?.tabId) return;
     const prompt = DebateEngine.buildDebatePrompt(id, responses, style, roundNum, guidance, concise);
+    // 记录"刚发给该 p 的 prompt"——sanity check 用
+    StateMachine.setLastSent(id, prompt);
     try {
       await chrome.tabs.sendMessage(p.tabId, { action: "inject", text: prompt });
     } catch (e) {
@@ -419,6 +455,19 @@ async function readOneResponse(participantId) {
     const r = await sendMessageWithTimeout(p.tabId, { action: "readResponse" }, 30000);
     const text = r?.text || "";
     if (text) {
+      // sanity check：拒绝读到用户刚发的 prompt 或上轮残留
+      const sent = StateMachine.lastSentByPid?.[participantId] || "";
+      const prevResp = p.response || "";
+      const head = (s) => (s || "").trim().slice(0, 100);
+      if (sent && text === sent) {
+        return { ok: false, text: "", error: "疑似读到用户消息（与 prompt 完全相同），请手动提取" };
+      }
+      if (sent && head(text).length >= 50 && head(text) === head(sent)) {
+        return { ok: false, text: "", error: "疑似读到用户消息（前100字与 prompt 相同），请手动提取" };
+      }
+      if (prevResp && text === prevResp) {
+        return { ok: false, text: "", error: "疑似读到上一轮残留回复，请等待新回复或手动提取" };
+      }
       StateMachine.setParticipantResponse(p.id, text);
     }
     return { ok: true, text };
