@@ -679,11 +679,12 @@ function schedulePollTick() {
           if (p) {
             p._textLength = v.textLength;
 
-            // 一旦观察到"长度变化"或"isStreaming=true"，标记为已流过
-            if (lengthChanged || v.isStreaming) hasStreamedMap[id] = true;
+            // 简化判定（v4.0.0-beta）：不再依赖 isStreaming（selector 易失效）。
+            // 任何 textLength > 0 即视为"已开始/结束生成"，由 stableCounts 累计 N 次稳定判定完成。
+            if (v.textLength > 0) hasStreamedMap[id] = true;
 
-            if (v.textLength > 0 && !lengthChanged && !v.isStreaming && hasStreamedMap[id]) {
-              // 文本非空 + 长度不变 + stop button 已消失 + 之前流过 → 累计稳定次数
+            if (v.textLength > 0 && !lengthChanged) {
+              // 文本非空 + 长度不变 → 累计稳定次数（不再要求 streaming indicator 消失）
               stableCounts[id] = (stableCounts[id] || 0) + 1;
               if (stableCounts[id] >= POLL_READY_THRESHOLD && p._pollStatus !== "ready") {
                 p._pollStatus = "ready";
@@ -704,14 +705,13 @@ function schedulePollTick() {
                   }
                 }).catch(() => {});
               }
-            } else if (lengthChanged || v.isStreaming) {
+            } else if (lengthChanged) {
+              // 长度变化：仍在流式 / 增量生成中，重置稳定计数
               stableCounts[id] = 0;
               p._pollStatus = v.textLength > 0 ? "streaming" : "waiting";
-            } else if (!hasStreamedMap[id]) {
-              // 还没观察到任何流式信号：保持 waiting，不累积稳定次数
-              stableCounts[id] = 0;
-              p._pollStatus = "waiting";
             } else {
+              // textLength=0 且不变 → 还没开始，waiting
+              stableCounts[id] = 0;
               p._pollStatus = "waiting";
             }
           }
