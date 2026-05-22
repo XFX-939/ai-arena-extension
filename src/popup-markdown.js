@@ -19,8 +19,8 @@
       return ` CODE${idx} `;
     });
 
-    // 2) 行内 code
-    src = src.replace(/`([^`\n]+)`/g, (m, c) => `INLINE${escapeHtml(c)}`);
+    // 2) 行内 code（用 \x02...\x02 包裹占位，防贪婪回填越界）
+    src = src.replace(/`([^`\n]+)`/g, (m, c) => `\x02INLINE${escapeHtml(c)}\x02`);
 
     // 3) 转义剩余 HTML
     src = escapeHtml(src);
@@ -52,7 +52,7 @@
     }).join("");
 
     // 9) 回填行内 code
-    src = src.replace(/INLINE([^]+)/g, (m, c) => `<code>${c}</code>`);
+    src = src.replace(/\x02INLINE([\s\S]*?)\x02/g, (m, c) => `<code>${c}</code>`);
 
     // 10) 回填代码块
     src = src.replace(/ CODE(\d+) /g, (m, idx) => {
