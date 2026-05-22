@@ -8,7 +8,7 @@
 <body data-theme="C">
   <div class="header">
     <h1>AI Arena</h1>
-    <span class="version">v2.5.1</span>
+    <span class="version">v3.0.0</span>
     <div class="theme-switcher">
       <button class="theme-btn" id="btn-theme">🎨</button>
       <div class="theme-menu" id="theme-menu">
@@ -52,79 +52,99 @@
     </div>
   </div>
 
-  <!-- 同时提问 -->
-  <div class="section broadcast-area">
-    <div class="section-title">同时提问</div>
-    <div id="broadcast-input" class="broadcast-editor" contenteditable="true"
-         data-placeholder="输入问题，可直接粘贴图片&#10;Ctrl+Enter 发送"></div>
-    <div id="image-previews" class="image-previews"></div>
-    <div class="broadcast-actions">
-      <label class="btn btn-tiny btn-upload" title="添加文件">
-        📎 文件
-        <input type="file" id="file-input" multiple hidden>
+  <!-- 当前任务控制台 -->
+  <div class="section task-console">
+    <div class="section-title">
+      <span>当前任务</span>
+      <span class="task-state" id="task-state">准备就绪</span>
+    </div>
+    <div class="task-tabs">
+      <button class="task-tab active" data-task="ask">同时提问</button>
+      <button class="task-tab" data-task="debate">辩论</button>
+      <button class="task-tab" data-task="ppt">PPT 制作</button>
+    </div>
+
+    <div class="task-panel active" data-task-panel="ask">
+      <div id="broadcast-input" class="broadcast-editor" contenteditable="true"
+           data-placeholder="输入问题，可直接粘贴图片&#10;Ctrl+Enter 发送"></div>
+      <div id="image-previews" class="image-previews"></div>
+      <div class="broadcast-actions">
+        <label class="btn btn-tiny btn-upload" title="添加文件">
+          📎 文件
+          <input type="file" id="file-input" multiple hidden>
+        </label>
+        <button class="btn btn-primary" id="btn-send" style="flex:1">发送给全部</button>
+      </div>
+    </div>
+
+    <div class="task-panel" data-task-panel="debate">
+      <div class="debate-step-strip">
+        <div class="debate-step"><span>1</span> 初始回答</div>
+        <div class="debate-step"><span>2</span> 开始辩论</div>
+        <div class="debate-step"><span>3</span> 裁判总结</div>
+      </div>
+      <div class="debate-mode-toggle">
+        <button class="mode-btn active" data-mode="free">⚔️ 自由辩论<span class="hover-tip">各AI相互质疑、反驳对方观点，找出核心分歧，通过交锋逐步逼近真相</span></button>
+        <button class="mode-btn" data-mode="collab">🤝 群策群力<span class="hover-tip">各AI取长补短、吸收彼此亮点，协作迭代出更完善的综合方案</span></button>
+      </div>
+      <details class="custom-details">
+        <summary class="custom-summary">引导注入（可选）</summary>
+        <textarea id="guidance-input" class="custom-textarea"
+                  placeholder="引导辩论方向，如：请重点讨论性能问题"></textarea>
+      </details>
+      <label class="concise-toggle">
+        <input type="checkbox" id="concise-mode"> <span>简洁模式</span>
+        <span class="hover-tip">限制每个AI回答在1000字以内，以要点列表形式呈现核心观点，减少冗长论述</span>
       </label>
-      <button class="btn btn-primary" id="btn-send" style="flex:1">发送给全部</button>
-    </div>
-  </div>
-
-  <!-- 辩论（简化：仅开始按钮 + 可选引导） -->
-  <div class="section">
-    <div class="section-title">辩论</div>
-    <div class="debate-mode-toggle">
-      <button class="mode-btn active" data-mode="free">⚔️ 自由辩论<span class="hover-tip">各AI相互质疑、反驳对方观点，找出核心分歧，通过交锋逐步逼近真相</span></button>
-      <button class="mode-btn" data-mode="collab">🤝 群策群力<span class="hover-tip">各AI取长补短、吸收彼此亮点，协作迭代出更完善的综合方案</span></button>
-    </div>
-    <details class="custom-details">
-      <summary class="custom-summary">引导注入（可选）</summary>
-      <textarea id="guidance-input" class="custom-textarea"
-                placeholder="引导辩论方向，如：请重点讨论性能问题"></textarea>
-    </details>
-    <label class="concise-toggle">
-      <input type="checkbox" id="concise-mode"> <span>简洁模式</span>
-      <span class="hover-tip">限制每个AI回答在1000字以内，以要点列表形式呈现核心观点，减少冗长论述</span>
-    </label>
-    <div style="display:flex;gap:6px;margin-top:8px">
-      <button class="btn btn-debate" id="btn-debate" style="flex:1;margin-top:0">开始辩论</button>
-      <button class="btn btn-secondary" id="btn-debate-retry" style="padding:9px 12px;font-size:13px" title="强制重试（卡住时使用）">🔄</button>
-    </div>
-  </div>
-
-  <!-- 辩论总结 -->
-  <div class="section">
-    <div class="section-title">辩论总结</div>
-    <div class="summary-row">
-      <select id="judge-select" class="select-input">
-        <option value="">选择裁判...</option>
-      </select>
-      <button class="btn btn-summary" id="btn-summary">输出总结</button>
-    </div>
-    <div style="display:flex;gap:6px;margin-top:10px">
-      <button class="btn btn-secondary" id="btn-export" style="flex:1">📤 导出</button>
-      <button class="btn btn-secondary" id="btn-hard-reset" style="flex:1;color:#ef4444;border-color:#fca5a5">⚡ 重置</button>
-    </div>
-  </div>
-
-  <!-- PPT 制作 -->
-  <div class="section ppt-workshop">
-    <div class="section-title">PPT 制作</div>
-    <div class="ppt-action-row">
-      <button class="btn btn-secondary" id="btn-ppt-copy" type="button">文案生成</button>
-      <div class="ppt-template-wrap">
-        <button class="btn btn-secondary ppt-menu-trigger" id="btn-ppt-image-menu" type="button">图片生成 ▾</button>
-        <div class="ppt-template-menu" id="ppt-template-menu">
-          <button type="button" class="ppt-template-item" data-template="intro"><span class="ppt-template-name">技术介绍</span><span class="ppt-template-desc">核心原理</span></button>
-          <button type="button" class="ppt-template-item" data-template="topic"><span class="ppt-template-name">技术专题</span><span class="ppt-template-desc">总分结构</span></button>
-          <button type="button" class="ppt-template-item" data-template="compare"><span class="ppt-template-name">技术对比</span><span class="ppt-template-desc">As-Is / To-Be</span></button>
-          <button type="button" class="ppt-template-item" data-template="insight"><span class="ppt-template-name">技术洞察</span><span class="ppt-template-desc">新技术科普</span></button>
-          <button type="button" class="ppt-template-item" data-template="landscape"><span class="ppt-template-name">技术全景</span><span class="ppt-template-desc">领域沙盘</span></button>
+      <div class="task-action-row">
+        <button class="btn btn-debate" id="btn-debate">开始辩论</button>
+        <button class="btn btn-secondary icon-only" id="btn-debate-retry" title="强制重试（卡住时使用）">🔄</button>
+      </div>
+      <div class="summary-panel">
+        <div class="section-title compact-title">辩论总结</div>
+        <div class="summary-row">
+          <select id="judge-select" class="select-input">
+            <option value="">选择裁判...</option>
+          </select>
+          <button class="btn btn-summary" id="btn-summary">输出总结</button>
+        </div>
+        <div class="summary-tools">
+          <button class="btn btn-secondary" id="btn-export">📤 导出</button>
+          <button class="btn btn-secondary danger-soft" id="btn-hard-reset">⚡ 重置</button>
         </div>
       </div>
-      <button class="btn btn-secondary" id="btn-pptx-prompt" type="button">PPT生成</button>
     </div>
-    <textarea id="ppt-prompt-box" class="ppt-prompt-box"
-              placeholder="先点“文案生成”整理本次 AI 讨论；再点“图片生成”选择模板生成生图 prompt；最后点“PPT生成”生成图片转 PPTX prompt。"></textarea>
-    <button class="btn btn-primary ppt-start-btn" id="btn-ppt-start" type="button">开始生成</button>
-    <div class="ppt-hint">默认发送给 ChatGPT。请先添加 GPT 参与者并打开 chatgpt.com 标签页。</div>
+
+    <div class="task-panel ppt-workshop" data-task-panel="ppt">
+      <div class="ppt-action-row">
+        <button class="btn btn-secondary" id="btn-ppt-copy" type="button">文案生成</button>
+        <div class="ppt-template-wrap">
+          <button class="btn btn-secondary ppt-menu-trigger" id="btn-ppt-image-menu" type="button">图片生成 ▾</button>
+          <div class="ppt-template-menu" id="ppt-template-menu">
+            <button type="button" class="ppt-template-item" data-template="intro"><span class="ppt-template-name">技术介绍</span><span class="ppt-template-desc">核心原理</span></button>
+            <button type="button" class="ppt-template-item" data-template="topic"><span class="ppt-template-name">技术专题</span><span class="ppt-template-desc">总分结构</span></button>
+            <button type="button" class="ppt-template-item" data-template="compare"><span class="ppt-template-name">技术对比</span><span class="ppt-template-desc">As-Is / To-Be</span></button>
+            <button type="button" class="ppt-template-item" data-template="insight"><span class="ppt-template-name">技术洞察</span><span class="ppt-template-desc">新技术科普</span></button>
+            <button type="button" class="ppt-template-item" data-template="landscape"><span class="ppt-template-name">技术全景</span><span class="ppt-template-desc">领域沙盘</span></button>
+          </div>
+        </div>
+        <button class="btn btn-secondary" id="btn-pptx-prompt" type="button">PPT生成</button>
+      </div>
+      <textarea id="ppt-prompt-box" class="ppt-prompt-box"
+                placeholder="先点“文案生成”整理本次 AI 讨论；再点“图片生成”选择模板生成生图 prompt；最后点“PPT生成”生成图片转 PPTX prompt。"></textarea>
+      <div class="ppt-generate-row">
+        <button class="btn btn-primary ppt-start-btn" id="btn-ppt-start" type="button">开始生成</button>
+        <div class="ppt-save-wrap">
+          <button class="btn btn-secondary ppt-save-trigger" id="btn-ppt-save-menu" type="button">保存prompt ▾</button>
+          <div class="ppt-save-menu" id="ppt-save-menu">
+            <button type="button" class="ppt-template-item" data-save-prompt="copy"><span class="ppt-template-name">保存文案prompt</span></button>
+            <button type="button" class="ppt-template-item" data-save-prompt="image"><span class="ppt-template-name">保存图片prompt</span></button>
+            <button type="button" class="ppt-template-item" data-save-prompt="pptx"><span class="ppt-template-name">保存PPT prompt</span></button>
+          </div>
+        </div>
+      </div>
+      <div class="ppt-hint">默认发送给 ChatGPT。请先添加 GPT 参与者并打开 chatgpt.com 标签页。</div>
+    </div>
   </div>
 
   <!-- 状态日志 -->
@@ -162,7 +182,7 @@
   <div class="dynamic-tip" id="dynamic-tip"></div>
   <div class="footer">
     <div class="shortcuts-hint">快捷键: Ctrl+Enter 发送 | Ctrl+Shift+D 辩论</div>
-    AI Arena v2.5.1
+    AI Arena v3.0.0
   </div>
   <script src="sidepanel.js"></script>
 </body>

@@ -187,9 +187,9 @@ const DEFAULT_SELECTORS = {
       "textarea"
     ],
     response: [
-      '[class*="markdown"]',
+      '[class*="message-content"]',
       '[class*="assistant"] [class*="content"]',
-      '[class*="message-content"]'
+      '[class*="assistant"] [class*="markdown"]'
     ],
     streaming: [
       'button[class*="stop"]',
@@ -212,10 +212,10 @@ const DEFAULT_SELECTORS = {
       '#chat-input'
     ],
     response: [
-      '[class*="markdown"]',
-      '[class*="assistant"] [class*="content"]',
       '[class*="bot-message"]',
-      '[class*="answer"]'
+      '[class*="answer"]',
+      '[class*="assistant"] [class*="content"]',
+      '[class*="assistant"] [class*="markdown"]'
     ],
     streaming: [
       'button[class*="stop"]',

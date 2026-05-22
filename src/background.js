@@ -1,6 +1,6 @@
-// AI Arena — Background Service Worker v2.5.1
+// AI Arena — Background Service Worker v3.0.0
 
-// 从 sidepanel 缓存的屏幕尺寸（用于并列模式，替代 chrome.system.display）
+// 从 sidepanel 缓存的屏幕尺寸；双屏时用于判断 AI 窗口应放到哪块屏幕。
 let lastKnownScreen = { width: 1920, height: 1080, left: 0, top: 0 };
 
 importScripts("selectors-config.js", "state-machine.js", "debate-engine.js");
@@ -160,9 +160,16 @@ async function addParticipant(service) {
   if (windowMode === "tiled") {
     // 并列模式：每个 AI 开独立窗口
     const isFirst = StateMachine.participants.length === 0;
-    const win = await chrome.windows.create({ url: info.url, state: "normal", focused: false });
+    const targetLayout = await getAiTargetLayout(lastKnownScreen);
+    const win = await chrome.windows.create({
+      url: info.url,
+      state: "normal",
+      focused: false,
+      ...windowBoundsForCreate(targetLayout.screen)
+    });
     tabId = win.tabs[0].id;
-    if (isFirst) chrome.sidePanel.open({ windowId: win.id }).catch(() => {});
+    // 双屏时 AI 窗口放到另一屏，sidepanel 保留在用户当前屏；单屏沿用旧体验。
+    if (isFirst && !targetLayout.isDifferentDisplay) chrome.sidePanel.open({ windowId: win.id }).catch(() => {});
   } else {
     // Tab 模式：同一窗口的不同标签页
     const currentWindow = await chrome.windows.getCurrent();
@@ -247,11 +254,13 @@ async function handleBroadcast(text, images) {
   StateMachine._broadcastStateUpdate();
 
   const allOk = Object.values(results).every(r => r.status === "sent" || r.status === "inputted");
+  const anyOk = Object.values(results).some(r => r.status === "sent" || r.status === "inputted");
   if (allOk) {
     StateMachine.setFlowState(FlowState.AWAITING_RESPONSES);
     notifyStatus("广播完成，等待回复...");
     // 唤醒所有 AI 标签页，确保后台标签页恢复 DOM 渲染
   } else {
+    StateMachine.setFlowState(anyOk ? FlowState.AWAITING_RESPONSES : FlowState.IDLE);
     notifyStatus("部分发送失败，请处理后继续");
   }
 
@@ -314,7 +323,7 @@ async function sendPromptToService(service, text) {
   const prompt = (text || "").trim();
   if (!prompt) return { ok: false, error: "prompt 为空" };
   const p = StateMachine.participants.find(x => x.service === service);
-  if (!p?.tabId) return { ok: false, error: `未找到已打开的 ${PROVIDERS[service]?.name || service} 参与者` };
+  if (!p?.tabId) return { ok: false, error: `未找到已打开的 ${SERVICES[service]?.name || service} 参与者` };
 
   try {
     const ready = await waitForContentScript(p.tabId);
@@ -359,20 +368,10 @@ async function handleDebateRound(style = "free", guidance = "", concise = false)
   }
 
   const roundNum = StateMachine.debateSession.rounds.length + 1;
-  StateMachine.debateSession.rounds.push({
-    roundNum, style, guidance,
-    responses: Object.fromEntries(Object.entries(responses).map(([id, r]) => [id, { name: r.name, text: r.text }]))
-  });
-
-  StateMachine.participants.forEach(p => {
-    if (responses[p.id]) {
-      p.response = null;
-      p.responsePreview = null;
-    }
-  });
   StateMachine.setFlowState(FlowState.BROADCASTING);
   notifyStatus(`第${roundNum}轮：以「${DEBATE_STYLES[style]?.name || style}」风格交叉发送...`);
 
+  const sendResults = {};
   await Promise.all(Object.keys(responses).map(async (id) => {
     const p = StateMachine.getParticipant(id);
     if (!p?.tabId) return;
@@ -380,30 +379,53 @@ async function handleDebateRound(style = "free", guidance = "", concise = false)
     // 记录"刚发给该 p 的 prompt"——sanity check 用
     StateMachine.setLastSent(id, prompt);
     try {
-      await chrome.tabs.sendMessage(p.tabId, { action: "inject", text: prompt });
+      sendResults[id] = await chrome.tabs.sendMessage(p.tabId, { action: "inject", text: prompt });
     } catch (e) {
       await new Promise(ok => setTimeout(ok, 2000));
       try {
-        await chrome.tabs.sendMessage(p.tabId, { action: "inject", text: prompt });
+        sendResults[id] = await chrome.tabs.sendMessage(p.tabId, { action: "inject", text: prompt });
       } catch (e2) {
+        sendResults[id] = { site: p.service, status: "error", error: e2.message };
         notifyStatus(`注入 ${p.name} 失败: ${e2.message}`);
       }
     }
   }));
 
+  const sentIds = Object.entries(sendResults)
+    .filter(([, r]) => r?.status === "sent" || r?.status === "inputted")
+    .map(([id]) => id);
+
+  if (sentIds.length >= 2) {
+    StateMachine.debateSession.rounds.push({
+      roundNum, style, guidance,
+      responses: Object.fromEntries(Object.entries(responses).map(([id, r]) => [id, { name: r.name, text: r.text }]))
+    });
+
+    StateMachine.participants.forEach(p => {
+      if (sentIds.includes(p.id)) {
+        p.response = null;
+        p.responsePreview = null;
+      }
+    });
+  }
+
   StateMachine.save();
-  StateMachine.setFlowState(FlowState.AWAITING_RESPONSES);
+  StateMachine.setFlowState(sentIds.length > 0 ? FlowState.AWAITING_RESPONSES : FlowState.IDLE);
+  if (sentIds.length < 2) {
+    notifyStatus("辩论发送失败：有效接收方不足");
+    return { ok: false, error: "有效接收方不足", roundNum, activeIds: sentIds, results: sendResults };
+  }
   notifyStatus(`第${roundNum}轮辩论已发送`);
 
-  return { ok: true, roundNum, activeIds: Object.keys(responses) };
+  return { ok: true, roundNum, activeIds: sentIds, results: sendResults };
 }
 
 // ── 辩论总结 ──
 
 async function handleSummary(judgeId, customInstruction = "") {
-  if (StateMachine.participants.length < 2) { notifyStatus("至少需要 2 个参与者"); return { ok: false }; }
+  if (StateMachine.participants.length < 2) { notifyStatus("至少需要 2 个参与者"); return { ok: false, error: "参与者不足" }; }
   const judge = StateMachine.getParticipant(judgeId);
-  if (!judge?.tabId) { notifyStatus("裁判未打开"); return { ok: false }; }
+  if (!judge?.tabId) { notifyStatus("裁判未打开"); return { ok: false, error: "裁判未打开" }; }
 
   const responses = {};
   for (const p of StateMachine.participants) {
@@ -411,7 +433,7 @@ async function handleSummary(judgeId, customInstruction = "") {
       responses[p.id] = { name: p.name, text: p.response };
     }
   }
-  if (Object.keys(responses).length < 2) { notifyStatus("回答不足"); return { ok: false }; }
+  if (Object.keys(responses).length < 2) { notifyStatus("回答不足"); return { ok: false, error: "回答不足" }; }
 
   const prompt = DebateEngine.buildSummaryPrompt(
     StateMachine.debateSession.originalQuestion,
@@ -423,13 +445,19 @@ async function handleSummary(judgeId, customInstruction = "") {
   StateMachine.setFlowState(FlowState.SUMMARY);
   notifyStatus(`正在由 ${judge.name} 总结...`);
   try {
-    await chrome.tabs.sendMessage(judge.tabId, { action: "inject", text: prompt });
+    StateMachine.setLastSent(judge.id, prompt);
+    const result = await chrome.tabs.sendMessage(judge.tabId, { action: "inject", text: prompt });
+    if (result?.status === "error") {
+      const error = result.error || "注入失败";
+      notifyStatus(`总结失败: ${error}`);
+      return { ok: false, error };
+    }
     const tab = await chrome.tabs.get(judge.tabId);
     await chrome.tabs.update(judge.tabId, { active: true });
     await chrome.windows.update(tab.windowId, { focused: true });
     notifyStatus(`总结已发送给 ${judge.name}`);
-    return { ok: true };
-  } catch (e) { notifyStatus(`总结失败: ${e.message}`); return { ok: false }; }
+    return { ok: true, result };
+  } catch (e) { notifyStatus(`总结失败: ${e.message}`); return { ok: false, error: e.message }; }
 }
 
 // ── 无标记完成检测（文本稳定 + stop button 消失） ──
@@ -452,12 +480,21 @@ async function readOneResponse(participantId) {
   const p = StateMachine.getParticipant(participantId);
   if (!p?.tabId) return { ok: false, text: "" };
   try {
-    const r = await sendMessageWithTimeout(p.tabId, { action: "readResponse" }, 30000);
-    const text = r?.text || "";
-    if (text) {
+      const r = await sendMessageWithTimeout(p.tabId, { action: "readResponse" }, 30000);
+      if (r?.error) {
+        return { ok: false, text: "", error: r.error };
+      }
+      const text = r?.text || "";
+      if (!text.trim()) {
+        return { ok: false, text: "", error: "未读到有效回复" };
+      }
+      if (isInvalidAiResponse(text)) {
+        return { ok: false, text: "", error: "读到平台错误或登录提示，不作为有效回复" };
+      }
+      if (text) {
       // sanity check：拒绝读到用户刚发的 prompt 或上轮残留
       const sent = StateMachine.lastSentByPid?.[participantId] || "";
-      const prevResp = p.response || "";
+      const prevResp = StateMachine.lastAcceptedByPid?.[participantId] || p.response || "";
       const head = (s) => (s || "").trim().slice(0, 100);
       if (sent && text === sent) {
         return { ok: false, text: "", error: "疑似读到用户消息（与 prompt 完全相同），请手动提取" };
@@ -474,6 +511,10 @@ async function readOneResponse(participantId) {
   } catch (e) {
     return { ok: false, text: "", error: e.message };
   }
+}
+
+function isInvalidAiResponse(text) {
+  return /Something went wrong while generating the response|please contact us through our help center|感谢你试用 ChatGPT|登录或注册，以获取更智能的回复|需要登录|Sign in to continue/i.test(text || "");
 }
 
 // ── Tab 切换 ──
@@ -524,11 +565,12 @@ async function arrangeWindows(screen = lastKnownScreen) {
   const parts = StateMachine.participants.filter(p => p.tabId);
   if (parts.length === 0) return { ok: false, error: "无参与者" };
 
-  // 使用传入或缓存的屏幕尺寸（替代 chrome.system.display）
-  const screenW = screen.width  || 1920;
-  const screenH = screen.height || 1080;
-  const screenLeft = screen.left || 0;
-  const screenTop = screen.top || 0;
+  const targetLayout = await getAiTargetLayout(screen);
+  const targetScreen = targetLayout.screen;
+  const screenW = targetScreen.width;
+  const screenH = targetScreen.height;
+  const screenLeft = targetScreen.left;
+  const screenTop = targetScreen.top;
 
   // 反转顺序：第一个添加的参与者放最右边（带侧边栏）
   const ordered = [...parts].reverse();
@@ -556,11 +598,92 @@ async function arrangeWindows(screen = lastKnownScreen) {
 
   // 最右侧窗口（第一个添加的参与者）打开侧边栏
   const lastTab = await chrome.tabs.get(ordered[n - 1].tabId).catch(() => null);
-  if (lastTab) {
+  if (lastTab && !targetLayout.isDifferentDisplay) {
     await chrome.sidePanel.open({ windowId: lastTab.windowId }).catch(() => {});
   }
 
-  return { ok: true };
+  return { ok: true, screen: targetScreen, displayId: targetLayout.displayId, isDifferentDisplay: targetLayout.isDifferentDisplay };
+}
+
+async function getAiTargetLayout(sidepanelScreen = lastKnownScreen) {
+  const fallback = normalizeScreen(sidepanelScreen);
+  try {
+    if (!chrome.system?.display?.getInfo) {
+      return { screen: fallback, displayId: null, isDifferentDisplay: false };
+    }
+    const displays = await chrome.system.display.getInfo();
+    const normalized = displays
+      .map(d => ({ id: d.id, screen: normalizeScreen(d.workArea || d.bounds), isPrimary: !!d.isPrimary }))
+      .filter(d => d.screen.width > 0 && d.screen.height > 0);
+
+    if (normalized.length < 2) {
+      const only = normalized[0]?.screen || fallback;
+      return { screen: only, displayId: normalized[0]?.id || null, isDifferentDisplay: false };
+    }
+
+    const current = findDisplayForScreen(fallback, normalized) || normalized.find(d => d.isPrimary) || normalized[0];
+    const currentCenter = centerOf(current.screen);
+    const target = normalized
+      .filter(d => d.id !== current.id)
+      .sort((a, b) => distance(centerOf(a.screen), currentCenter) - distance(centerOf(b.screen), currentCenter))[0];
+
+    return { screen: target.screen, displayId: target.id, isDifferentDisplay: true };
+  } catch (e) {
+    console.warn("[Arena] system.display unavailable, falling back to current screen:", e?.message || e);
+    return { screen: fallback, displayId: null, isDifferentDisplay: false };
+  }
+}
+
+function normalizeScreen(screen = {}) {
+  const width = Math.max(300, Math.round(screen.width || screen.availWidth || 1920));
+  const height = Math.max(300, Math.round(screen.height || screen.availHeight || 1080));
+  return {
+    left: Math.round(screen.left ?? screen.availLeft ?? 0),
+    top: Math.round(screen.top ?? screen.availTop ?? 0),
+    width,
+    height
+  };
+}
+
+function windowBoundsForCreate(screen) {
+  const s = normalizeScreen(screen);
+  return {
+    left: s.left,
+    top: s.top,
+    width: Math.max(500, Math.min(s.width, 1200)),
+    height: Math.max(500, s.height)
+  };
+}
+
+function findDisplayForScreen(screen, displays) {
+  const point = centerOf(screen);
+  const contains = displays.find(d => (
+    point.x >= d.screen.left &&
+    point.x < d.screen.left + d.screen.width &&
+    point.y >= d.screen.top &&
+    point.y < d.screen.top + d.screen.height
+  ));
+  if (contains) return contains;
+
+  return displays
+    .map(d => ({ display: d, overlap: overlapArea(screen, d.screen) }))
+    .sort((a, b) => b.overlap - a.overlap)[0]?.display || null;
+}
+
+function centerOf(screen) {
+  return { x: screen.left + screen.width / 2, y: screen.top + screen.height / 2 };
+}
+
+function distance(a, b) {
+  return Math.hypot(a.x - b.x, a.y - b.y);
+}
+
+function overlapArea(a, b) {
+  const left = Math.max(a.left, b.left);
+  const right = Math.min(a.left + a.width, b.left + b.width);
+  const top = Math.max(a.top, b.top);
+  const bottom = Math.min(a.top + a.height, b.top + b.height);
+  return Math.max(0, right - left) * Math.max(0, bottom - top);
 }
 
 // ── 工具函数 ──

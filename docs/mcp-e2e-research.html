@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>MCP E2E 测试方案调研 — AI Arena</title>
+<style>
+  body { font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif; max-width: 1100px; margin: 24px auto; padding: 0 24px; color: #1d1d1f; line-height: 1.65; background: #fafafa; }
+  h1 { color: #0066cc; border-bottom: 3px solid #0066cc; padding-bottom: 10px; }
+  h2 { color: #003d7a; margin-top: 36px; border-left: 5px solid #0066cc; padding-left: 12px; }
+  h3 { color: #1d1d1f; margin-top: 22px; }
+  .verdict { background: linear-gradient(135deg, #d4f5d4 0%, #fff 100%); border: 1px solid #62c462; border-radius: 10px; padding: 18px 22px; margin: 18px 0; }
+  .verdict strong { color: #2d7a2d; font-size: 17px; }
+  .warn { background: #fff8dc; border-left: 5px solid #f0ad4e; padding: 12px 18px; border-radius: 6px; margin: 14px 0; }
+  .danger { background: #fde7e7; border-left: 5px solid #d9534f; padding: 12px 18px; border-radius: 6px; margin: 14px 0; }
+  table { border-collapse: collapse; width: 100%; margin: 14px 0; background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,0.06); }
+  th, td { border: 1px solid #d2d2d7; padding: 10px 14px; text-align: left; vertical-align: top; }
+  th { background: #f0f6ff; font-weight: 600; }
+  td.recommend { background: #eaffea; }
+  code { background: #f5f5f7; padding: 2px 6px; border-radius: 4px; font-family: "JetBrains Mono", Consolas, monospace; font-size: 90%; color: #c7254e; }
+  pre { background: #1d1d1f; color: #f0f0f0; padding: 14px 18px; border-radius: 8px; overflow-x: auto; font-size: 13px; }
+  pre code { background: none; color: inherit; padding: 0; }
+  .chip { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 12px; font-weight: 500; margin-right: 4px; }
+  .chip.green { background: #d4f5d4; color: #2d7a2d; }
+  .chip.blue { background: #d4e9f7; color: #1a5490; }
+  .chip.orange { background: #fbe8c2; color: #8b4500; }
+  .chip.gray { background: #e5e5ea; color: #555; }
+  .step { background: #fff; border-left: 4px solid #0066cc; padding: 10px 16px; margin: 8px 0; border-radius: 0 6px 6px 0; }
+  .step-num { display: inline-block; width: 26px; height: 26px; background: #0066cc; color: white; border-radius: 50%; text-align: center; line-height: 26px; font-weight: bold; margin-right: 8px; }
+  .footnote { font-size: 13px; color: #6e6e73; margin-top: 24px; padding: 14px 18px; border-top: 1px solid #d2d2d7; }
+  ul.tight li { margin: 4px 0; }
+  .pro { color: #2d7a2d; }
+  .con { color: #c0392b; }
+  hr { border: none; border-top: 1px solid #d2d2d7; margin: 30px 0; }
+</style>
+</head>
+<body>
+
+<h1>MCP E2E 测试方案调研 — AI Arena Chrome 扩展</h1>
+<p style="color:#6e6e73; font-size:13px;">2026-05-10 · 立花道雪 · DeepSeek 提议的"找一个能操控浏览器的 MCP" 真实可行性核查</p>
+
+<div class="verdict">
+  <strong>结论先行</strong><br>
+  <span class="chip green">已具备能力</span> 你的 Claude Code 工具箱里已经挂载了 <b>Playwright MCP</b>（39 个 <code>mcp__playwright__browser_*</code> 工具）。DeepSeek 上一轮没看到——它只能看到自己的 prompt，看不到我侧的 deferred tools 列表。<br>
+  <span class="chip green">官方支持加载扩展</span> Playwright MCP 通过 <code>launchOptions.args = ["--load-extension=./dist/github"]</code> 可以直接载入未打包扩展。<br>
+  <span class="chip blue">还有更省事的"Bridge 模式"</span> 装一个 Chrome Web Store 的官方 <i>Playwright MCP Bridge</i> 扩展，让 MCP 直接接管<b>你现在用的 Chrome</b>，所有登录态/cookie 天然复用，不需要单独的测试 profile。<br>
+  <span class="chip orange">Sidepanel 有特殊性</span> Chrome MV3 的 sidepanel 不在常规标签页内，得通过 <code>chrome-extension://{id}/sidepanel.html</code> URL 直接打开（先动态拿 extensionId）。这是可解的，但要在脚本里多一步。
+</div>
+
+<h2>一、当前已有 vs 还需搭建</h2>
+
+<table>
+  <thead>
+    <tr><th style="width:30%">能力 / 工具</th><th style="width:18%">状态</th><th>说明</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><b>Playwright MCP</b><br><code>mcp__playwright__browser_*</code></td>
+      <td><span class="chip green">已挂载</span></td>
+      <td>navigate / click / evaluate / snapshot / take_screenshot / tabs / console_messages / network_requests / fill_form / press_key 等约 39 个工具，足够做完整 E2E。今天就能用。</td>
+    </tr>
+    <tr>
+      <td><b>Chrome DevTools MCP</b><br>(<code>ChromeDevTools/chrome-devtools-mcp</code>)</td>
+      <td><span class="chip gray">未挂载</span></td>
+      <td>Chrome 团队官方出品，29 个工具，强项是性能 profiling / 网络分析 / Console 抓错。基于 Puppeteer + CDP。装上需要在 <code>~/.claude/settings.json</code> 加 MCP 配置。</td>
+    </tr>
+    <tr>
+      <td><b>Playwright MCP Bridge</b><br>(Chrome Web Store 扩展)</td>
+      <td><span class="chip gray">未安装</span></td>
+      <td>装在你日常 Chrome 里 → MCP server 直连这个 Chrome → 复用真实登录态。比启独立 profile 少一大步（不用重登 9 个 AI）。</td>
+    </tr>
+    <tr>
+      <td>Hub 项目里的 Electron CDP 经验</td>
+      <td><span class="chip green">已验证</span></td>
+      <td>你之前已经用 Playwright MCP + CDP 操控过 Electron Hub 窗口（memory: <code>feedback_playwright_cdp.md</code>）。Chrome 扩展场景同理，更简单（Chrome 比 Electron 标准）。</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2>二、三种可行方案对比</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th style="width:18%">方案</th>
+      <th style="width:24%">原理</th>
+      <th style="width:14%">登录态</th>
+      <th style="width:14%">扩展加载</th>
+      <th style="width:12%">复杂度</th>
+      <th>适用场景</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr class="">
+      <td><b>A. Bridge 模式</b><br>(MCP 接管真实 Chrome)</td>
+      <td>装 Playwright MCP Bridge 扩展，MCP server 用 <code>--extension</code> 启动，连接你的 Chrome</td>
+      <td><span class="pro">✓ 真实 cookie</span></td>
+      <td><span class="pro">✓ chrome://extensions 已加载的就是</span></td>
+      <td>★★☆☆☆</td>
+      <td>验证生产 v2.5.1；登录态依赖 9 个 AI 站</td>
+    </tr>
+    <tr class="">
+      <td class="recommend"><b>B. 独立 profile</b><br>(MCP 启隔离 Chromium) <span class="chip green">推荐</span></td>
+      <td>MCP 配 <code>launchOptions.args=["--load-extension=./dist/github","--user-data-dir=..."]</code>，启独立浏览器</td>
+      <td><span class="con">✗ 首次需登录</span> <span class="con">登录后落 profile 复用</span></td>
+      <td><span class="pro">✓ load-extension 自动加载</span></td>
+      <td>★★★☆☆</td>
+      <td>可重复 CI 化；不污染主 Chrome；登录一次永久复用</td>
+    </tr>
+    <tr>
+      <td><b>C. Sidepanel-only</b><br>(无登录验证)</td>
+      <td>启隔离 Chromium 加载扩展，直接打开 <code>chrome-extension://{id}/sidepanel.html</code>，跳过 9 个 AI 站</td>
+      <td><span class="chip gray">不需要</span></td>
+      <td><span class="pro">✓</span></td>
+      <td>★☆☆☆☆</td>
+      <td>验证 UI 渲染 / sanity check 单测 / 选择器结构；<b>不能</b>验证真实 AI 站点选择器</td>
+    </tr>
+  </tbody>
+</table>
+
+<div class="warn">
+<b>方案 A 的隐性成本</b>：MCP 接管真实 Chrome 期间，你不能正常用这个浏览器（会被自动化操作打断）。建议只在专门的测试时段用。
+</div>
+
+<div class="warn">
+<b>方案 B 的隐性成本</b>：第一次跑要手动登录 Claude / ChatGPT / Kimi / Yuanbao 等 9 个站点。但 user-data-dir 会持久化 cookie，之后每次复用。<b>把这个 profile 路径也加到 memory 里</b>方便复用。
+</div>
+
+<h2>三、Chrome 扩展 Sidepanel 的特殊性</h2>
+
+<p>MV3 sidepanel 不是常规 tab，它的 DOM 在独立的 <code>chrome-extension://{extensionId}/sidepanel.html</code> 上下文里。Playwright 操控它需要：</p>
+
+<div class="step"><span class="step-num">1</span><b>动态拿 extensionId</b>：扩展加载后通过 <code>chrome.management.getSelf()</code> 或读 service worker URL 解析。</div>
+<div class="step"><span class="step-num">2</span><b>用 <code>browser_navigate</code> 打开 sidepanel HTML</b>：直接 navigate 到 <code>chrome-extension://{id}/sidepanel.html</code>，它会作为普通 tab 打开（用户用时是 sidepanel，自动化测试时可以当成普通 tab 操作，DOM/JS 完全一样）。</div>
+<div class="step"><span class="step-num">3</span><b>service worker 30s 自动挂起的坑</b>：MV3 service worker 闲置 ~30 秒会自动挂起，下次消息时再唤醒。Playwright 持有 Worker 对象不变，但要注意测试间隔不能太长，否则首条消息可能延迟。</div>
+<div class="step"><span class="step-num">4</span><b>多 window 测试</b>：你的扩展 9 家 AI 是多个独立 window（tiled 模式），<code>browser_tabs</code> 工具能列出所有 tab，但 window 切换需要靠 <code>chrome.windows.update</code>（在 evaluate 里手动调）。</div>
+
+<h2>四、推荐路线（针对当前 v2.5.1 验证）</h2>
+
+<h3>第 0 步：今天就能跑的 selector 健康检查（方案 C，5 分钟）</h3>
+
+<p>不需要登录，验证选择器结构是否还能在各 AI 站点的"未登录公开页"上定位到元素。这个能立刻发现 selectors-config.js 的死链。</p>
+
+<pre><code>// 我可以直接调 mcp__playwright__browser_navigate("https://claude.ai/login")
+// 然后 mcp__playwright__browser_evaluate(() => {
+//   const sels = ["div.ProseMirror[contenteditable='true']", ".ProseMirror[contenteditable]"];
+//   return sels.map(s => ({ sel: s, hit: !!document.querySelector(s) }));
+// });
+// 9 家全跑一遍，几分钟出结果</code></pre>
+
+<h3>第 1 步：搭独立 profile 跑真实 E2E（方案 B，首次 30 分钟，之后每次 5 分钟）</h3>
+
+<p>需要你做的：</p>
+
+<div class="step"><span class="step-num">1</span>我先在 <code>C:\Users\lintian\AI_debate\ai-arena-extension\tests\</code> 写好 playwright config + smoke 脚本。</div>
+<div class="step"><span class="step-num">2</span>你启一次有头模式 Chromium（用我给的命令），手动登录 Claude / ChatGPT / Kimi 三家（先验证关键三家，别一次登 9 家）。</div>
+<div class="step"><span class="step-num">3</span>profile 落盘到 <code>C:\Users\lintian\.arena\test-profile\</code>。</div>
+<div class="step"><span class="step-num">4</span>之后我用 Playwright MCP 直接 attach 这个 profile，跑完整 smoke：广播 → 观察 streaming 标签 → 提取 → 触发 sanity check 异常路径。截图全部落 <code>C:\Users\lintian\.arena\artifacts\</code>。</div>
+
+<h3>第 2 步（未来项目通用）：搭 Bridge 扩展跑活体测试（方案 A）</h3>
+
+<p>装 Playwright MCP Bridge → 我可以接管你正在用的 Chrome → 用真实日常账号做 E2E。这个对未来需要"用我自己的真实账号验证"的场景很有用，但每次会暂时打断你的浏览。</p>
+
+<h2>五、决策点（需要你拍板）</h2>
+
+<div class="warn">
+<b>给你三个选项</b>：
+<ul class="tight">
+  <li><b>选项 1（最快，今天）</b>：我立刻跑方案 C selector 健康检查 → 5 分钟出报告，但只验证选择器是否能找到元素，不验证完整 E2E。</li>
+  <li><b>选项 2（最值，本周）</b>：我搭好方案 B 的脚手架（playwright config + smoke 脚本 + profile 路径约定），<b>你登录一次 3-9 家 AI</b>，之后我能反复跑 v2.5.1 的真实 E2E（含 sanity check 异常路径）。这是 ROI 最高的——以后每次升级都能 5 分钟跑一遍。</li>
+  <li><b>选项 3（未来通用）</b>：装 Bridge 扩展，让我能直接接管你的真实 Chrome。这个不用着急，是给"以后偶尔需要在真实账号下做一次性 E2E"准备的。</li>
+</ul>
+</div>
+
+<h2>六、对 DeepSeek 调研结论的修正</h2>
+
+<table>
+  <thead>
+    <tr><th style="width:30%">DeepSeek 说</th><th>实际情况</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>"当前你有的 MCP：Gemini/Codex/DeepSeek/Qwen/GLM —— 这些不能操控浏览器"</td>
+      <td><span class="con">不准确</span>。你工具箱里其实还有 <code>mcp__playwright__</code> 39 个工具——DeepSeek 看不到我侧的 deferred tool 列表，所以漏报了。</td>
+    </tr>
+    <tr>
+      <td>"chrome-devtools-mcp 是 Anthropic 出品"</td>
+      <td><span class="con">不准确</span>。仓库 <code>ChromeDevTools/chrome-devtools-mcp</code> 是 <b>Chrome 团队</b>出品，不是 Anthropic。但 Anthropic 在 Claude Plugins 里上架了它，所以容易混淆。</td>
+    </tr>
+    <tr>
+      <td>"务实建议：分两步走，先 Playwright + Bash"</td>
+      <td><span class="pro">✓ 方向对</span>。但既然 Playwright 已经走 MCP 通道挂载了，我就不需要自己 spawn Bash 子进程跑 Playwright——直接调 MCP 工具更简洁，控制力也更强。</td>
+    </tr>
+  </tbody>
+</table>
+
+<div class="footnote">
+<b>报告路径</b>：<code>C:\Users\lintian\AI_debate\ai-arena-extension\docs\mcp-e2e-research.html</code><br>
+<b>引用来源</b>：
+<ul class="tight">
+  <li><a href="https://github.com/microsoft/playwright-mcp">microsoft/playwright-mcp</a> — 官方仓库，含 extension/Bridge/load-extension 文档</li>
+  <li><a href="https://github.com/ChromeDevTools/chrome-devtools-mcp">ChromeDevTools/chrome-devtools-mcp</a> — Chrome 团队的 DevTools MCP（29 工具）</li>
+  <li><a href="https://playwright.dev/docs/chrome-extensions">Playwright Chrome Extension 测试官方文档</a> — load-extension + service worker 处理</li>
+  <li><a href="https://playwright.dev/mcp/configuration/browser-extension">Playwright MCP Browser Extension 配置文档</a></li>
+  <li><a href="https://chromewebstore.google.com/detail/playwright-mcp-bridge/mmlmfjhmonkocbjadbfplnigmagldckm">Playwright MCP Bridge — Chrome Web Store</a></li>
+  <li><a href="https://developer.chrome.com/blog/chrome-devtools-mcp">Chrome for Developers 官方 blog 介绍</a></li>
+</ul>
+</div>
+
+</body>
+</html>

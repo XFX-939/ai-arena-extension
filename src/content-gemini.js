@@ -17,6 +17,7 @@ function queryBySelectors(action, options = {}) {
     const el = options.all ? document.querySelectorAll(sel) : document.querySelector(sel);
     if (options.all ? el.length > 0 : el) return el;
   }
+  if (action === "response" && sels.length > 0) return options.all ? [] : null;
   const heuristic = getHeuristicElement(action, options);
   if (heuristic) return heuristic;
   if (!_reportedFailures.has(action)) { _reportedFailures.add(action); chrome.runtime.sendMessage({ type: "selectorFailure", platform: SITE, action }).catch(() => {}); }
@@ -75,7 +76,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
 function getLastResponseText() {
   const responses = queryBySelectors("response", { all: true });
-  if (responses.length > 0) return responses[responses.length - 1].textContent || "";
+  if (responses.length > 0) return responses[responses.length - 1].innerText || "";
   return "";
 }
 
@@ -107,8 +108,9 @@ async function robustInject(el, text) {
 
 async function injectAndSend(text) {
   try {
-    const el = queryBySelectors("input");
-    if (!el) return { site: SITE, status: "error", error: "未找到输入框" };
+    const ready = await waitForUsableInput();
+    if (!ready.ok) return { site: SITE, status: "error", error: ready.error };
+    const el = ready.el;
 
     await robustInject(el, text);
 
@@ -141,9 +143,32 @@ async function injectAndSend(text) {
   }
 }
 
+async function waitForUsableInput(timeoutMs = 15000) {
+  const started = Date.now();
+  while (Date.now() - started < timeoutMs) {
+    if (isLoginBlocked()) return { ok: false, error: "需要登录" };
+    const el = queryBySelectors("input");
+    if (el && isVisibleInput(el)) return { ok: true, el };
+    await sleep(300);
+  }
+  return { ok: false, error: "未找到输入框" };
+}
+
+function isVisibleInput(el) {
+  const rect = el.getBoundingClientRect?.();
+  return !!rect && rect.width > 50 && rect.height > 15 && getComputedStyle(el).visibility !== "hidden";
+}
+
+function isLoginBlocked() {
+  const text = document.body?.innerText || "";
+  const hasLogin = /登录|Sign in|Log in/i.test(text);
+  return hasLogin && !document.querySelector("rich-textarea .ql-editor, .ql-editor[contenteditable='true'], [data-content-type='model']");
+}
+
 async function readLatestResponse() {
   // v6: streaming 检测已由 sidepanel 轮询负责，此处仅短暂等待 DOM 稳定
   await sleep(800);
+  if (isLoginBlocked()) throw new Error("需要登录");
 
   // 优先使用 SelectorManager 配置的选择器
   const responses = queryBySelectors("response", { all: true });

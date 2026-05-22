@@ -1,0 +1,429 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI Arena v2.5.1 — Transcript 提取链路 P0 修复</title>
+<style>
+  :root {
+    --bg: #0d1117; --card: #161b22; --border: #30363d;
+    --text: #c9d1d9; --muted: #8b949e; --accent: #58a6ff;
+    --green: #3fb950; --red: #f85149; --yellow: #d2991d;
+    --purple: #a371f7;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: var(--bg); color: var(--text); line-height: 1.6;
+    max-width: 960px; margin: 0 auto; padding: 40px 24px;
+  }
+  h1 { font-size: 2rem; margin-bottom: 4px; }
+  h2 { font-size: 1.3rem; margin: 40px 0 16px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+  h3 { font-size: 1.05rem; margin: 24px 0 8px; }
+  .subtitle { color: var(--muted); font-size: 0.95rem; margin-bottom: 32px; }
+  .badge {
+    display: inline-block; padding: 2px 10px; border-radius: 12px;
+    font-size: 0.8rem; font-weight: 600;
+  }
+  .badge-p0 { background: #f8514922; color: var(--red); }
+  .badge-fix { background: #3fb95022; color: var(--green); }
+  .badge-ver { background: #a371f722; color: var(--purple); }
+
+  /* Hero card */
+  .hero {
+    background: linear-gradient(135deg, #1a1f2e 0%, #161b22 100%);
+    border: 1px solid var(--border); border-radius: 12px;
+    padding: 32px; margin-bottom: 32px;
+  }
+  .hero .version { font-size: 3rem; font-weight: 800; color: var(--accent); }
+  .hero .arrow { color: var(--muted); margin: 0 12px; }
+  .hero .old-ver { color: var(--muted); text-decoration: line-through; font-size: 1.5rem; }
+
+  /* Stat row */
+  .stat-row { display: flex; gap: 16px; flex-wrap: wrap; margin: 24px 0; }
+  .stat {
+    flex: 1; min-width: 140px; background: var(--card);
+    border: 1px solid var(--border); border-radius: 8px;
+    padding: 16px; text-align: center;
+  }
+  .stat .num { font-size: 2rem; font-weight: 700; color: var(--accent); }
+  .stat .label { font-size: 0.85rem; color: var(--muted); margin-top: 4px; }
+
+  /* Fix cards */
+  .fix-grid { display: grid; gap: 16px; }
+  .fix-card {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 10px; padding: 24px; position: relative;
+  }
+  .fix-card.fix1 { border-left: 3px solid var(--red); }
+  .fix-card.fix2 { border-left: 3px solid var(--yellow); }
+  .fix-card.fix3 { border-left: 3px solid var(--accent); }
+  .fix-card.fix4 { border-left: 3px solid var(--purple); }
+  .fix-card.fix5 { border-left: 3px solid var(--green); }
+  .fix-num { font-size: 0.8rem; font-weight: 700; color: var(--muted); text-transform: uppercase; }
+  .fix-title { font-size: 1.1rem; font-weight: 600; margin: 4px 0 12px; }
+
+  /* Before/After */
+  .ba-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 12px; }
+  .ba-box { padding: 12px; border-radius: 6px; font-size: 0.85rem; }
+  .ba-before { background: #f8514910; border: 1px solid #f8514930; }
+  .ba-after  { background: #3fb95010; border: 1px solid #3fb95030; }
+  .ba-label { font-weight: 700; font-size: 0.75rem; margin-bottom: 6px; }
+  .ba-before .ba-label { color: var(--red); }
+  .ba-after .ba-label { color: var(--green); }
+
+  /* UX impact */
+  .ux-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .ux-item {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 8px; padding: 20px;
+  }
+  .ux-icon { font-size: 1.5rem; margin-bottom: 8px; }
+  .ux-item h3 { margin: 0 0 8px; font-size: 1rem; }
+
+  /* Smoke checklist */
+  .checklist { list-style: none; }
+  .checklist li {
+    padding: 10px 16px; margin: 6px 0; background: var(--card);
+    border: 1px solid var(--border); border-radius: 6px;
+    display: flex; align-items: flex-start; gap: 10px;
+  }
+  .checklist .cb { font-size: 1.2rem; margin-top: -2px; }
+  .checklist .step-label { font-size: 0.78rem; color: var(--muted); }
+
+  /* Code */
+  code {
+    background: #1c2128; padding: 2px 6px; border-radius: 3px;
+    font-size: 0.88em; font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  }
+  pre {
+    background: #1c2128; border: 1px solid var(--border);
+    border-radius: 6px; padding: 14px; overflow-x: auto;
+    font-size: 0.82rem; line-height: 1.5;
+  }
+
+  .tag-row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+  .file-tag {
+    background: #1c2128; border: 1px solid var(--border);
+    border-radius: 4px; padding: 1px 8px; font-size: 0.78rem;
+    font-family: 'JetBrains Mono', monospace; color: var(--muted);
+  }
+
+  hr { border: none; border-top: 1px solid var(--border); margin: 32px 0; }
+  .footer { color: var(--muted); font-size: 0.82rem; text-align: center; margin-top: 48px; }
+</style>
+</head>
+<body>
+
+<!-- ====== Hero ====== -->
+<div class="hero">
+  <div style="display:flex;align-items:baseline;flex-wrap:wrap;gap:8px">
+    <span class="version">v2.5.1</span>
+    <span class="arrow">←</span>
+    <span class="old-ver">v2.5.0</span>
+  </div>
+  <p style="margin-top:8px;color:var(--muted)">Transcript 提取链路 P0 修复 · 2026-05-10</p>
+  <div class="tag-row">
+    <span class="badge badge-p0">P0 紧急修复</span>
+    <span class="badge badge-fix">5 Fixes</span>
+    <span class="badge badge-ver">13 文件改动</span>
+  </div>
+</div>
+
+<!-- ====== Stats ====== -->
+<div class="stat-row">
+  <div class="stat"><div class="num">5</div><div class="label">P0 修复项</div></div>
+  <div class="stat"><div class="num">13</div><div class="label">改动文件</div></div>
+  <div class="stat"><div class="num">9</div><div class="label">平台统一 isStreaming</div></div>
+  <div class="stat"><div class="num">3</div><div class="label">层 sanity 校验</div></div>
+  <div class="stat"><div class="num">~100</div><div class="label">行净增代码</div></div>
+</div>
+
+<!-- ====== Problem Statement ====== -->
+<h2>🔍 背景：为什么需要这个版本</h2>
+<p>
+  v2.1.0 将完成检测从 <strong>marker 标记协议</strong>（AI 主动输出 ⚡ARENA_START⚡/ARENA_DONE⚡）切换到
+  <strong>文本稳定 + streaming UI 检测</strong>，方向正确但落地不完整。
+</p>
+<p style="margin-top:12px">
+  <span class="badge badge-p0" style="font-size:0.9rem">核心风险</span>
+  <strong style="margin-left:8px">静默失败：把用户刚发的 prompt 当成 AI 回复读回 StateMachine</strong> → 下一轮辩论拿到垃圾上下文，无报错，用户难以发现。
+</p>
+
+<!-- ====== 5 Fixes ====== -->
+<h2>🛠️ 5 项 P0 修复</h2>
+
+<div class="fix-grid">
+
+  <!-- Fix 1 -->
+  <div class="fix-card fix1">
+    <div class="fix-num">Fix 1 · 真 Bug</div>
+    <div class="fix-title">ChatGPT 完成检测漏改</div>
+    <p style="color:var(--muted);font-size:0.9rem">
+      ChatGPT 的 <code>checkCompletion</code> 仍在用旧 marker 协议（<code>hasStart/hasDone</code>），
+      缺少 <code>isStreaming</code> 字段 → <code>!undefined = true</code> → 完成判定退化成了纯长度稳定。
+    </p>
+    <div class="ba-row">
+      <div class="ba-box ba-before">
+        <div class="ba-label">BEFORE — content-chatgpt.js:75-86</div>
+        <pre>sendResponse({
+  site: SITE,
+  hasStart: text.includes(startMarker),
+  hasDone: tail.includes(doneMarker),
+  textLength: text.length
+})</pre>
+      </div>
+      <div class="ba-box ba-after">
+        <div class="ba-label">AFTER — 与其他 8 家平台对齐</div>
+        <pre>const streamingEl = queryBySelectors("streaming");
+const isStreaming = !!(
+  streamingEl && streamingEl.getBoundingClientRect?.().width > 0
+);
+sendResponse({ site: SITE, textLength: text.length, isStreaming })</pre>
+      </div>
+    </div>
+    <div class="tag-row"><span class="file-tag">content-chatgpt.js</span></div>
+  </div>
+
+  <!-- Fix 2 -->
+  <div class="fix-card fix2">
+    <div class="fix-num">Fix 2 · 防护层</div>
+    <div class="fix-title">hasStreamedMap — 必须"流过"才准判 ready</div>
+    <p style="color:var(--muted);font-size:0.9rem">
+      旧逻辑：<code>textLength > 0 && !lengthChanged && !isStreaming</code> — 第一次轮询就可能满足（isStreaming 选择器失效 → 永远 false + 文本长度=用户消息字数不变）→ 1.5s 误判 ready。
+    </p>
+    <div class="ba-row">
+      <div class="ba-box ba-before">
+        <div class="ba-label">BEFORE — sidepanel.js:403</div>
+        <pre>if (v.textLength > 0 && !lengthChanged && !v.isStreaming) {
+  stableCounts[id] = (stableCounts[id] || 0) + 1;
+  // ... 3 次稳定 → ready
+}</pre>
+      </div>
+      <div class="ba-box ba-after">
+        <div class="ba-label">AFTER — 状态机：IDLE→流式→稳定→就绪</div>
+        <pre>// 观察流式信号
+if (lengthChanged || v.isStreaming) hasStreamedMap[id] = true;
+// ready 前置条件：必须流过
+if (textLength > 0 && !lengthChanged && !isStreaming
+    && hasStreamedMap[id]) {
+  stableCounts[id] = (stableCounts[id] || 0) + 1;
+}</pre>
+      </div>
+    </div>
+    <div class="tag-row"><span class="file-tag">sidepanel.js</span></div>
+  </div>
+
+  <!-- Fix 3 -->
+  <div class="fix-card fix3">
+    <div class="fix-num">Fix 3 · 最后防线</div>
+    <div class="fix-title">Sanity Check — 提取后三段校验</div>
+    <p style="color:var(--muted);font-size:0.9rem">
+      旧逻辑：<code>readOneResponse</code> 拿到文本直接 <code>setParticipantResponse</code>，零校验。
+    </p>
+    <div class="ba-row">
+      <div class="ba-box ba-before">
+        <div class="ba-label">BEFORE — background.js:419-428</div>
+        <pre>const text = r?.text || "";
+if (text) {
+  StateMachine.setParticipantResponse(p.id, text);
+}
+return { ok: true, text };</pre>
+      </div>
+      <div class="ba-box ba-after">
+        <div class="ba-label">AFTER — 三层拒绝 + 状态回退</div>
+        <pre>// 1. 与 prompt 完全相同 → 拒绝
+if (sent && text === sent)
+  return { ok: false, error: "疑似读到用户消息..." };
+// 2. 前 100 字与 prompt 相同 → 拒绝
+if (sent && head(text) === head(sent))
+  return { ok: false, error: "疑似读到用户消息..." };
+// 3. 与上轮 response 相同 → 拒绝
+if (prevResp && text === prevResp)
+  return { ok: false, error: "疑似读到残留回复..." };
+// ✓ 通过 → 写入
+StateMachine.setParticipantResponse(p.id, text);</pre>
+      </div>
+    </div>
+    <p style="margin-top:8px;font-size:0.85rem;color:var(--green)">
+      + 自动提取被拒绝时 sidepanel 回退 <code>_pollStatus→waiting</code> + 清 <code>stableCounts</code> + 重置 <code>hasStreamedMap</code>，避免死锁。
+    </p>
+    <div class="tag-row">
+      <span class="file-tag">background.js</span>
+      <span class="file-tag">state-machine.js</span>
+      <span class="file-tag">sidepanel.js</span>
+    </div>
+  </div>
+
+  <!-- Fix 4 -->
+  <div class="fix-card fix4">
+    <div class="fix-num">Fix 4 · 选择器精确化</div>
+    <div class="fix-title">Kimi / Yuanbao response 选择器不再裸匹配 markdown</div>
+    <div class="ba-row">
+      <div class="ba-box ba-before">
+        <div class="ba-label">BEFORE — 裸 markdown 类（会命中用户消息）</div>
+        <pre>kimi: { response: [
+  '[class*="markdown"]',           // 致命
+  '[class*="assistant"] [class*="content"]',
+  '[class*="message-content"]'
+]}
+yuanbao: { response: [
+  '[class*="markdown"]',           // 致命
+  '[class*="assistant"] [class*="content"]',
+  ...
+]}</pre>
+      </div>
+      <div class="ba-box ba-after">
+        <div class="ba-label">AFTER — assistant-scoped，精确选择器排前</div>
+        <pre>kimi: { response: [
+  '[class*="message-content"]',    // 精确优先
+  '[class*="assistant"] [class*="content"]',
+  '[class*="assistant"] [class*="markdown"]'
+]}
+yuanbao: { response: [
+  '[class*="bot-message"]',
+  '[class*="answer"]',
+  '[class*="assistant"] [class*="content"]',
+  '[class*="assistant"] [class*="markdown"]'
+]}</pre>
+      </div>
+    </div>
+    <div class="tag-row"><span class="file-tag">selectors-config.js</span></div>
+  </div>
+
+  <!-- Fix 5 -->
+  <div class="fix-card fix5">
+    <div class="fix-num">Fix 5 · 精度</div>
+    <div class="fix-title">textContent → innerText（9 平台统一）</div>
+    <p style="color:var(--muted);font-size:0.9rem">
+      <code>textContent</code> 包含 <code>display:none</code> 元素、<code>&lt;script&gt;</code>、<code>&lt;style&gt;</code> 内容，
+      <code>innerText</code> 才是用户真正看到的文本。影响轮询时 textLength 精度。
+    </p>
+    <div class="tag-row">
+      <span class="file-tag">content-claude.js</span>
+      <span class="file-tag">content-chatgpt.js</span>
+      <span class="file-tag">content-gemini.js</span>
+      <span class="file-tag">content-deepseek.js</span>
+      <span class="file-tag">content-doubao.js</span>
+      <span class="file-tag">content-qwen.js</span>
+      <span class="file-tag">content-kimi.js</span>
+      <span class="file-tag">content-yuanbao.js</span>
+      <span class="file-tag">content-grok.js</span>
+    </div>
+  </div>
+</div>
+
+<!-- ====== UX Impact ====== -->
+<h2>👤 用户体验变化</h2>
+<div class="ux-grid">
+  <div class="ux-item">
+    <div class="ux-icon">🟢</div>
+    <h3>ChatGPT 不再"假就绪"</h3>
+    <p style="font-size:0.9rem;color:var(--muted)">
+      修复前：ChatGPT 发送后 1.5 秒就可能直接跳 ✅（跳过 streaming 阶段）。
+      修复后：必须经过 ⏳ streaming → 长度稳定 → ✅ ready 完整流程。
+    </p>
+  </div>
+  <div class="ux-item">
+    <div class="ux-icon">🛡️</div>
+    <h3>不会把用户问题当成 AI 回答</h3>
+    <p style="font-size:0.9rem;color:var(--muted)">
+      修复前：选择器误匹配或 heuristic 兜底时，静默把用户 prompt 读成 AI 回复。
+      修复后：sanity check 三段校验拦截，sidepanel 显示 <span style="color:#f85149">"疑似读到用户消息，请手动提取"</span>。
+    </p>
+  </div>
+  <div class="ux-item">
+    <div class="ux-icon">🔄</div>
+    <h3>提取失败自动恢复</h3>
+    <p style="font-size:0.9rem;color:var(--muted)">
+      修复前：ready 判定后如果提取失败，状态卡死。
+      修复后：自动回退 waiting + 清稳定计数 + 重置流式标记，轮询继续观察。
+    </p>
+  </div>
+  <div class="ux-item">
+    <div class="ux-icon">📊</div>
+    <h3>文本长度更准确</h3>
+    <p style="font-size:0.9rem;color:var(--muted)">
+      <code>textContent</code> → <code>innerText</code>，9 平台统一使用"用户可见文本"做流式长度追踪，不再把隐藏 DOM 的内容算进去。
+    </p>
+  </div>
+  <div class="ux-item">
+    <div class="ux-icon">🎯</div>
+    <h3>Kimi / Yuanbao 选择器更准</h3>
+    <p style="font-size:0.9rem;color:var(--muted)">
+      裸 <code>[class*="markdown"]</code> 可能命中用户消息 → <code>[class*="assistant"] [class*="markdown"]</code> 只匹配 AI 回复区。
+    </p>
+  </div>
+  <div class="ux-item">
+    <div class="ux-icon">⏱️</div>
+    <h3>无感知变化</h3>
+    <p style="font-size:0.9rem;color:var(--muted)">
+      版本号 <strong>2.5.0 → 2.5.1</strong>，不影响现有工作流。图片注入、PPT 模式、导出、hardReset 均回归通过。
+    </p>
+  </div>
+</div>
+
+<!-- ====== Smoke Test Checklist ====== -->
+<h2>✅ 手动 Smoke 检查清单</h2>
+<p style="color:var(--muted);margin-bottom:16px">必须用真实 Chrome 浏览器执行（需要 9 个 AI 平台的登录态）</p>
+<ol class="checklist">
+  <li>
+    <span class="cb">1</span>
+    <div>
+      <strong>重载扩展</strong>
+      <div class="step-label">chrome://extensions → 加载已解压的扩展程序 → 指向 dist/github</div>
+    </div>
+  </li>
+  <li>
+    <span class="cb">2</span>
+    <div>
+      <strong>关键：ChatGPT streaming 标签验证</strong>
+      <div class="step-label">加 Claude + ChatGPT + Kimi，广播"用一句话介绍你自己"。观察 ChatGPT <strong>必须经过 ⏳ streaming 阶段</strong>（不是直接跳 ✅ ready）。这是 Fix 1 的核心证据。</div>
+    </div>
+  </li>
+  <li>
+    <span class="cb">3</span>
+    <div>
+      <strong>辩论二轮上下文正确性</strong>
+      <div class="step-label">三家 ready 后点"开始辩论"。导出 markdown，查看第二轮的 prompt 区块，确认每个 AI 收到的是<strong>其他 AI 的回答</strong>而非用户问题。</div>
+    </div>
+  </li>
+  <li>
+    <span class="cb">4</span>
+    <div>
+      <strong>异常路径：hasStreamedMap 拦截</strong>
+      <div class="step-label">DevTools → 把 stop button 隐藏（display:none）。重新广播一句。Sidepanel 应<strong>停在 waiting 不进 ready</strong>（Fix 2 证据）。</div>
+    </div>
+  </li>
+  <li>
+    <span class="cb">5</span>
+    <div>
+      <strong>异常路径：sanity check 拒绝</strong>
+      <div class="step-label">（难造但值得）Console 把回复区内 innerText 替换成与 prompt 相同的内容。自动提取应被拒绝，sidepanel 显示红色错误并退回 waiting。</div>
+    </div>
+  </li>
+  <li>
+    <span class="cb">6</span>
+    <div>
+      <strong>回归检查</strong>
+      <div class="step-label">图片注入、PPT 模式 toggle、导出 markdown、hardReset — 均正常。</div>
+    </div>
+  </li>
+</ol>
+
+<!-- ====== Dist Info ====== -->
+<h2>📦 构建产物</h2>
+<div style="display:flex;gap:16px;flex-wrap:wrap">
+  <div class="stat"><div class="num" style="font-size:1.2rem">dist/github</div><div class="label">GitHub 发布包</div></div>
+  <div class="stat"><div class="num" style="font-size:1.2rem">dist/store</div><div class="label">Chrome 商店包</div></div>
+  <div class="stat"><div class="num" style="font-size:1.2rem">2.5.1</div><div class="label">manifest.json version</div></div>
+</div>
+
+<hr>
+<div class="footer">
+  AI Arena v2.5.1 · 13 files changed · 5 P0 fixes · 2026-05-10<br>
+  修改文件: manifest.json, sidepanel.html, sidepanel.js, background.js, state-machine.js, selectors-config.js, content-{claude,chatgpt,gemini,deepseek,doubao,qwen,kimi,yuanbao,grok}.js
+</div>
+
+</body>
+</html>

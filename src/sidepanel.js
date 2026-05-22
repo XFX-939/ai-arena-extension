@@ -1,4 +1,4 @@
-// AI Arena — Side Panel v2.5.1
+// AI Arena — Side Panel v3.0.0
 
 const $ = (s) => document.querySelector(s);
 const $$ = (s) => document.querySelectorAll(s);
@@ -10,9 +10,12 @@ const btnDebate = $("#btn-debate"), btnSummary = $("#btn-summary"), btnDebateRet
 const guidanceInput = $("#guidance-input"), roundBadge = $("#round-badge");
 const pptPromptBox = $("#ppt-prompt-box"), btnPptCopy = $("#btn-ppt-copy"), btnPptImageMenu = $("#btn-ppt-image-menu");
 const pptTemplateMenu = $("#ppt-template-menu"), btnPptStart = $("#btn-ppt-start"), btnPptxPrompt = $("#btn-pptx-prompt");
+const btnPptSaveMenu = $("#btn-ppt-save-menu"), pptSaveMenu = $("#ppt-save-menu");
 
 let participants = [], debateSession = {}, flowState = "idle", streamingPollTimer = null;
 let pptPromptKind = null;
+const PPT_CUSTOM_PROMPTS_KEY = "aiArenaPptCustomPromptsV1";
+let pptCustomPrompts = { copy: "", image: "", pptx: "" };
 
 function mergeParticipants(remote) {
   if (!remote) return;
@@ -128,41 +131,94 @@ function getDiscussionSource() {
   return "请基于我们前面在本网页中的讨论内容整理 PPT 文案；如果你看不到前文，请先向我索要讨论材料。";
 }
 
+function loadPptCustomPrompts() {
+  chrome.storage.local.get(PPT_CUSTOM_PROMPTS_KEY, (data) => {
+    const saved = data?.[PPT_CUSTOM_PROMPTS_KEY] || {};
+    pptCustomPrompts = {
+      copy: typeof saved.copy === "string" ? saved.copy : "",
+      image: typeof saved.image === "string" ? saved.image : "",
+      pptx: typeof saved.pptx === "string" ? saved.pptx : ""
+    };
+  });
+}
+
+function renderPromptTemplate(text, context = {}) {
+  const safe = {
+    discussion: context.discussion || getDiscussionSource(),
+    imageBrief: context.imageBrief || "",
+    templateTitle: context.templateTitle || "",
+    templateName: context.templateName || "",
+    huaweiSeed: context.huaweiSeed || "",
+    templateAngle: context.templateAngle || "",
+    templateLayout: context.templateLayout || "",
+    templateMustInclude: context.templateMustInclude || "",
+    templateAvoid: context.templateAvoid || ""
+  };
+  return (text || "")
+    .replaceAll("{{discussion}}", safe.discussion)
+    .replaceAll("{{discussion_excerpt}}", safe.discussion)
+    .replaceAll("${discussion}", safe.discussion)
+    .replaceAll("{{image_brief}}", safe.imageBrief)
+    .replaceAll("{{copy}}", safe.imageBrief)
+    .replaceAll("${copy}", safe.imageBrief)
+    .replaceAll("{{template_title}}", safe.templateTitle)
+    .replaceAll("${t.title}", safe.templateTitle)
+    .replaceAll("{{template_name}}", safe.templateName)
+    .replaceAll("${t.name}", safe.templateName)
+    .replaceAll("{{template_seed}}", safe.huaweiSeed)
+    .replaceAll("{{huawei_seed}}", safe.huaweiSeed)
+    .replaceAll("${t.huaweiSeed}", safe.huaweiSeed)
+    .replaceAll("{{template_angle}}", safe.templateAngle)
+    .replaceAll("${t.angle}", safe.templateAngle)
+    .replaceAll("{{template_layout}}", safe.templateLayout)
+    .replaceAll("${t.layout}", safe.templateLayout)
+    .replaceAll("{{template_must_include}}", safe.templateMustInclude)
+    .replaceAll("${t.mustInclude}", safe.templateMustInclude)
+    .replaceAll("{{template_avoid}}", safe.templateAvoid)
+    .replaceAll("${t.avoid}", safe.templateAvoid);
+}
+
 function buildPptCopyPrompt() {
+  if (pptCustomPrompts.copy?.trim()) {
+    return renderPromptTemplate(pptCustomPrompts.copy.trim(), { discussion: getDiscussionSource() });
+  }
   const source = getDiscussionSource();
-  return `你是华为风格技术汇报 PPT 的内容编译器。请把我们前面在本 AI 网页里的长期讨论，整理成 huawei-ppt 工作流可直接使用的“材料池 + 版式 brief”。
+  return `你是华为风格企业技术汇报 PPT 的内容编译器。请把我们在本 AI Web 网页中已经展开的长期讨论，整理成后续“生成单页 PPT 效果图”可直接使用的“材料池 + 单页视觉 brief”。
 
 当前阶段：第 1 步 / 3 步：文案生成 → 图片生成 → PPT生成
-本步只做 huawei-ppt 内容编译，不生成图片，不生成 PPTX，不写代码。
+本步只做内容编译，不生成图片，不生成 PPTX，不写代码。
 
 上下文使用方式：
-- 默认你已经能看到本网页上方的完整讨论历史，请优先基于“我们的讨论内容”进行整理。
+- 默认你已经能看到本网页上方几十轮讨论、AI 回复和我补充的追问，请优先基于“我们的讨论内容”进行整理。
 - 下面的“补充摘录”只是为了防止网页上下文遗漏；如果它和上文不一致，以上文最近讨论为准。
+- 不要把本条 prompt、按钮名称、工作流说明当成 PPT 内容主题；它们只是操作指令。
 - 如果你完全看不到上文，也无法从补充摘录判断主题，请先向我索要讨论材料，不要凭空编造。
 
 补充摘录：
 ${source}
 
 核心目标：
-1. 复用 huawei-ppt 的成功经验：先建立 material-pool，再确定 slide thesis、content slots、density target、negative constraints。
+1. 先建立高密度 material-pool，再确定 slide thesis、template fit、content slots、word-budget、negative constraints。
 2. 把几十轮讨论压缩成“单页华为式技术评审图”需要的高密度材料，避免下一步生图时内容空、框空、指标空。
-3. 最后给出一段可直接进入 huawei-ppt prompt compiler 的【图片生成输入文案】。
+3. 为后续 5 类模板都准备可选择的论点和内容槽，但最后给出一段最推荐的【图片生成输入文案】。
 
-Huawei-ppt 编译原则：
+内容编译原则：
 - User brief：先明确用户真正要证明的主题、受众、汇报目的和输出形态。
-- Material pool：保留事实、指标、术语、机制、约束、分歧、场景和视觉素材。
-- Slide thesis：生成 3-5 个候选结论型标题，标题必须说观点，不只是命名主题。
+- Material pool：过量收集并保留事实、指标、术语、机制、约束、分歧、场景、反例和视觉素材；最终单页只用其中 1000-2000 字。
+- Slide thesis：生成 3-5 个候选结论型标题，标题必须说清对象、关键动作、因果机制和收益，不只是命名主题。
+- Template fit：分别判断技术介绍、技术专题、技术对比、技术洞察、技术全景哪种最适合当前讨论，不要强行套模板。
 - Content slots：为单页准备 3-5 个主模块、1-3 个 mini figure / metric strip / timeline / matrix / architecture element。
 - Density target：每个模块都要有小标题、2-4 条短句、指标/证据/方法标签或微型图，框内信息填充率目标 70%-90%。
-- Negative constraints：明确避免太空、太海报、太概念、太大卡片、太少证据。
+- Negative constraints：明确避免太空、太海报、太概念、太大卡片、太少证据、模板错配、把讨论过程画进页面。
 
 生成要求：
-1. 先生成 5000-10000 字【material-pool 内容素材池】。如果单次输出受限，优先保证结构完整和信息密度，不要只输出提纲。
+1. 先生成 5000-10000 字【material-pool 内容素材池】。如果单次输出受限，请先输出尽可能完整的第一版，并在末尾明确“可继续补全素材池”；不要只输出提纲。
 2. material-pool 至少覆盖：背景与问题、用户目标、对象定义、关键机制、技术路线、对比维度、数据指标、证据链、风险约束、应用场景、落地路径、反方观点、可视化元素。
-3. 生成【word-budget / density target】：标题、模块数、每模块文字量、图形量、指标条数量、预计框内填充率。
-4. 生成【candidate slide theses】：3-5 个结论型标题，每个说明适合的模板：技术介绍 / 技术专题 / 技术对比 / 技术洞察 / 技术全景。
-5. 生成【recommended content slots】：3-5 个主模块，每个模块必须包含模块标题、核心观点、2-4 条短 bullet、证据/指标、推荐图形。
-6. 最后输出【图片生成输入文案】：500-900 字，必须能被下一步直接用于生成一页高密度华为式 PPT 效果图。
+3. 生成【template fit / scenario pick】：对 5 个模板逐一评分，说明推荐模板和备用模板。
+4. 生成【word-budget / density target】：标题、模块数、每模块文字量、图形量、指标条数量、预计框内填充率。
+5. 生成【candidate slide theses】：3-5 个结论型标题，每个说明适合的模板：技术介绍 / 技术专题 / 技术对比 / 技术洞察 / 技术全景。
+6. 生成【recommended content slots】：3-5 个主模块，每个模块必须包含模块标题、核心观点、2-4 条短 bullet、证据/指标、推荐图形、是否适合 native PPT 重建。
+7. 最后输出【图片生成输入文案】：500-900 字，必须能被下一步直接用于生成一页高密度华为式 PPT 效果图。
 
 请严格按以下结构输出，不要省略标题：
 
@@ -175,27 +231,34 @@ Huawei-ppt 编译原则：
 【2. 共识 / 分歧 / 待验证假设】
 分别列出 AI 讨论中的共识、分歧、互补观点和待验证假设。
 
-【3. candidate slide theses】
+【3. template fit / scenario pick】
+分别评价技术介绍、技术专题、技术对比、技术洞察、技术全景 5 类模板与当前讨论的匹配度，给出推荐模板和备用模板。
+
+【4. candidate slide theses】
 输出 3-5 个结论型标题，并标注推荐模板和推荐理由。
 
-【4. content slots + word-budget】
+【5. content slots + word-budget】
 输出 3-5 个主模块；每个模块按“模块标题 / 核心观点 / bullet / 证据指标 / 推荐图形 / 字数密度”组织。
 
-【5. negative constraints】
+【6. negative constraints】
 列出本主题最容易生成失败的 5-8 条负面约束，例如太空、太概念、缺少证据、模板错配、指标不足等。
 
-【6. 图片生成输入文案】
+【7. 图片生成输入文案】
 用 500-900 字输出下一步生图可直接使用的浓缩 brief。必须包含：结论标题、推荐模板、页面结构、模块内容、关键指标、建议图形、密度目标、负面约束。`;
 }
 
 function looksLikePptWorkflowPrompt(text) {
   return [
-    "你是企业技术汇报 PPT 的内容策划专家",
+    "你是华为风格技术汇报 PPT 的内容编译器",
+    "你是华为风格企业技术汇报 PPT 的内容编译器",
     "你是华为风格技术汇报 PPT 的视觉生成提示词执行器",
+    "你是华为风格企业技术汇报 PPT 的视觉生成器",
     "你是图片转 PowerPoint 的重建工程师",
+    "你是图片转 PowerPoint 的语义重建工程师",
     "当前阶段：第 1 步 / 3 步",
     "当前阶段：第 2 步 / 3 步",
     "当前阶段：第 3 步 / 3 步",
+    "模板风格与版式规则",
     "版式编译：",
     "重建目标：",
     "讨论文案："
@@ -205,7 +268,11 @@ function looksLikePptWorkflowPrompt(text) {
 function extractImageBriefFromCopy(text) {
   const source = (text || "").trim();
   if (!source) return "";
-  const marker = source.includes("【6. 图片生成输入文案】") ? "【6. 图片生成输入文案】" : "【5. 图片生成输入文案】";
+  const marker = source.includes("【7. 图片生成输入文案】")
+    ? "【7. 图片生成输入文案】"
+    : source.includes("【6. 图片生成输入文案】")
+      ? "【6. 图片生成输入文案】"
+      : "【5. 图片生成输入文案】";
   const idx = source.indexOf(marker);
   if (idx >= 0) {
     const after = source.slice(idx + marker.length).trim();
@@ -236,14 +303,27 @@ function currentPptCopy() {
 function buildHuaweiImagePrompt(templateKey) {
   const t = PPT_TEMPLATE_META[templateKey] || PPT_TEMPLATE_META.intro;
   const copy = currentPptCopy();
-  return `你是 huawei-ppt 的图像 prompt 编译器。请严格复用华为 PPT 成功模板经验，把我们前面已经形成的 PPT 文案和讨论上下文，编译成一页 16:9 华为内部技术评审 PPT 效果图。
+  if (pptCustomPrompts.image?.trim()) {
+    return renderPromptTemplate(pptCustomPrompts.image.trim(), {
+      imageBrief: copy,
+      templateTitle: t.title,
+      templateName: t.name,
+      huaweiSeed: t.huaweiSeed,
+      templateAngle: t.angle,
+      templateLayout: t.layout,
+      templateMustInclude: t.mustInclude,
+      templateAvoid: t.avoid
+    });
+  }
+  return `你是华为风格企业技术汇报 PPT 的视觉生成器。请把我们前面已经形成的 PPT 文案和讨论上下文，转化为一页 16:9 华为内部技术评审 PPT 效果图。
 
 当前阶段：第 2 步 / 3 步：文案生成 → 图片生成 → PPT生成
 本步只生成单页 PPT 效果图，不生成 PPTX，不解释过程，不输出长文案。
 
 上下文使用方式：
 - 默认你已经能看到本网页上方的文案生成结果和讨论历史，请优先使用上文最新的 PPT 文案。
-- 下面的“补充生图内容”是从上一步文案中提取的浓缩 brief；如果你能看到更完整的上文，请以上文为主、以下方 brief 为准绳。
+- 下面的“补充生图内容”是从上一步【图片生成输入文案】提取的浓缩 brief；如果你能看到更完整的上文，请以上文的材料池为内容来源、以下方 brief 为画面准绳。
+- 不要把本条 prompt、模板 seed、按钮名称或工作流说明画进图里；它们只用于控制风格和版式。
 - 如果你看不到上文，也无法从补充 brief 判断主题，请先要求我提供文案，不要把本 prompt 当作主题内容。
 
 补充生图内容：
@@ -251,7 +331,7 @@ ${copy}
 
 选定模板：${t.title}
 
-Huawei-ppt 原始模板 seed（必须优先复用其结构、层级、密度和视觉语法，不要只复用几个风格词）：
+模板风格与版式规则（必须优先复用其结构、层级、密度和视觉语法，不要只复用几个风格词）：
 ${t.huaweiSeed}
 
 本模板的差异化任务：
@@ -260,27 +340,32 @@ ${t.huaweiSeed}
 - 必须包含：${t.mustInclude}
 - 避免误用：${t.avoid}
 
-请按 huawei-ppt prompt compiler 顺序在内部完成编译：
+请按以下顺序在内部完成画面编译：
 1. Canvas and style：16:9，白底或极浅灰底，华为内部企业技术报告截图风格，红/蓝/灰/黄配色，中文微软雅黑观感，英文和数字 Arial 观感，禁止营销海报风。
 2. Slide thesis：从上文 material-pool / 图片生成输入文案中提炼一个“结论先行”的红色标题，标题必须说清观点、对象、关键动作和收益，不要只命名主题。标题格式参考：${t.thesis}
-3. Template recipe：优先采用上面的 huawei-ppt 原始模板 seed 和选定模板差异化任务；如果文案内容与模板明显冲突，仍保持该模板大框架，但用内容槽位微调适配。
-4. Content slots：生成 3-5 个具体模块，包含标题、短 bullet、指标/证据、方法标签、微型图形；至少 1-3 个 mini figures / metric strips / timelines / flows / matrices / architecture elements。
-5. Density target：每个容器内部必须被内容填满，文字/标注/图表占框内 70%-90%；正文使用短标签和碎片化证据，不写长段落。
-6. Negative constraints：避免空白框、大圆角卡片、渐变海报、3D 炫光、大图标堆砌、浏览器边框、聊天窗口、mockup frame、lorem ipsum、伪造 logo、把 prompt 指令画进图。
-7. Output requirements：只输出一张单页 PPT 效果图；不要输出解释文字；不要生成 PPTX。
+3. Template recipe：优先采用上面的模板风格与版式规则，以及选定模板差异化任务；复用其结构、层级、密度、证据组织方式和视觉语法，不照抄规则中的占位词。
+4. Content slots：从材料池中选择 3-5 个具体模块，包含标题、短 bullet、指标/证据、方法标签、微型图形；至少 1-3 个 mini figures / metric strips / timelines / flows / matrices / architecture elements。
+5. Word budget：总文字观感约 1000-1500 中文字；模块内使用 7-10pt 紧凑短标签，标题 18-22pt，分区标题 11-14pt；不要写长段落。
+6. Density target：每个容器内部必须被内容填满，文字/标注/图表占框内 70%-90%；只要画框，就必须有证据、指标、方法或微型图。
+7. Negative constraints：避免空白框、大圆角卡片、渐变海报、3D 炫光、大图标堆砌、浏览器边框、聊天窗口、mockup frame、lorem ipsum、伪造 logo、把 prompt 指令画进图。
+8. Output requirements：调用当前聊天的图像生成能力，只输出一张单页 PPT 效果图；不要输出解释文字；不要生成 PPTX。
 
 视觉硬约束：
 - 页眉：左上红色结论标题，顶部红/灰细线，右上可放小黄色推进箭头。
 - 页脚：左下小页码，中间可放 Huawei Confidential 或 HUAWEI TECHNOLOGIES CO., LTD.，右下可放 HUAWEI 标识风格占位。
-- 结构：页面由 2-4 个主要区域组成，使用细灰线、浅灰底板、黑色虚线框或分区标题切分。
+- 结构：页面由 2-4 个主要区域组成，使用细灰线、浅灰底板、黑色虚线框或分区标题切分；保持模板 ${t.name} 的主要版式骨架。
 - 信息纹理：混合使用小型图表、公式、热力图、矩阵、微型架构图、表格、标注、箭头、红色虚线路径和指标柱。
 - 配色：华为红 #CC0000 用于标题、结论、收益、关键箭头和虚线高亮；中蓝 #005691 / 浅蓝用于技术模块；浅灰 #F2F2F2 用于底板；黑/灰用于证据文字；黄色/橙色只用于推进箭头或局部高亮。
+- PPTX 友好：尽量让主要文字、表格、流程节点、指标条、图表和箭头看起来可被后续 native PowerPoint 对象重建；复杂纹理和小图标可以简化。
 
 最终只生成图像。`;
 }
 
 function buildImageToPptPrompt() {
-  return `你是 huawei-ppt / imag2ppt 的图片转 PowerPoint 重建工程师。请将我们刚生成的 PPT 效果图，或我随后上传的 PNG/JPG，重建为一份可编辑的 PowerPoint PPTX。
+  if (pptCustomPrompts.pptx?.trim()) {
+    return renderPromptTemplate(pptCustomPrompts.pptx.trim());
+  }
+  return `你是图片转 PowerPoint 的语义重建工程师。请将我们刚生成的 PPT 效果图，或我随后上传的 PNG/JPG，重建为一份可编辑的 PowerPoint PPTX。
 
 当前阶段：第 3 步 / 3 步：文案生成 → 图片生成 → PPT生成
 上下文使用方式：
@@ -288,11 +373,12 @@ function buildImageToPptPrompt() {
 - 如果你看不到上方图片，或当前网页无法直接读取图片，请直接要求我上传 PNG/JPG。
 - 不要重新生成文案，不要重新设计图片；本步只做图片到 PPTX 的语义重建。
 
-复用 huawei-ppt 成功转换经验：
+重建原则：
 - 视觉 1:1 优先：先保持上一步效果图的整体视觉、布局、层级、配色、密度和 Huawei 技术评审页质感。
 - 再恢复可编辑性：标题、正文、表格、图表标签、流程节点、指标数字、箭头、矩形模块和主要形状尽量使用 PowerPoint 原生对象。
-- 可采用 visual-first hybrid：必要时用小面积 PNG/SVG fallback 保住复杂纹理、细小 logo、阴影、复杂图标或低编辑价值装饰，但不能把整页或大块文字区栅格化。
-- 如果可以执行文件生成，请按“源图 → 语义对象清单 → PPTX → 渲染预览 → 差异修正”的闭环思路完成。
+- 可采用“视觉优先 + 可编辑对象覆盖”的混合重建：必要时用小面积 PNG/SVG fallback 保住复杂纹理、细小 logo、阴影、复杂图标或低编辑价值装饰，但不能把整页或大块文字区栅格化。
+- 如果可以执行文件生成，请按闭环思路完成：源图 → 结构化页面规格 / 语义对象清单 → PPTX → 渲染预览 → 评分 → 差异修正。
+- 优化对象是结构化页面规格或对象清单，不要直接堆 PPTX 字节或把整页图贴进去。
 
 重建目标：
 1. 视觉优先：PPTX 渲染后应尽量接近原图的布局、颜色、层级、字号、间距和对齐。
@@ -302,15 +388,18 @@ function buildImageToPptPrompt() {
 
 重建流程：
 1. 先识别语义结构：标题区、页眉页脚、主模块、证据图、表格/图表、流程箭头、指标标签、注释说明。
-2. 为每个语义单元建立对象清单，标注：native text / native shape / native chart-table / small fallback。
-3. 按视觉层级重建：背景与分区 → 主体模块 → 图表/流程 → 文字与指标 → 标注与细节。
-4. 中文字体优先使用微软雅黑或相近字体；英文和数字使用 Arial 或相近字体。
-5. fallback 图片总面积尽量控制在 5% 以内，单个 fallback 尽量不超过 1.5%，不得 rasterize 白名单内容。
+2. 为每个语义单元建立对象清单，标注 role、bbox、style、native text / native shape / native chart-table / small fallback。
+3. 元素路由：标题、正文、表格单元格、图表轴/标签/数据为 whitelist，必须 native；小箭头、徽标、装饰点为 greylist，可 native 或小 fallback；复杂纹理、微小 logo、低编辑价值装饰为 blacklist，可早期 fallback。
+4. 按视觉层级重建：背景与分区 → 主体模块 → 图表/流程 → 文字与指标 → 标注与细节。
+5. 中文字体优先使用微软雅黑或相近字体；英文和数字使用 Arial 或相近字体。
+6. fallback 图片总面积尽量控制在 5% 以内，单个 fallback 尽量不超过 1.5%，不得 rasterize 白名单内容。
+7. 如果可渲染和评分，请报告视觉还原分、可编辑性分、综合分、相似度、shape count、text shape count、picture area ratio；目标是视觉接近原图且可编辑对象占比足够高。若无法评分，明确说明限制并至少报告对象统计和 fallback 策略。
 
 交付要求：
 - 如果可以直接生成文件，请输出 PPTX。
 - 同时说明：哪些元素是原生可编辑，哪些元素用了 fallback，以及为什么。
-- 如果当前环境不能直接产出 PPTX，请先输出可执行的重建方案、对象清单、页面尺寸、颜色/字体规范，并明确需要我上传哪张图片。`;
+- 必须检查中文文本是否乱码或异常问号；发现乱码时先修复，不要交付。
+- 如果当前环境不能直接产出 PPTX，请先输出可执行的重建方案、对象清单、页面尺寸、颜色/字体规范、fallback 策略，并明确需要我上传哪张图片。`;
 }
 
 
@@ -329,6 +418,7 @@ function renderParticipants() {
   const rounds = debateSession?.rounds?.length || 0;
   if (rounds > 0) { roundBadge.style.display = ""; roundBadge.textContent = `第${rounds}轮`; }
   else { roundBadge.style.display = "none"; }
+  updateTaskState();
 
   if (!participants.length) {
     listEl.innerHTML = `<div class="empty-hint">
@@ -388,22 +478,34 @@ function renderParticipants() {
 
       // 手动操作按钮
       const actionBtns = !gateActions ? [
-        `<button class="p-action-btn p-send" data-id="${p.id}" title="重新发送提问给该AI">🔄发送</button>`,
-        `<button class="p-action-btn p-extract" data-id="${p.id}" title="手动提取该AI的回复">📋提取</button>`
+        `<button class="p-action-btn p-send" data-id="${p.id}" title="重新发送提问给该AI">↻</button>`,
+        `<button class="p-action-btn p-extract" data-id="${p.id}" title="手动提取该AI的回复">⇣</button>`
       ].join('') : '';
 
-      return `<div class="participant-item ${p.service}" data-tab-id="${p.tabId || ''}" style="cursor:pointer">
+      const metaParts = [
+        p.tabId ? "已打开" : "离线",
+        stateLabel ? `${stateIcon} ${stateLabel}` : "",
+        charCount > 0 ? `${charCount}字` : ""
+      ].filter(Boolean).join(" · ");
 
-        <span class="p-status ${sc}"></span>
-        ${brandIcon(p.service)}
-        <span class="p-name">${p.name}</span>
-        ${progressBar}
-        ${readyBadge}
-        ${stateLabel ? `<span class="p-state-badge ${pState.replace(/_/g, '-')}">${stateIcon} ${stateLabel}</span>` : ''}
-        ${charDisplay}
-        ${gateActions}
-        ${actionBtns}
-        <button class="p-btn p-remove" data-id="${p.id}">✕</button>
+      return `<div class="participant-item ${p.service}" data-tab-id="${p.tabId || ''}" style="cursor:pointer">
+        <div class="p-main">
+          <div class="p-title-row">
+            <span class="p-status ${sc}"></span>
+            ${brandIcon(p.service)}
+            <span class="p-name">${p.name}</span>
+            ${readyBadge}
+          </div>
+          <div class="p-meta-row">
+            <span>${metaParts || "等待操作"}</span>
+          </div>
+          ${progressBar}
+          ${gateActions}
+        </div>
+        <div class="p-actions">
+          ${actionBtns}
+          <button class="p-btn p-remove" data-id="${p.id}" title="移除">✕</button>
+        </div>
       </div>`;
     }).join("");
 
@@ -424,7 +526,7 @@ function renderParticipants() {
       } else {
         addLog(`发送失败: ${resp?.error || '未知错误'}`, "error");
       }
-      b.textContent = "🔄发送"; b.disabled = false;
+      b.textContent = "↻"; b.disabled = false;
     }));
     // 手动提取按钮
     listEl.querySelectorAll(".p-extract").forEach(b => b.addEventListener("click", async () => {
@@ -442,7 +544,7 @@ function renderParticipants() {
         checkAllReadyAndConfirm();
       } else {
         addLog(`提取失败: ${resp?.error || '未读取到内容'}`, "error");
-        b.textContent = "📋提取"; b.disabled = false;
+        b.textContent = "⇣"; b.disabled = false;
       }
     }));
 
@@ -725,6 +827,16 @@ $$(".mode-opt").forEach(btn => {
   });
 });
 
+// ── 当前任务 tabs ──
+function setActiveTask(task) {
+  $$(".task-tab").forEach(btn => btn.classList.toggle("active", btn.dataset.task === task));
+  $$(".task-panel").forEach(panel => panel.classList.toggle("active", panel.dataset.taskPanel === task));
+}
+
+$$(".task-tab").forEach(btn => {
+  btn.addEventListener("click", () => setActiveTask(btn.dataset.task));
+});
+
 // ── 添加参与者 ──
 $$(".btn-add").forEach(b => b.addEventListener("click", async () => {
   if (participants.length >= 3) { addLog("最多 3 个参与者", "error"); return; }
@@ -796,7 +908,6 @@ broadcastInput.addEventListener("input", () => {
 // ── 广播 ──
 async function doBroadcast() {
   if (btnSend.disabled) return;
-  btnSend.disabled = true;
   let text = broadcastInput.innerText.trim();
   const hasImages = pendingImages.length > 0;
   const hasFiles = pendingFiles.length > 0;
@@ -834,7 +945,7 @@ async function doBroadcast() {
     renderParticipants();
     // 如果自动进入了 awaiting，开始轮询
     if (flowState === "awaiting_responses") {
-      startStreamingPoll(text.length);
+      startStreamingPoll();
     }
   } catch (e) { addLog("失败: " + e.message, "error"); }
   btnSend.disabled = false; btnSend.innerHTML = '发送给全部';
@@ -881,6 +992,20 @@ async function sendPptPromptToChatGPT() {
   }
 }
 
+function updateTaskState() {
+  const el = $("#task-state");
+  if (!el) return;
+  const readyCount = participants.filter(p => !!p.responsePreview).length;
+  const labels = {
+    idle: participants.length ? `${participants.length} 个参与者` : "准备就绪",
+    broadcasting: "正在发送",
+    awaiting_responses: `等待回复 ${readyCount}/${participants.length}`,
+    debating: "辩论中",
+    summary: "总结中"
+  };
+  el.textContent = labels[flowState] || "准备就绪";
+}
+
 btnPptCopy?.addEventListener("click", () => {
   setPptPrompt(buildPptCopyPrompt(), "copy-prompt");
   addLog("已生成讨论文案 prompt", "info");
@@ -888,6 +1013,7 @@ btnPptCopy?.addEventListener("click", () => {
 
 btnPptImageMenu?.addEventListener("click", (e) => {
   e.stopPropagation();
+  pptSaveMenu?.classList.remove("open");
   pptTemplateMenu?.classList.toggle("open");
 });
 
@@ -913,10 +1039,41 @@ pptPromptBox?.addEventListener("input", () => {
 
 btnPptStart?.addEventListener("click", sendPptPromptToChatGPT);
 
+btnPptSaveMenu?.addEventListener("click", (e) => {
+  e.stopPropagation();
+  pptTemplateMenu?.classList.remove("open");
+  pptSaveMenu?.classList.toggle("open");
+});
+
+pptSaveMenu?.querySelectorAll("[data-save-prompt]").forEach(btn => {
+  btn.addEventListener("click", () => {
+    const kind = btn.dataset.savePrompt;
+    const text = pptPromptBox?.value?.trim() || "";
+    if (!text) {
+      addLog("请先在输入框中填写要保存的 prompt", "error");
+      return;
+    }
+    if (!["copy", "image", "pptx"].includes(kind)) return;
+    pptCustomPrompts = { ...pptCustomPrompts, [kind]: text };
+    chrome.storage.local.set({ [PPT_CUSTOM_PROMPTS_KEY]: pptCustomPrompts }, () => {
+      const label = kind === "copy" ? "文案" : kind === "image" ? "图片" : "PPT";
+      addLog(`已保存${label} prompt，下次点击对应按钮会优先使用`, "success");
+    });
+    pptSaveMenu.classList.remove("open");
+  });
+});
+
 document.addEventListener("click", (e) => {
-  if (!pptTemplateMenu?.classList.contains("open")) return;
-  if (e.target === btnPptImageMenu || pptTemplateMenu.contains(e.target)) return;
-  pptTemplateMenu.classList.remove("open");
+  if (pptTemplateMenu?.classList.contains("open")) {
+    if (e.target !== btnPptImageMenu && !pptTemplateMenu.contains(e.target)) {
+      pptTemplateMenu.classList.remove("open");
+    }
+  }
+  if (pptSaveMenu?.classList.contains("open")) {
+    if (e.target !== btnPptSaveMenu && !pptSaveMenu.contains(e.target)) {
+      pptSaveMenu.classList.remove("open");
+    }
+  }
 });
 
 // ── 辩论模式切换 ──
@@ -1165,6 +1322,7 @@ $$(".stats-tab").forEach(btn => {
 });
 
 loadStats();
+loadPptCustomPrompts();
 
 // ── 通知权限 ──
 if ("Notification" in window) Notification.requestPermission();

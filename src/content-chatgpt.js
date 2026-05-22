@@ -7,9 +7,7 @@ chrome.runtime.sendMessage({ type: "getSelectors", platform: SITE }, (resp) => {
   if (resp) selectors = resp;
 });
 
-function stripMarkers(text) {
-  return text.replace(/ARENA_START_R\d+/g, '').replace(/ARENA_DONE_R\d+/g, '').trim();
-}
+// v2.1.0: marker 已移除
 
 const _reportedFailures = new Set();
 // 按优先级尝试选择器数组，返回第一个匹配的元素
@@ -19,6 +17,7 @@ function queryBySelectors(action, options = {}) {
     const el = options.all ? document.querySelectorAll(sel) : document.querySelector(sel);
     if (options.all ? el.length > 0 : el) return el;
   }
+  if (action === "response" && sels.length > 0) return options.all ? [] : null;
   const heuristic = getHeuristicElement(action, options);
   if (heuristic) return heuristic;
   if (!_reportedFailures.has(action)) { _reportedFailures.add(action); chrome.runtime.sendMessage({ type: "selectorFailure", platform: SITE, action }).catch(() => {}); }
@@ -74,14 +73,12 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     }
     if (msg.action === "checkCompletion") {
       const text = getLastResponseText();
-      const startMarker = msg.startMarker || "ARENA_START";
-      const doneMarker = msg.doneMarker || "ARENA_DONE";
-      const tail = text.trimEnd().slice(-200);
+      const streamingEl = queryBySelectors("streaming");
+      const isStreaming = !!(streamingEl && streamingEl.getBoundingClientRect?.().width > 0);
       sendResponse({
         site: SITE,
-        hasStart: text.includes(startMarker),
-        hasDone: tail.includes(doneMarker),
-        textLength: text.length
+        textLength: text.length,
+        isStreaming
       });
       return false;
     }
@@ -97,7 +94,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
 function getLastResponseText() {
   const responses = queryBySelectors("response", { all: true });
-  if (responses.length > 0) return responses[responses.length - 1].textContent || "";
+  if (responses.length > 0) return responses[responses.length - 1].innerText || "";
   return "";
 }
 
@@ -142,8 +139,9 @@ async function robustInject(el, text) {
 
 async function injectAndSend(text) {
   try {
-    const el = queryBySelectors("input");
-    if (!el) return { site: SITE, status: "error", error: "未找到输入框" };
+    const ready = await waitForUsableInput();
+    if (!ready.ok) return { site: SITE, status: "error", error: ready.error };
+    const el = ready.el;
 
     await robustInject(el, text);
 
@@ -161,19 +159,49 @@ async function injectAndSend(text) {
     el.dispatchEvent(new KeyboardEvent("keyup", { key: "Enter", code: "Enter", keyCode: 13, which: 13, bubbles: true }));
 
     await sleep(500);
+    if (isLoginBlocked()) return { site: SITE, status: "error", error: "需要登录或关闭登录弹窗" };
+
     const remaining = (el.tagName === "TEXTAREA" ? el.value : el.innerText).trim();
     if (remaining.length < text.length * 0.3) return { site: SITE, status: "sent" };
 
     for (let attempt = 0; attempt < 3; attempt++) {
       await sleep(300);
       const btn = findSendButton();
-      if (btn && !btn.disabled) { btn.click(); return { site: SITE, status: "sent" }; }
+      if (btn && !btn.disabled) {
+        btn.click();
+        await sleep(800);
+        if (isLoginBlocked()) return { site: SITE, status: "error", error: "需要登录或关闭登录弹窗" };
+        return { site: SITE, status: "sent" };
+      }
     }
 
+    if (isLoginBlocked()) return { site: SITE, status: "error", error: "需要登录或关闭登录弹窗" };
     return { site: SITE, status: "sent" };
   } catch (e) {
     return { site: SITE, status: "error", error: e.message };
   }
+}
+
+async function waitForUsableInput(timeoutMs = 10000) {
+  const started = Date.now();
+  while (Date.now() - started < timeoutMs) {
+    if (isLoginBlocked()) return { ok: false, error: "需要登录或关闭登录弹窗" };
+    const el = queryBySelectors("input");
+    if (el && isVisibleInput(el)) return { ok: true, el };
+    await sleep(300);
+  }
+  return { ok: false, error: "未找到输入框" };
+}
+
+function isVisibleInput(el) {
+  const rect = el.getBoundingClientRect?.();
+  return !!rect && rect.width > 50 && rect.height > 15 && getComputedStyle(el).visibility !== "hidden";
+}
+
+function isLoginBlocked() {
+  const text = document.body?.innerText || "";
+  const hasDialog = !!document.querySelector('[role="dialog"], [data-testid*="modal"], .modal');
+  return hasDialog && /登录即可开始聊天|感谢你试用 ChatGPT|登录或注册|保持退出状态|使用 Google 账户继续|使用 Apple 账户继续|Log in|Sign up|Sign in/i.test(text);
 }
 
 async function readLatestResponse() {
@@ -181,10 +209,10 @@ async function readLatestResponse() {
   await sleep(500);
 
   const responses = queryBySelectors("response", { all: true });
-  if (responses.length > 0) return stripMarkers(responses[responses.length - 1].innerText.trim());
+  if (responses.length > 0) return responses[responses.length - 1].innerText.trim();
 
   const markdownBlocks = document.querySelectorAll(".markdown.prose");
-  if (markdownBlocks.length > 0) return stripMarkers(markdownBlocks[markdownBlocks.length - 1].innerText.trim());
+  if (markdownBlocks.length > 0) return markdownBlocks[markdownBlocks.length - 1].innerText.trim();
 
   return "";
 }
