@@ -25,6 +25,11 @@
         <div class="empty-hint">输入消息广播给所有参与者</div>
       </div>
     </main>
+    <div class="chat-roster" id="chat-roster">
+      <span class="roster-label">下轮发言</span>
+      <div class="roster-items" id="roster-items"></div>
+      <span class="roster-count" id="roster-count">0 / 0</span>
+    </div>
     <footer class="chat-input-bar">
       <div class="chat-input-wrap">
         <div id="chat-input" class="chat-input" contenteditable="true"
@@ -36,6 +41,7 @@
   </div>
   <script src="popup-markdown.js"></script>
   <script src="popup-bubble-actions.js"></script>
+  <script src="popup-roster.js"></script>
   <script src="popup.js"></script>
 </body>
 </html>

@@ -227,7 +227,11 @@
   async function handleSend() {
     const raw = $input.innerText.trim();
     if (!raw) return;
-    const { targets, text } = parseMentions(raw);
+    const { targets: mentionTargets, text } = parseMentions(raw);
+    // 无 @mention 时用 roster 选中的参与者；@mention 优先级更高
+    const targets = mentionTargets.length
+      ? mentionTargets
+      : (window.ChatRoster?.getSelected() || []);
     $input.innerText = "";
     chrome.runtime.sendMessage({ type: "chatBroadcast", text, targets, images: [] }, (resp) => {
       if (chrome.runtime.lastError) console.warn(chrome.runtime.lastError);
