@@ -20,11 +20,7 @@ const SERVICES = {
 const MAX_PARTICIPANTS = 3;
 const _removingTabs = new Set();
 let windowMode = "tiled"; // "tab" | "tiled"
-let aiScreenMode = "auto"; // "auto" | "current" — auto: 副屏优先，无真副屏回退同屏；current: 强制同屏
-chrome.storage.local.get(["windowMode", "aiScreenMode"], (d) => {
-  if (d.windowMode) windowMode = d.windowMode;
-  if (d.aiScreenMode === "current" || d.aiScreenMode === "auto") aiScreenMode = d.aiScreenMode;
-});
+chrome.storage.local.get("windowMode", (d) => { if (d.windowMode) windowMode = d.windowMode; });
 
 // ── 初始化 ──
 const initPromise = Promise.all([StateMachine.init(), ChatBus.init()]);
@@ -122,8 +118,6 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         case "getState":          sendResponse(StateMachine.getFullState()); break;
         case "getSelectors":      sendResponse(DEFAULT_SELECTORS[msg.platform] || {}); break;
         case "setWindowMode":     windowMode = msg.mode; chrome.storage.local.set({ windowMode: msg.mode }); sendResponse({ ok: true }); break;
-        case "setAiScreenMode":   aiScreenMode = (msg.mode === "current" ? "current" : "auto"); chrome.storage.local.set({ aiScreenMode }); sendResponse({ ok: true, aiScreenMode }); break;
-        case "getAiScreenMode":   sendResponse({ aiScreenMode }); break;
         case "arrangeWindows":
           if (msg.screen) lastKnownScreen = msg.screen;
           sendResponse(await arrangeWindows(msg.screen || lastKnownScreen));
@@ -644,12 +638,7 @@ async function getAiTargetLayout(sidepanelScreen = lastKnownScreen) {
     const current = findDisplayForScreen(fallback, normalized) || normalized.find(d => d.isPrimary) || normalized[0];
     const currentScreen = current?.screen || fallback;
 
-    // 用户强制选 current：直接同屏
-    if (aiScreenMode === "current") {
-      return { screen: currentScreen, displayId: current?.id || null, isDifferentDisplay: false };
-    }
-
-    // 默认 auto：副屏优先 + 不存在真副屏（或全是虚假副屏）则回退同屏
+    // 自动：副屏优先 + 不存在真副屏（或全是虚假副屏）则回退同屏
     if (normalized.length < 2) {
       return { screen: currentScreen, displayId: current?.id || null, isDifferentDisplay: false };
     }

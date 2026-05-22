@@ -827,30 +827,6 @@ $$(".mode-opt").forEach(btn => {
   });
 });
 
-// ── AI 窗口屏幕切换 ──
-chrome.runtime.sendMessage({ type: "getAiScreenMode" }, (resp) => {
-  const mode = resp?.aiScreenMode === "current" ? "current" : "auto";
-  $$(".screen-opt").forEach(b => b.classList.toggle("active", b.dataset.screen === mode));
-});
-$$(".screen-opt").forEach(btn => {
-  btn.addEventListener("click", async () => {
-    $$(".screen-opt").forEach(b => b.classList.remove("active"));
-    btn.classList.add("active");
-    const mode = btn.dataset.screen;
-    await chrome.runtime.sendMessage({ type: "setAiScreenMode", mode });
-    addLog(`AI 窗口位置：${mode === "current" ? "同屏" : "自动（副屏优先）"}`, "info");
-    if (participants.length > 0) {
-      const screen = {
-        width: window.screen.width,
-        height: window.screen.availHeight,
-        left: 0,
-        top: window.screen.availTop || 0,
-      };
-      const r = await chrome.runtime.sendMessage({ type: "arrangeWindows", screen });
-      if (r?.ok) addLog("窗口已重新排列", "success");
-    }
-  });
-});
 
 // ── 当前任务 tabs ──
 function setActiveTask(task) {
