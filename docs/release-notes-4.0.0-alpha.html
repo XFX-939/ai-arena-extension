@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>AI Arena v4.0.0-alpha 发布说明</title>
+<style>
+  :root { --bg:#fafafa; --card:#fff; --ink:#1d1d1f; --ink-soft:#6e6e73; --border:#d2d2d7; --accent:#0071e3; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#1d1d1f; --card:#2c2c2e; --ink:#f5f5f7; --ink-soft:#aeaeb2; --border:#38383a; --accent:#0a84ff; } }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  body { font-family:-apple-system,"PingFang SC",system-ui; background:var(--bg); color:var(--ink); padding:40px 20px; line-height:1.6; }
+  .container { max-width:760px; margin:0 auto; }
+  h1 { font-size:28px; letter-spacing:-0.02em; margin-bottom:8px; }
+  .subtitle { color:var(--ink-soft); margin-bottom:32px; }
+  .card { background:var(--card); border:1px solid var(--border); border-radius:14px; padding:24px 28px; margin-bottom:18px; }
+  h2 { font-size:18px; margin-bottom:12px; }
+  ul { margin-left:20px; }
+  li { margin:4px 0; }
+  .pill { display:inline-block; padding:2px 10px; border-radius:999px; background:var(--accent); color:#fff; font-size:12px; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>AI Arena v4.0.0-alpha <span class="pill">微信群聊视图</span></h1>
+  <p class="subtitle">2026-05-22 · Phase 1（骨架 + 基础广播）</p>
+
+  <div class="card">
+    <h2>新增</h2>
+    <ul>
+      <li><strong>独立 popup 群聊窗口</strong>：点 sidepanel 顶部"🪟 群聊"按钮打开，类似微信电脑端</li>
+      <li><strong>多 AI 聚合时间线</strong>：3 个 AI 的回答以气泡形式落在同一页面，1.5 秒渐进刷新</li>
+      <li><strong>@mention 单发</strong>：输入 @Claude 只发给 Claude，无 @ 则广播</li>
+      <li><strong>富文本兜底</strong>：检测到 Artifact / Canvas / Mermaid / 多图时显示"↗ 跳原页"按钮</li>
+      <li><strong>历史持久化</strong>：chrome.storage.local 保留最近 100 条，popup 重开自动恢复</li>
+      <li><strong>智能选屏</strong>：双屏环境下默认落在主屏右半，位置记忆</li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <h2>体验建议</h2>
+    <ul>
+      <li>推荐启用 <strong>并列模式</strong>（3 个 AI 各自独立 window），群聊 popup 不会踩 Chrome 后台 tab throttling</li>
+      <li>双屏：副屏铺 3 个 AI，主屏右半放群聊 popup</li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <h2>已知限制（Phase 2/3 解决）</h2>
+    <ul>
+      <li>sidepanel 同时提问 / 辩论 / PPT 工坊仍保留，未搬入 popup 抽屉 → Phase 2</li>
+      <li>不拉取 AI 原页已有历史（白板起步） → v1.1 加折叠回溯</li>
+      <li>富文本（Artifact / 图片）一律跳原页，不内嵌渲染 → v3+</li>
+    </ul>
+  </div>
+</div>
+</body>
+</html>
