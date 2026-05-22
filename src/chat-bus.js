@@ -184,7 +184,18 @@ const ChatBus = (() => {
 
   function getLog() { return chatLog.slice(); }
   function clearLog() { chatLog.length = 0; chrome.storage.local.remove(STORAGE_KEYS.log); }
-  async function jumpToOrigin(participantId) { /* Task T10 */ }
+  async function jumpToOrigin(participantId) {
+    const p = (StateMachine.participants || []).find(x => x.service === participantId);
+    if (!p || !p.tabId) return { ok: false, error: "未找到参与者标签页" };
+    try {
+      const tab = await chrome.tabs.get(p.tabId);
+      await chrome.windows.update(tab.windowId, { focused: true });
+      await chrome.tabs.update(p.tabId, { active: true });
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: e.message };
+    }
+  }
 
   return {
     init,
