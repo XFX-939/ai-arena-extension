@@ -435,6 +435,15 @@ async function handleDebateRound(style = "free", guidance = "", concise = false)
   }
   notifyStatus(`第${roundNum}轮辩论已发送`);
 
+  // 同步 popup 群聊：显示用户气泡 + 启动 polling 给每个参与者
+  try {
+    const styleName = DEBATE_STYLES[style]?.name || style;
+    const guidanceSuffix = guidance ? `：${guidance}` : "";
+    const displayText = `⚔️ 第${roundNum}轮辩论·${styleName}${guidanceSuffix}`;
+    const services = sentIds.map(id => StateMachine.getParticipant(id)?.service).filter(Boolean);
+    ChatBus.notifyRoundStart(displayText, services);
+  } catch (e) { console.warn("[chat-bus] notifyRoundStart failed:", e.message); }
+
   return { ok: true, roundNum, activeIds: sentIds, results: sendResults };
 }
 
@@ -474,6 +483,11 @@ async function handleSummary(judgeId, customInstruction = "") {
     await chrome.tabs.update(judge.tabId, { active: true });
     await chrome.windows.update(tab.windowId, { focused: true });
     notifyStatus(`总结已发送给 ${judge.name}`);
+    // 同步 popup 群聊
+    try {
+      const displayText = `📋 裁判总结请求 → ${judge.name}${customInstruction ? '：' + customInstruction : ''}`;
+      ChatBus.notifyRoundStart(displayText, [judge.service]);
+    } catch (e) { console.warn("[chat-bus] notifyRoundStart failed:", e.message); }
     return { ok: true, result };
   } catch (e) { notifyStatus(`总结失败: ${e.message}`); return { ok: false, error: e.message }; }
 }
@@ -657,15 +671,13 @@ async function getAiTargetLayout(sidepanelScreen = lastKnownScreen) {
 }
 
 // 判断两个 screen rect 是否物理重叠（用于过滤虚假副屏）
+// 真副屏 = 完全不重叠（物理上水平/垂直分离）。任何重叠（哪怕 1 像素）都视为虚假副屏。
 function overlapsDisplay(a, b) {
   const ax2 = a.left + a.width, ay2 = a.top + a.height;
   const bx2 = b.left + b.width, by2 = b.top + b.height;
   const overlapW = Math.max(0, Math.min(ax2, bx2) - Math.max(a.left, b.left));
   const overlapH = Math.max(0, Math.min(ay2, by2) - Math.max(a.top, b.top));
-  const overlapArea = overlapW * overlapH;
-  const minArea = Math.min(a.width * a.height, b.width * b.height);
-  // 重叠面积 ≥ 较小屏 50% → 视为虚假副屏
-  return overlapArea / minArea > 0.5;
+  return overlapW > 0 && overlapH > 0;
 }
 
 function normalizeScreen(screen = {}) {

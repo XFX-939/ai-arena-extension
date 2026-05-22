@@ -235,9 +235,8 @@
     // 任务模式分发：非 ask 走 ChatTaskMenu.dispatch
     const menu = window.ChatTaskMenu;
     if (menu && menu.current().task !== "ask") {
-      menu.dispatch(text, targets).then((resp) => {
-        if (!resp?.ok) console.warn("task failed:", resp?.error);
-      });
+      // dispatch 内部已对失败做 alert，这里不再 warn
+      menu.dispatch(text, targets);
       return;
     }
 

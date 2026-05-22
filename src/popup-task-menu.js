@@ -89,7 +89,10 @@
         return new Promise((res) => {
           chrome.runtime.sendMessage(
             { type: "debateRound", style: c.style, guidance: text || "", concise: false },
-            (resp) => res(resp || { ok: false, error: chrome.runtime.lastError?.message })
+            (resp) => {
+              if (resp && !resp.ok) alert(`辩论失败：${resp.error || "未知错误"}`);
+              res(resp || { ok: false, error: chrome.runtime.lastError?.message });
+            }
           );
         });
       }
@@ -97,7 +100,10 @@
         return new Promise((res) => {
           chrome.runtime.sendMessage(
             { type: "summary", judgeId: c.judgeId, customInstruction: text || "" },
-            (resp) => res(resp || { ok: false, error: chrome.runtime.lastError?.message })
+            (resp) => {
+              if (resp && !resp.ok) alert(`总结失败：${resp.error || "未知错误"}`);
+              res(resp || { ok: false, error: chrome.runtime.lastError?.message });
+            }
           );
         });
       }

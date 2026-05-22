@@ -119,6 +119,34 @@ const ChatBus = (() => {
     return { ok: true, msgId, targets: targetList.map(p => p.service) };
   }
 
+  // 外部触发的轮次（辩论 / 总结 / 手动发送）：不再 inject（外部已 inject），只显示用户气泡+启动 polling
+  // displayText = popup 用户气泡显示文本（如"⚔️ 第1轮辩论·自由"）
+  // participantServices = 受影响的参与者 service id 列表（如 ["claude","gemini","chatgpt"]）
+  function notifyRoundStart(displayText, participantServices) {
+    const allParticipants = StateMachine.participants || [];
+    const targetList = participantServices?.length
+      ? allParticipants.filter(p => participantServices.includes(p.service))
+      : allParticipants;
+    if (!targetList.length) return { ok: false, error: "无目标参与者" };
+
+    const msgId = newMsgId();
+    pushLog({ role: "user", msgId, text: displayText, ts: Date.now() });
+    sendToPopup({ type: "chatStreamUpdate", role: "user", msgId, text: displayText });
+
+    for (const p of targetList) {
+      sendToPopup({
+        type: "chatStreamUpdate", role: "ai", msgId,
+        participantId: p.service, text: "", isDone: false,
+      });
+      // 启动该 participant 的 polling（不 inject）
+      if (pollers.has(p.service)) clearInterval(pollers.get(p.service).intervalId);
+      const state = { lastText: "", sameCount: 0, msgId };
+      state.intervalId = setInterval(() => pollOnce(p, state), POLL_INTERVAL_MS);
+      pollers.set(p.service, state);
+    }
+    return { ok: true, msgId };
+  }
+
   async function injectAndPoll(participant, msgId, text) {
     const { tabId, service } = participant;
     try {
@@ -232,6 +260,7 @@ const ChatBus = (() => {
     onWindowRemoved,
     rememberBounds,
     broadcast,
+    notifyRoundStart,
     getLog,
     clearLog,
     jumpToOrigin,

@@ -684,12 +684,16 @@ function schedulePollTick() {
           if (p) {
             p._textLength = v.textLength;
 
-            // 简化判定（v4.0.0-beta）：不再依赖 isStreaming（selector 易失效）。
-            // 任何 textLength > 0 即视为"已开始/结束生成"，由 stableCounts 累计 N 次稳定判定完成。
+            // 判定（v4.0.3-beta）：isStreaming 作为软信号——selector 有效时强约束（不允许在 streaming 中误判完成），
+            // selector 失效时（永远 false）自动退化为只看 lengthChanged。
             if (v.textLength > 0) hasStreamedMap[id] = true;
+            // isStreaming=true 时强制重置稳定计数：哪怕长度暂时不变，仍在流式中（AI 思考停顿等）
+            if (v.isStreaming) {
+              stableCounts[id] = 0;
+            }
 
-            if (v.textLength > 0 && !lengthChanged) {
-              // 文本非空 + 长度不变 → 累计稳定次数（不再要求 streaming indicator 消失）
+            if (v.textLength > 0 && !lengthChanged && !v.isStreaming) {
+              // 文本非空 + 长度不变 + 非流式中 → 累计稳定次数
               stableCounts[id] = (stableCounts[id] || 0) + 1;
               if (stableCounts[id] >= POLL_READY_THRESHOLD && p._pollStatus !== "ready") {
                 p._pollStatus = "ready";
@@ -715,8 +719,8 @@ function schedulePollTick() {
                   }
                 }).catch(() => {});
               }
-            } else if (lengthChanged) {
-              // 长度变化：仍在流式 / 增量生成中，重置稳定计数
+            } else if (lengthChanged || v.isStreaming) {
+              // 长度变化 或 isStreaming=true → 仍在生成中
               stableCounts[id] = 0;
               p._pollStatus = v.textLength > 0 ? "streaming" : "waiting";
             } else {
