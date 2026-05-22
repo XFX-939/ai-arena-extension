@@ -3,7 +3,7 @@
 // 从 sidepanel 缓存的屏幕尺寸；双屏时用于判断 AI 窗口应放到哪块屏幕。
 let lastKnownScreen = { width: 1920, height: 1080, left: 0, top: 0 };
 
-importScripts("selectors-config.js", "state-machine.js", "debate-engine.js");
+importScripts("selectors-config.js", "state-machine.js", "debate-engine.js", "chat-bus.js");
 
 const SERVICES = {
   claude:   { url: "https://claude.ai/new",              name: "Claude" },
@@ -23,7 +23,7 @@ let windowMode = "tiled"; // "tab" | "tiled"
 chrome.storage.local.get("windowMode", (d) => { if (d.windowMode) windowMode = d.windowMode; });
 
 // ── 初始化 ──
-const initPromise = StateMachine.init();
+const initPromise = Promise.all([StateMachine.init(), ChatBus.init()]);
 
 chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
 
@@ -91,6 +91,12 @@ chrome.tabs.onRemoved.addListener((closedId) => {
     StateMachine._broadcastStateUpdate();
   }
 });
+chrome.windows.onRemoved.addListener((windowId) => {
+  ChatBus.onWindowRemoved(windowId);
+});
+chrome.windows.onBoundsChanged?.addListener((win) => {
+  ChatBus.rememberBounds(win.id);
+});
 
 // ── 消息处理 ──
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
@@ -116,6 +122,16 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           if (msg.screen) lastKnownScreen = msg.screen;
           sendResponse(await arrangeWindows(msg.screen || lastKnownScreen));
           break;
+        case "openChatPopup":
+          sendResponse(await ChatBus.openChatPopup()); break;
+        case "chatBroadcast":
+          sendResponse(await ChatBus.broadcast(msg.text, msg.targets || [], msg.images || [])); break;
+        case "chatRestoreLog":
+          sendResponse({ messages: ChatBus.getLog() }); break;
+        case "chatClear":
+          ChatBus.clearLog(); sendResponse({ ok: true }); break;
+        case "chatJumpToOrigin":
+          sendResponse(await ChatBus.jumpToOrigin(msg.participantId)); break;
 
         // ── 手动操作 ──
         case "sendToOne":
