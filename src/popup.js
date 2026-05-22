@@ -226,13 +226,22 @@
 
   async function handleSend() {
     const raw = $input.innerText.trim();
-    if (!raw) return;
     const { targets: mentionTargets, text } = parseMentions(raw);
-    // 无 @mention 时用 roster 选中的参与者；@mention 优先级更高
     const targets = mentionTargets.length
       ? mentionTargets
       : (window.ChatRoster?.getSelected() || []);
     $input.innerText = "";
+
+    // 任务模式分发：非 ask 走 ChatTaskMenu.dispatch
+    const menu = window.ChatTaskMenu;
+    if (menu && menu.current().task !== "ask") {
+      menu.dispatch(text, targets).then((resp) => {
+        if (!resp?.ok) console.warn("task failed:", resp?.error);
+      });
+      return;
+    }
+
+    if (!text) return;
     chrome.runtime.sendMessage({ type: "chatBroadcast", text, targets, images: [] }, (resp) => {
       if (chrome.runtime.lastError) console.warn(chrome.runtime.lastError);
     });

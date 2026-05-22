@@ -201,3 +201,51 @@ body {
 @media (prefers-color-scheme: dark) {
   .roster-item { background: rgba(255,255,255,0.92); }
 }
+
+/* ── 任务模式选择器 ── */
+.task-picker-wrap { position: relative; }
+.task-picker {
+  background: var(--bg); color: var(--ink);
+  border: 1px solid var(--border); border-radius: 8px;
+  padding: 7px 11px; cursor: pointer;
+  font-size: 11px; display: flex; align-items: center; gap: 5px;
+  transition: all 0.15s;
+}
+.task-picker:hover { background: rgba(0,0,0,0.04); }
+@media (prefers-color-scheme: dark) {
+  .task-picker:hover { background: rgba(255,255,255,0.06); }
+}
+.task-picker .icon { font-size: 13px; }
+.task-picker .picked {
+  background: var(--accent); color: #fff;
+  padding: 2px 6px; border-radius: 4px;
+  font-size: 9.5px;
+  margin-left: 2px;
+}
+.task-picker .caret { color: var(--ink-soft); font-size: 9px; }
+.task-menu {
+  position: absolute; bottom: calc(100% + 6px); left: 0;
+  background: var(--card); border: 1px solid var(--border);
+  border-radius: 10px; padding: 6px; min-width: 180px;
+  box-shadow: 0 12px 32px rgba(0,0,0,0.18);
+  z-index: 20;
+}
+.menu-item {
+  padding: 7px 10px; color: var(--ink); font-size: 12px;
+  border-radius: 6px;
+  display: flex; align-items: center; gap: 8px;
+  cursor: pointer; position: relative;
+}
+.menu-item:hover { background: var(--bg); }
+.menu-item.active { background: rgba(10,132,255,0.15); color: var(--accent); }
+.menu-item .em { font-size: 14px; }
+.menu-item .check-mark { margin-left: auto; color: var(--accent); }
+.menu-item.has-sub .caret { margin-left: auto; color: var(--ink-soft); font-size: 9px; }
+.sub-menu {
+  position: absolute; left: 100%; top: -6px;
+  background: var(--card); border: 1px solid var(--border);
+  border-radius: 10px; padding: 6px; min-width: 160px;
+  box-shadow: 0 12px 32px rgba(0,0,0,0.18);
+  display: none;
+}
+.menu-item.has-sub:hover .sub-menu { display: block; }
