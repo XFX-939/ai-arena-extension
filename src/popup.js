@@ -17,6 +17,23 @@
     deepseek: "D", doubao: "豆", qwen: "千",
     kimi: "K", yuanbao: "元", grok: "X",
   };
+  const BRAND_SVG = {
+    huawei: "icons/brands/huawei.svg",
+    claude: "icons/brands/claude.svg",
+    gemini: "icons/brands/gemini.svg",
+    chatgpt: "icons/brands/openai.svg",
+    deepseek: "icons/brands/deepseek.svg",
+    doubao: "icons/brands/doubao.svg",
+    qwen: "icons/brands/qwen.svg",
+    kimi: "icons/brands/kimi.svg",
+    yuanbao: "icons/brands/yuanbao.svg",
+    grok: "icons/brands/grok.svg",
+  };
+  function brandLogoHtml(id) {
+    const src = BRAND_SVG[id];
+    if (!src) return `<span class="msg-avatar-fallback">${AVATAR_INITIAL[id] || "?"}</span>`;
+    return `<img src="${src}" alt="${id}" class="brand-logo">`;
+  }
   const NAME = {
     claude: "Claude", gemini: "Gemini", chatgpt: "ChatGPT",
     deepseek: "DeepSeek", doubao: "豆包", qwen: "千问",
@@ -39,7 +56,9 @@
     const row = document.createElement("div");
     row.className = "msg me";
     row.dataset.msgId = msgId;
-    row.innerHTML = `<div class="msg-body"><div class="msg-bubble">${escapeHtml(text)}</div></div>`;
+    row.innerHTML = `
+      <div class="msg-body"><div class="msg-bubble">${escapeHtml(text)}</div></div>
+      <div class="msg-avatar huawei">${brandLogoHtml('huawei')}</div>`;
     $messages.appendChild(row);
     scrollToBottom();
   }
@@ -54,7 +73,7 @@
     const initial = AVATAR_INITIAL[participantId] || "?";
     const name = NAME[participantId] || participantId;
     row.innerHTML = `
-      <div class="msg-avatar ${avatarClass}">${initial}</div>
+      <div class="msg-avatar ${avatarClass}">${brandLogoHtml(participantId)}</div>
       <div class="msg-body">
         <div class="msg-name">${name}</div>
         <div class="msg-bubble">

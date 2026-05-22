@@ -116,3 +116,9 @@ body {
   cursor: pointer; display: flex; align-items: center; justify-content: center;
 }
 .btn-send:disabled { opacity: 0.4; cursor: not-allowed; }
+.msg-avatar { background: #fff; padding: 4px; }
+.msg-avatar .brand-logo { width: 24px; height: 24px; object-fit: contain; }
+.msg-avatar-fallback { color: var(--ink); font-weight: 600; font-size: 12px; }
+@media (prefers-color-scheme: dark) {
+  .msg-avatar { background: rgba(255,255,255,0.95); }
+}
