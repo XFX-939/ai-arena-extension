@@ -95,19 +95,82 @@
     $messages.scrollTop = $messages.scrollHeight;
   }
 
+  // ── @mention 自动补全 ──
+  const MENTION_CANDIDATES = Object.entries(NAME).map(([id, name]) => ({ id, name }));
+  let mentionActive = false;
+  let mentionStart = -1;
+
+  function detectMentionTrigger() {
+    const sel = window.getSelection();
+    if (!sel.rangeCount) return null;
+    const range = sel.getRangeAt(0);
+    if (range.startContainer.nodeType !== 3) return null;
+    const text = range.startContainer.textContent.slice(0, range.startOffset);
+    const m = text.match(/@(\w*)$/);
+    return m ? { query: m[1], offset: m.index } : null;
+  }
+
+  function showMentionMenu(query) {
+    const q = query.toLowerCase();
+    const list = MENTION_CANDIDATES.filter(c =>
+      c.id.startsWith(q) || c.name.toLowerCase().startsWith(q)
+    );
+    if (!list.length) return hideMentionMenu();
+    $mentionMenu.innerHTML = list.map((c, i) => `
+      <div class="mention-item ${i === 0 ? 'active' : ''}" data-id="${c.id}">
+        <span class="msg-avatar ${AVATAR_CLASS[c.id]}" style="width:18px;height:18px;font-size:9px;">${AVATAR_INITIAL[c.id]}</span>
+        <span>${c.name}</span>
+      </div>
+    `).join("");
+    $mentionMenu.hidden = false;
+    mentionActive = true;
+    $mentionMenu.querySelectorAll(".mention-item").forEach(el => {
+      el.addEventListener("click", () => selectMention(el.dataset.id));
+    });
+  }
+
+  function hideMentionMenu() {
+    $mentionMenu.hidden = true;
+    mentionActive = false;
+  }
+
+  function selectMention(id) {
+    const text = $input.innerText;
+    const replaced = text.replace(/@(\w*)$/, `@${NAME[id]} `);
+    $input.innerText = replaced;
+    // 光标移到末尾
+    const range = document.createRange();
+    range.selectNodeContents($input);
+    range.collapse(false);
+    const sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    hideMentionMenu();
+    $input.focus();
+  }
+
+  $input.addEventListener("input", () => {
+    const trigger = detectMentionTrigger();
+    if (trigger) showMentionMenu(trigger.query);
+    else hideMentionMenu();
+  });
+
   // ── 输入 + 发送 ──
   function parseMentions(text) {
-    // "@Claude xxx" → { targets: ['claude'], text: 'xxx' }
-    // 无 @ → { targets: [], text }
-    const m = text.match(/^(?:@(\w+)\s+)+/);
-    if (!m) return { targets: [], text };
     const targets = [];
     let cleanText = text;
-    const re = /^@(\w+)\s+/;
+    const nameToId = Object.entries(NAME).reduce((acc, [id, name]) => {
+      acc[name.toLowerCase()] = id;
+      acc[id] = id;
+      return acc;
+    }, {});
+    const re = /^@(\S+)\s+/;
     while (re.test(cleanText)) {
       const match = cleanText.match(re);
-      const id = match[1].toLowerCase();
-      if (AVATAR_INITIAL[id]) targets.push(id);
+      const key = match[1].toLowerCase();
+      const id = nameToId[key];
+      if (!id) break;
+      targets.push(id);
       cleanText = cleanText.replace(re, "");
     }
     return { targets, text: cleanText };
@@ -125,6 +188,28 @@
 
   $send.addEventListener("click", handleSend);
   $input.addEventListener("keydown", (e) => {
+    if (mentionActive) {
+      const active = $mentionMenu.querySelector(".mention-item.active");
+      if (e.key === "Enter" || e.key === "Tab") {
+        if (active) {
+          e.preventDefault();
+          selectMention(active.dataset.id);
+          return;
+        }
+      } else if (e.key === "Escape") {
+        e.preventDefault();
+        hideMentionMenu();
+        return;
+      } else if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+        e.preventDefault();
+        const items = [...$mentionMenu.querySelectorAll(".mention-item")];
+        const idx = items.indexOf(active);
+        const next = e.key === "ArrowDown" ? (idx + 1) % items.length : (idx - 1 + items.length) % items.length;
+        items.forEach(el => el.classList.remove("active"));
+        items[next].classList.add("active");
+        return;
+      }
+    }
     if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
       e.preventDefault();
       handleSend();
