@@ -227,16 +227,26 @@ body {
 .empty-hint { font-size: 12px; margin-top: 4px; }
 .msg { display: flex; gap: 8px; align-items: flex-start; }
 .msg.me { justify-content: flex-end; }
-.msg-avatar { width: 32px; height: 32px; border-radius: 6px; flex: 0 0 32px; display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 600; font-size: 12px; }
-.msg-avatar.claude { background: #cc785c; }
-.msg-avatar.gemini { background: #4f8cff; }
-.msg-avatar.chatgpt { background: #10a37f; }
-.msg-avatar.deepseek { background: #4d6bfe; }
-.msg-avatar.doubao { background: #ff7a45; }
-.msg-avatar.qwen { background: #6c5ce7; }
-.msg-avatar.kimi { background: #0abf53; }
-.msg-avatar.yuanbao { background: #d63031; }
-.msg-avatar.grok { background: #1a1a1a; }
+.msg-avatar {
+  width: 32px; height: 32px; border-radius: 6px; flex: 0 0 32px;
+  display: flex; align-items: center; justify-content: center;
+  font-weight: 600; font-size: 12px;
+  background: #fff;
+  padding: 3px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+}
+.msg-avatar .brand-logo { width: 100%; height: 100%; object-fit: contain; display: block; }
+.msg-avatar-fallback { color: var(--ink); font-weight: 700; font-size: 11px; }
+/* 各服务 fallback 字母颜色（仅 svg 缺失时显示） */
+.msg-avatar-fallback.claude { color: #cc785c; }
+.msg-avatar-fallback.gemini { color: #4f8cff; }
+.msg-avatar-fallback.chatgpt { color: #10a37f; }
+.msg-avatar-fallback.deepseek { color: #4d6bfe; }
+.msg-avatar-fallback.doubao { color: #ff7a45; }
+.msg-avatar-fallback.qwen { color: #6c5ce7; }
+.msg-avatar-fallback.kimi { color: #0abf53; }
+.msg-avatar-fallback.yuanbao { color: #d63031; }
+.msg-avatar-fallback.grok { color: #1a1a1a; }
 .msg-body { max-width: 78%; }
 .msg-name { font-size: 11px; color: var(--ink-soft); margin-bottom: 2px; }
 .msg-bubble {
@@ -256,6 +266,99 @@ body {
 }
 .msg-bubble code { font-family: "SF Mono", Consolas, monospace; background: rgba(0,0,0,0.05); padding: 1px 4px; border-radius: 3px; font-size: 0.9em; }
 .msg-bubble pre code { background: none; padding: 0; color: inherit; }
+
+/* ── 完整 markdown 元素样式（v4.0.10） ── */
+.msg-bubble h1, .msg-bubble h2, .msg-bubble h3,
+.msg-bubble h4, .msg-bubble h5, .msg-bubble h6 {
+  margin: 10px 0 6px;
+  line-height: 1.3;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.msg-bubble h1 { font-size: 17px; }
+.msg-bubble h2 { font-size: 15px; }
+.msg-bubble h3 { font-size: 14px; }
+.msg-bubble h4, .msg-bubble h5, .msg-bubble h6 { font-size: 13px; }
+.msg-bubble h1:first-child, .msg-bubble h2:first-child, .msg-bubble h3:first-child { margin-top: 2px; }
+.msg-bubble p { margin: 4px 0; }
+.msg-bubble p:first-child { margin-top: 0; }
+.msg-bubble p:last-child { margin-bottom: 0; }
+.msg-bubble hr {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 10px 0;
+}
+.msg-bubble blockquote {
+  border-left: 3px solid var(--accent);
+  margin: 6px 0;
+  padding: 4px 10px;
+  color: var(--ink-soft);
+  background: rgba(10,132,255,0.05);
+  border-radius: 0 6px 6px 0;
+}
+.msg-bubble ul.md-list, .msg-bubble ol.md-list {
+  margin: 4px 0 4px 18px;
+  padding: 0;
+}
+.msg-bubble ul.md-list ul.md-list,
+.msg-bubble ul.md-list ol.md-list,
+.msg-bubble ol.md-list ul.md-list,
+.msg-bubble ol.md-list ol.md-list {
+  margin-top: 2px; margin-bottom: 2px;
+}
+.msg-bubble li { margin: 2px 0; line-height: 1.5; }
+.msg-bubble li.md-task { list-style: none; margin-left: -16px; }
+.msg-bubble li.md-task input[type="checkbox"] {
+  margin-right: 6px; vertical-align: middle;
+  accent-color: var(--accent);
+}
+.msg-bubble table.md-table {
+  border-collapse: collapse;
+  margin: 8px 0;
+  font-size: 12.5px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+}
+.msg-bubble table.md-table th,
+.msg-bubble table.md-table td {
+  padding: 5px 9px;
+  border: 1px solid var(--border);
+}
+.msg-bubble table.md-table th {
+  background: var(--bg);
+  font-weight: 600;
+  text-align: left;
+}
+.msg-bubble table.md-table tbody tr:nth-child(even) td {
+  background: rgba(0,0,0,0.02);
+}
+@media (prefers-color-scheme: dark) {
+  .msg-bubble table.md-table tbody tr:nth-child(even) td {
+    background: rgba(255,255,255,0.03);
+  }
+  .msg-bubble blockquote { background: rgba(10,132,255,0.1); }
+}
+.msg-bubble img.md-img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 6px;
+  margin: 6px 0;
+  border: 1px solid var(--border);
+}
+.msg-bubble del {
+  color: var(--ink-soft);
+  text-decoration: line-through;
+}
+.msg-bubble a {
+  color: var(--accent);
+  text-decoration: none;
+  border-bottom: 1px dotted var(--accent);
+}
+.msg-bubble a:hover { border-bottom-style: solid; }
 .msg-typing { display: inline-flex; gap: 3px; align-items: center; opacity: 0.6; }
 .msg-typing span { width: 5px; height: 5px; background: currentColor; border-radius: 50%; animation: typing 1.2s ease-in-out infinite; }
 .msg-typing span:nth-child(2) { animation-delay: 0.2s; }
@@ -295,11 +398,8 @@ body {
   cursor: pointer; display: flex; align-items: center; justify-content: center;
 }
 .btn-send:disabled { opacity: 0.4; cursor: not-allowed; }
-.msg-avatar { background: #fff; padding: 4px; }
-.msg-avatar .brand-logo { width: 24px; height: 24px; object-fit: contain; }
-.msg-avatar-fallback { color: var(--ink); font-weight: 600; font-size: 12px; }
 @media (prefers-color-scheme: dark) {
-  .msg-avatar { background: rgba(255,255,255,0.95); }
+  .msg-avatar { background: rgba(255,255,255,0.95); box-shadow: 0 1px 3px rgba(0,0,0,0.3); }
 }
 
 /* ── 紧凑 meta 行 ── */

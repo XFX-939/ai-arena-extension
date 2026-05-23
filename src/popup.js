@@ -31,7 +31,7 @@
   };
   function brandLogoHtml(id) {
     const src = BRAND_SVG[id];
-    if (!src) return `<span class="msg-avatar-fallback">${AVATAR_INITIAL[id] || "?"}</span>`;
+    if (!src) return `<span class="msg-avatar-fallback ${id || ""}">${AVATAR_INITIAL[id] || "?"}</span>`;
     return `<img src="${src}" alt="${id}" class="brand-logo">`;
   }
   const NAME = {
