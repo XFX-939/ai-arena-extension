@@ -58,7 +58,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     if (msg.action === "ping") { sendResponse({ ready: true }); return false; }
     if (msg.action === "inject") { injectAndSend(msg.text).then(sendResponse).catch(e => sendResponse({ site: SITE, status: "error", error: e.message })); return true; }
     if (msg.action === "readResponse") {
-      readLatestResponse().then(text => {
+      readLatestResponse().then(async text => {
+        if (typeof postProcessBlobUrls === "function") { text = await postProcessBlobUrls(text); }
         const { hasRichContent, richTypes } = detectRichContent();
         sendResponse({ site: SITE, text, hasRichContent, richTypes });
       }).catch(e => sendResponse({ site: SITE, text: "", error: e.message }));
@@ -80,9 +81,15 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   } catch (e) { sendResponse({ site: SITE, status: "error", error: e.message }); return false; }
 });
 
+function _extractEl(el) {
+  if (!el) return "";
+  return typeof extractTextWithFences === "function"
+    ? extractTextWithFences(el)
+    : (el.innerText || el.textContent || "");
+}
 function getLastResponseText() {
   const responses = queryBySelectors("response", { all: true });
-  if (responses.length > 0) return responses[responses.length - 1].innerText || "";
+  if (responses.length > 0) return _extractEl(responses[responses.length - 1]);
   return "";
 }
 
@@ -178,12 +185,12 @@ async function readLatestResponse() {
 
   // 优先使用 SelectorManager 配置的选择器
   const responses = queryBySelectors("response", { all: true });
-  if (responses.length > 0) return responses[responses.length - 1].innerText.trim();
+  if (responses.length > 0) return _extractEl(responses[responses.length - 1]).trim();
 
   // 备选选择器
   const modelTurns = document.querySelectorAll("[data-content-type='model']");
   if (modelTurns.length > 0) {
-    return modelTurns[modelTurns.length - 1].innerText.trim();
+    return _extractEl(modelTurns[modelTurns.length - 1]).trim();
   }
 
   return "";

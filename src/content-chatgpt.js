@@ -64,7 +64,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       return true;
     }
     if (msg.action === "readResponse") {
-      readLatestResponse().then(text => {
+      readLatestResponse().then(async text => {
+        if (typeof postProcessBlobUrls === "function") { text = await postProcessBlobUrls(text); }
         const { hasRichContent, richTypes } = detectRichContent();
         sendResponse({ site: SITE, text, hasRichContent, richTypes });
       }).catch(e => sendResponse({ site: SITE, text: "", error: e.message }));
@@ -95,9 +96,15 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
 });
 
+function _extractEl(el) {
+  if (!el) return "";
+  return typeof extractTextWithFences === "function"
+    ? extractTextWithFences(el)
+    : (el.innerText || el.textContent || "");
+}
 function getLastResponseText() {
   const responses = queryBySelectors("response", { all: true });
-  if (responses.length > 0) return responses[responses.length - 1].innerText || "";
+  if (responses.length > 0) return _extractEl(responses[responses.length - 1]);
   return "";
 }
 
@@ -212,10 +219,10 @@ async function readLatestResponse() {
   await sleep(500);
 
   const responses = queryBySelectors("response", { all: true });
-  if (responses.length > 0) return responses[responses.length - 1].innerText.trim();
+  if (responses.length > 0) return _extractEl(responses[responses.length - 1]).trim();
 
   const markdownBlocks = document.querySelectorAll(".markdown.prose");
-  if (markdownBlocks.length > 0) return markdownBlocks[markdownBlocks.length - 1].innerText.trim();
+  if (markdownBlocks.length > 0) return _extractEl(markdownBlocks[markdownBlocks.length - 1]).trim();
 
   return "";
 }

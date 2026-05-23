@@ -11,12 +11,13 @@
       .replace(/'/g, "&#39;");
   }
 
-  // 安全 URL：只接受 http/https，data:image base64 也允许（图像）
+  // 安全 URL：接受 http/https + data:image base64 + blob:（content-script 转成 data 后大多用不到）
   function safeUrl(url) {
     if (typeof url !== "string") return null;
     const u = url.trim();
     if (/^https?:\/\//i.test(u)) return u;
     if (/^data:image\/(png|jpe?g|gif|webp|svg\+xml);base64,/i.test(u)) return u;
+    if (/^blob:/i.test(u)) return u;
     return null;
   }
 

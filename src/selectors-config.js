@@ -47,8 +47,11 @@ const DEFAULT_SELECTORS = {
       "[contenteditable='true']"
     ],
     response: [
+      // v4.3.2: 加宽匹配，捕获 ChatGPT 生图模式下的 image attachment 容器
       '[data-message-author-role="assistant"]',
-      ".markdown.prose"
+      '[data-testid^="conversation-turn-"]:has([data-message-author-role="assistant"])',
+      ".markdown.prose",
+      'div.group\\/turn-messages:last-child'
     ],
     streaming: [
       'button[aria-label="Stop generating"]',

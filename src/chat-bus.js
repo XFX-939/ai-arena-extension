@@ -174,6 +174,31 @@ const ChatBus = (() => {
       const hasRich = !!r?.hasRichContent;
       const richTypes = r?.richTypes || [];
 
+      // v4.3.2: 空文本超时保护——某些 AI（ChatGPT 生图等）readResponse 持续返回 "",
+      // 旧逻辑 `text.length > 0` 永远不真 → polling 卡死。
+      // 现在：空文本累计 EMPTY_TIMEOUT_TICKS 次（每 tick 1.5s）后放弃并标记"未提取到内容"
+      const EMPTY_TIMEOUT_TICKS = 30; // ~45 秒
+      if (text === "") {
+        state.emptyCount = (state.emptyCount || 0) + 1;
+        if (state.emptyCount >= EMPTY_TIMEOUT_TICKS) {
+          clearInterval(state.intervalId);
+          pollers.delete(service);
+          const fallbackText = "⚠ 未提取到内容，请点击气泡的 🔄 重新提取或 ⏭ 跳过本轮。";
+          pushLog({
+            role: "ai", msgId: state.msgId, participantId: service,
+            text: fallbackText, ts: Date.now(), emptyTimeout: true,
+          });
+          sendToPopup({
+            type: "chatStreamUpdate", role: "ai", msgId: state.msgId,
+            participantId: service, text: fallbackText, isDone: true,
+            emptyTimeout: true,
+          });
+          return;
+        }
+      } else {
+        state.emptyCount = 0;
+      }
+
       if (text === state.lastText) {
         state.sameCount++;
         if (state.sameCount >= STREAM_DONE_THRESHOLD && text.length > 0) {
@@ -189,9 +214,6 @@ const ChatBus = (() => {
             participantId: service, text, isDone: true,
             hasRichContent: hasRich, richTypes,
           });
-          // 同步 sidepanel：调 readOneResponse 写入 StateMachine 并广播 stateUpdate
-          // 这样 sidepanel 不必等自己的 startStreamingPoll 判定，立即显示"已完成"
-          // readOneResponse 在 background.js 顶层定义，importScripts 后同一 SW 作用域可直接调
           if (typeof readOneResponse === "function") {
             readOneResponse(participant.id).catch(() => {});
           }

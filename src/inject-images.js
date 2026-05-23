@@ -197,53 +197,85 @@ async function handleInjectImages(images) {
 // ```html ... ``` 块），导致 popup-markdown.js 不认识为代码块。
 // 这里克隆 DOM、把每个 <pre> 替换成 "```<lang>\n<code>\n```" 文本节点，
 // 再 innerText 拿全文。9 个 content-*.js 共用。
+// v4.3.2: blob URL → data URL 转换辅助。content-script 在 AI 域名同源下能 fetch
+// blob URL，转成 data: 后 popup（chrome-extension:// 跨 origin）才能渲染图片。
+async function blobToDataUrl(blobUrl) {
+  try {
+    const r = await fetch(blobUrl);
+    if (!r.ok) return null;
+    const b = await r.blob();
+    return await new Promise(resolve => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = () => resolve(null);
+      reader.readAsDataURL(b);
+    });
+  } catch { return null; }
+}
+
+// v4.3.2: 二次处理——在已生成的 markdown 文本中把 blob:URL 替换成 data:URL
+// 让 readLatestResponse 末尾 await 一次即可，不需大改 _extractEl/getLastResponseText 链路
+async function postProcessBlobUrls(text) {
+  if (!text || typeof text !== "string") return text || "";
+  const blobRegex = /!\[([^\]]*)\]\((blob:[^)\s]+)\)/g;
+  const matches = [...text.matchAll(blobRegex)];
+  if (!matches.length) return text;
+  let out = text;
+  for (const m of matches) {
+    const [full, alt, url] = m;
+    const dataUrl = await blobToDataUrl(url);
+    if (dataUrl) {
+      out = out.split(full).join(`![${alt}](${dataUrl})`);
+    }
+  }
+  return out;
+}
+
+function _doExtractWithFences(clone) {
+  // 公共抽取逻辑（被 extractTextWithFences 和 extractTextWithFencesAsync 复用）
+  const imgs = clone.querySelectorAll("img");
+  imgs.forEach((img, idx) => {
+    const src = img.getAttribute("src") || "";
+    if (!src) { img.remove(); return; }
+    const w = img.naturalWidth || img.width || parseInt(img.getAttribute("width") || "0", 10);
+    const h = img.naturalHeight || img.height || parseInt(img.getAttribute("height") || "0", 10);
+    const isTinyIcon = (w && w < 40) || (h && h < 40);
+    const okHttp = /^https?:\/\//i.test(src);
+    const okData = /^data:image\//i.test(src);
+    const okBlob = /^blob:/i.test(src);
+    if (!(okHttp || okData || okBlob) || isTinyIcon) {
+      img.remove();
+      return;
+    }
+    const alt = img.getAttribute("alt") || `image-${idx + 1}`;
+    const mdImg = `\n\n![${alt}](${src})\n\n`;
+    img.parentNode.replaceChild(document.createTextNode(mdImg), img);
+  });
+  const pres = clone.querySelectorAll("pre");
+  pres.forEach(pre => {
+    const codeEl = pre.querySelector("code") || pre;
+    const text = codeEl.innerText || codeEl.textContent || "";
+    const cls = (codeEl.className || "") + " " + (pre.className || "");
+    const m = cls.match(/(?:language|lang)-([\w+#-]+)/i);
+    const lang = m ? m[1] : "";
+    const fence = "\n```" + lang + "\n" + text.replace(/\n+$/, "") + "\n```\n";
+    pre.parentNode.replaceChild(document.createTextNode(fence), pre);
+  });
+  const inlineCodes = clone.querySelectorAll("code");
+  inlineCodes.forEach(c => {
+    if (c.closest("pre")) return;
+    const t = c.innerText || c.textContent || "";
+    if (!t) return;
+    c.parentNode.replaceChild(document.createTextNode("`" + t + "`"), c);
+  });
+  return clone.innerText || "";
+}
+
 function extractTextWithFences(el) {
   if (!el) return "";
   try {
     const clone = el.cloneNode(true);
-    // v4.3.0：先处理 <img>，转成 markdown ![](url)
-    // 过滤：只保留 http(s)/data:image 的图，且尺寸 > 50x50（排除 favicon/emoji/装饰）
-    const imgs = clone.querySelectorAll("img");
-    imgs.forEach((img, idx) => {
-      const src = img.getAttribute("src") || "";
-      if (!src) { img.remove(); return; }
-      // 过滤无意义图标
-      const w = img.naturalWidth || img.width || parseInt(img.getAttribute("width") || "0", 10);
-      const h = img.naturalHeight || img.height || parseInt(img.getAttribute("height") || "0", 10);
-      const isTinyIcon = (w && w < 40) || (h && h < 40);
-      // src 类型过滤
-      const okHttp = /^https?:\/\//i.test(src);
-      const okData = /^data:image\//i.test(src);
-      // blob: 暂时也保留（Gemini 等用 blob URL；popup 无法跨域访问 blob，但显示链接也行）
-      const okBlob = /^blob:/i.test(src);
-      if (!(okHttp || okData || okBlob) || isTinyIcon) {
-        img.remove();
-        return;
-      }
-      const alt = img.getAttribute("alt") || `image-${idx + 1}`;
-      const mdImg = `\n\n![${alt}](${src})\n\n`;
-      img.parentNode.replaceChild(document.createTextNode(mdImg), img);
-    });
-    // 处理 <pre><code> → ```lang ... ```
-    const pres = clone.querySelectorAll("pre");
-    pres.forEach(pre => {
-      const codeEl = pre.querySelector("code") || pre;
-      const text = codeEl.innerText || codeEl.textContent || "";
-      const cls = (codeEl.className || "") + " " + (pre.className || "");
-      const m = cls.match(/(?:language|lang)-([\w+#-]+)/i);
-      const lang = m ? m[1] : "";
-      const fence = "\n```" + lang + "\n" + text.replace(/\n+$/, "") + "\n```\n";
-      pre.parentNode.replaceChild(document.createTextNode(fence), pre);
-    });
-    // 行内 <code> 也加反引号
-    const inlineCodes = clone.querySelectorAll("code");
-    inlineCodes.forEach(c => {
-      if (c.closest("pre")) return;
-      const t = c.innerText || c.textContent || "";
-      if (!t) return;
-      c.parentNode.replaceChild(document.createTextNode("`" + t + "`"), c);
-    });
-    return clone.innerText || "";
+    return _doExtractWithFences(clone);
   } catch (e) {
     return el.innerText || "";
   }

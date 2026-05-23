@@ -55,7 +55,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     if (msg.action === "ping") { sendResponse({ ready: true }); return false; }
     if (msg.action === "inject") { injectAndSend(msg.text).then(sendResponse).catch(e => sendResponse({ site: SITE, status: "error", error: e.message })); return true; }
     if (msg.action === "readResponse") {
-      readLatestResponse().then(text => {
+      readLatestResponse().then(async text => {
+        if (typeof postProcessBlobUrls === "function") { text = await postProcessBlobUrls(text); }
         const { hasRichContent, richTypes } = detectRichContent();
         sendResponse({ site: SITE, text, hasRichContent, richTypes });
       }).catch(e => sendResponse({ site: SITE, text: "", error: e.message }));
@@ -77,9 +78,16 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   } catch (e) { sendResponse({ site: SITE, status: "error", error: e.message }); return false; }
 });
 
+function _extractEl(el) {
+  if (!el) return "";
+  return typeof extractTextWithFences === "function"
+    ? extractTextWithFences(el)
+    : (el.innerText || el.textContent || "");
+}
+
 function getLastResponseText() {
   const responses = queryBySelectors("response", { all: true });
-  if (responses.length > 0) return responses[responses.length - 1].innerText || "";
+  if (responses.length > 0) return _extractEl(responses[responses.length - 1]);
   return "";
 }
 
@@ -152,7 +160,7 @@ async function injectAndSend(text) {
 async function readLatestResponse() {
   await sleep(500);
   const responses = queryBySelectors("response", { all: true });
-  if (responses.length > 0) return responses[responses.length - 1].innerText.trim();
+  if (responses.length > 0) return _extractEl(responses[responses.length - 1]).trim();
   const prose = document.querySelectorAll('.markdown-body, .prose, [class*="markdown"]');
   if (prose.length > 0) return prose[prose.length - 1].innerText.trim();
   return "";

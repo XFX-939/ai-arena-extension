@@ -63,7 +63,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       return true;
     }
     if (msg.action === "readResponse") {
-      readLatestResponse().then(text => {
+      readLatestResponse().then(async text => {
+        if (typeof postProcessBlobUrls === "function") { text = await postProcessBlobUrls(text); }
         const { hasRichContent, richTypes } = detectRichContent();
         sendResponse({ site: SITE, text, hasRichContent, richTypes });
       }).catch(e => sendResponse({ site: SITE, text: "", error: e.message }));
@@ -94,9 +95,15 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
 });
 
+function _extractEl(el) {
+  if (!el) return "";
+  return typeof extractTextWithFences === "function"
+    ? extractTextWithFences(el)
+    : (el.innerText || el.textContent || "");
+}
 function getLastResponseText() {
   const responses = queryBySelectors("response", { all: true });
-  if (responses.length > 0) return responses[responses.length - 1].innerText || "";
+  if (responses.length > 0) return _extractEl(responses[responses.length - 1]);
   return "";
 }
 
@@ -179,34 +186,28 @@ async function readLatestResponse() {
 }
 
 function getLastAssistantText() {
-  // 优先使用 SelectorManager 配置的选择器
   const responses = queryBySelectors("response", { all: true });
-  if (responses.length > 0) return responses[responses.length - 1].innerText.trim();
+  if (responses.length > 0) return _extractEl(responses[responses.length - 1]).trim();
 
-  // 策略 1: data-testid（旧版）
   const testIdMsgs = document.querySelectorAll("[data-testid='chat-message-content']");
-  if (testIdMsgs.length > 0) return testIdMsgs[testIdMsgs.length - 1].innerText.trim();
+  if (testIdMsgs.length > 0) return _extractEl(testIdMsgs[testIdMsgs.length - 1]).trim();
 
-  // 策略 2: .font-claude-message
   const claudeMsgs = document.querySelectorAll(".font-claude-message");
-  if (claudeMsgs.length > 0) return claudeMsgs[claudeMsgs.length - 1].innerText.trim();
+  if (claudeMsgs.length > 0) return _extractEl(claudeMsgs[claudeMsgs.length - 1]).trim();
 
-  // 策略 3: [data-is-streaming] 容器的父级（流式结束后仍保留）
   const streamContainers = document.querySelectorAll("[data-is-streaming]");
   if (streamContainers.length > 0) {
     const last = streamContainers[streamContainers.length - 1];
-    const text = last.innerText.trim();
+    const text = _extractEl(last).trim();
     if (text) return text;
   }
 
-  // 策略 4: 对话区域内所有 .prose / .markdown 块
   const proseBlocks = document.querySelectorAll(".prose, .markdown");
-  if (proseBlocks.length > 0) return proseBlocks[proseBlocks.length - 1].innerText.trim();
+  if (proseBlocks.length > 0) return _extractEl(proseBlocks[proseBlocks.length - 1]).trim();
 
-  // 策略 5: 通用 — 找对话容器内最后一个较长文本块
   const allBlocks = document.querySelectorAll('[class*="message"], [class*="response"], [class*="assistant"]');
   for (let i = allBlocks.length - 1; i >= 0; i--) {
-    const text = allBlocks[i].innerText.trim();
+    const text = _extractEl(allBlocks[i]).trim();
     if (text.length > 50) return text;
   }
 
