@@ -13,6 +13,63 @@
   ];
   const SERVICE_MAP = Object.fromEntries(ALL_SERVICES.map(s => [s.id, s]));
 
+  // v4.3.14: 模型实力榜（静态数据，2026-05 lmarena Chatbot Arena）
+  // 升级模型 / 刷新分数时在这里更新一次即可
+  const LEADERBOARD_DATE = "2026-05";
+  const LEADERBOARD_URL = "https://lmarena.ai/leaderboard";
+  const LEADERBOARD = [
+    { service: "chatgpt",  model: "GPT-5",           elo: 1402, grade: "S+" },
+    { service: "claude",   model: "Claude Opus 4.6", elo: 1389, grade: "S+" },
+    { service: "gemini",   model: "Gemini 2.5 Pro",  elo: 1370, grade: "S"  },
+    { service: "grok",     model: "Grok 4",          elo: 1320, grade: "S"  },
+    { service: "deepseek", model: "DeepSeek V3.5",   elo: 1295, grade: "A"  },
+    { service: "kimi",     model: "Kimi K2",         elo: 1240, grade: "A"  },
+    { service: "qwen",     model: "千问 Max",        elo: 1180, grade: "B"  },
+    { service: "doubao",   model: "豆包 1.5 Pro",    elo: 1090, grade: "C"  },
+    { service: "yuanbao",  model: "元宝 (混元)",     elo: 1050, grade: "C"  },
+  ];
+
+  function renderLeaderboard() {
+    const maxElo = Math.max(...LEADERBOARD.map(m => m.elo));
+    const minElo = Math.min(...LEADERBOARD.map(m => m.elo));
+    const span = Math.max(1, maxElo - minElo);
+    return `
+      <div class="rp-section-title rp-lb-title" style="margin-top:18px">
+        <span>模型实力榜</span>
+        <span class="rp-lb-meta">${LEADERBOARD_DATE} · Chatbot Arena</span>
+      </div>
+      <div class="rp-leaderboard">
+        ${LEADERBOARD.map(m => {
+          const meta = SERVICE_MAP[m.service] || { logo: null };
+          const pct = ((m.elo - minElo) / span * 100).toFixed(1);
+          const gradeCls = m.grade.replace("+", "plus");
+          return `
+            <div class="rp-lb-row" data-service="${m.service}" title="${escapeHtml(m.model)} · Elo ${m.elo}">
+              <div class="rp-lb-head">
+                ${meta.logo ? `<img class="rp-lb-logo" src="${meta.logo}" alt="">` : ""}
+                <span class="rp-lb-name">${escapeHtml(m.model)}</span>
+                <span class="rp-lb-grade-tiny rp-lb-grade-${gradeCls}">${escapeHtml(m.grade)}</span>
+              </div>
+              <div class="rp-lb-bar-wrap">
+                <div class="rp-lb-bar-bg"><div class="rp-lb-bar-fill rp-lb-bar-${gradeCls}" style="width:${pct}%"></div></div>
+                <span class="rp-lb-elo">${m.elo}</span>
+              </div>
+            </div>`;
+        }).join("")}
+        <a class="rp-lb-source" href="${LEADERBOARD_URL}" target="_blank" rel="noopener noreferrer">数据来源 · lmarena.ai ↗</a>
+      </div>
+    `;
+  }
+
+  function renderManifesto() {
+    return `
+      <div class="rp-manifesto">
+        <div class="rp-manifesto-line1">不要把时间浪费在低端 AI 上。</div>
+        <div class="rp-manifesto-line2">别为省几块订阅费，赔上你的认知差距 —— 这个时代，投资自己才是最好的投资。</div>
+      </div>
+    `;
+  }
+
   const state = { participants: [], layoutMode: "tiled" };
   // v4.3.11: 成员状态直接跟主区气泡同步，不依赖 StateMachine 字段更新
   // key=service, value="busy"|"ready"|"error"|"skipped"
@@ -87,6 +144,9 @@
         <button class="rp-mode-btn ${state.layoutMode === "tab" ? "active" : ""}" data-mode="tab" title="所有 AI 同窗口不同标签页">Tab</button>
         <button class="rp-mode-btn ${state.layoutMode === "tiled" ? "active" : ""}" data-mode="tiled" title="每个 AI 独立窗口并列">并列</button>
       </div>
+
+      ${renderLeaderboard()}
+      ${renderManifesto()}
     `;
 
     root.querySelectorAll(".rp-add-btn").forEach(b => {

@@ -573,6 +573,130 @@ body {
   box-shadow: 0 4px 12px rgba(0,0,0,0.15);
   min-width: 140px; padding: 4px; z-index: 10;
 }
+/* v4.3.14: 模型实力榜（进度条版）+ 作者标语 */
+.rp-lb-title { display: flex; align-items: center; gap: 6px; }
+.rp-lb-meta {
+  font-size: 9px;
+  color: var(--ink-soft);
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+}
+.rp-leaderboard { margin: 4px 0 10px; }
+.rp-lb-row {
+  padding: 8px 4px;
+  border-bottom: 1px solid var(--border);
+}
+.rp-lb-row:last-of-type { border-bottom: none; }
+.rp-lb-head {
+  display: flex; align-items: center; gap: 7px;
+  margin-bottom: 5px;
+}
+.rp-lb-logo {
+  width: 16px; height: 16px;
+  border-radius: 4px;
+  object-fit: contain;
+  background: #fff;
+  padding: 1.5px;
+  flex-shrink: 0;
+}
+.rp-lb-name {
+  color: var(--ink);
+  font-weight: 500;
+  font-size: 11px;
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.rp-lb-grade-tiny {
+  font-size: 9px;
+  font-weight: 800;
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-family: "SF Mono", "Consolas", monospace;
+  letter-spacing: 0.02em;
+  min-width: 18px;
+  text-align: center;
+  flex-shrink: 0;
+}
+.rp-lb-bar-wrap {
+  display: flex; align-items: center; gap: 6px;
+}
+.rp-lb-bar-bg {
+  flex: 1;
+  height: 5px;
+  background: var(--bg);
+  border-radius: 999px;
+  overflow: hidden;
+}
+.rp-lb-bar-fill {
+  height: 100%;
+  border-radius: 999px;
+  transition: width 0.6s cubic-bezier(0.34,1.56,0.64,1);
+}
+.rp-lb-elo {
+  font-family: "SF Mono", "Consolas", monospace;
+  font-size: 10px;
+  color: var(--ink-soft);
+  min-width: 32px;
+  text-align: right;
+  letter-spacing: -0.02em;
+}
+.rp-lb-source {
+  display: block;
+  text-align: center;
+  font-size: 10px;
+  color: var(--ink-soft);
+  margin-top: 8px;
+  text-decoration: none;
+  padding: 4px;
+  font-family: "SF Mono", "Consolas", monospace;
+  letter-spacing: 0.02em;
+}
+.rp-lb-source:hover { color: var(--accent); }
+
+/* 分级配色 — grade pill */
+.rp-lb-grade-Splus {
+  background: linear-gradient(135deg, #ffd700, #c084fc);
+  color: #1a1a2e;
+  box-shadow: 0 1px 3px rgba(192,132,252,0.4);
+}
+.rp-lb-grade-S { background: linear-gradient(135deg, #0a84ff, #00d4ff); color: #fff; }
+.rp-lb-grade-A { background: linear-gradient(135deg, #34c759, #30d158); color: #fff; }
+.rp-lb-grade-B { background: linear-gradient(135deg, #ff9f0a, #ffb340); color: #fff; }
+.rp-lb-grade-C { background: var(--ink-soft); color: #fff; }
+
+/* progress bar 填充色 */
+.rp-lb-bar-Splus { background: linear-gradient(90deg, #ffd700, #c084fc); box-shadow: 0 0 6px rgba(192,132,252,0.3); }
+.rp-lb-bar-S { background: linear-gradient(90deg, #0a84ff, #00d4ff); }
+.rp-lb-bar-A { background: linear-gradient(90deg, #34c759, #30d158); }
+.rp-lb-bar-B { background: linear-gradient(90deg, #ff9f0a, #ffb340); }
+.rp-lb-bar-C { background: var(--ink-soft); }
+
+/* 作者标语 */
+.rp-manifesto {
+  margin-top: 14px;
+  padding: 12px;
+  border-radius: 8px;
+  background: linear-gradient(135deg, rgba(10,132,255,0.08), rgba(192,132,252,0.08));
+  border-left: 3px solid var(--accent);
+}
+.rp-manifesto-line1 {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--ink);
+  letter-spacing: -0.01em;
+  margin-bottom: 6px;
+  line-height: 1.45;
+}
+.rp-manifesto-line2 {
+  font-size: 10.5px;
+  color: var(--ink-soft);
+  line-height: 1.6;
+  letter-spacing: -0.005em;
+}
+
 /* v4.3.6: AI 长文折叠 */
 .msg-bubble-foldable {
   position: relative;
