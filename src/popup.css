@@ -359,6 +359,74 @@ body {
   border-bottom: 1px dotted var(--accent);
 }
 .msg-bubble a:hover { border-bottom-style: solid; }
+
+/* ── 现代细滚动条（v4.0.12）—— 所有可滚动区统一 ── */
+.chat-messages,
+.sidebar-list,
+.chat-input,
+.task-menu,
+.sub-menu,
+.mention-menu,
+.drawer-panel {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(127, 127, 127, 0.25) transparent;
+}
+.chat-messages::-webkit-scrollbar,
+.sidebar-list::-webkit-scrollbar,
+.chat-input::-webkit-scrollbar,
+.task-menu::-webkit-scrollbar,
+.sub-menu::-webkit-scrollbar,
+.mention-menu::-webkit-scrollbar,
+.drawer-panel::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+.chat-messages::-webkit-scrollbar-track,
+.sidebar-list::-webkit-scrollbar-track,
+.chat-input::-webkit-scrollbar-track,
+.task-menu::-webkit-scrollbar-track,
+.sub-menu::-webkit-scrollbar-track,
+.mention-menu::-webkit-scrollbar-track,
+.drawer-panel::-webkit-scrollbar-track {
+  background: transparent;
+}
+.chat-messages::-webkit-scrollbar-thumb,
+.sidebar-list::-webkit-scrollbar-thumb,
+.chat-input::-webkit-scrollbar-thumb,
+.task-menu::-webkit-scrollbar-thumb,
+.sub-menu::-webkit-scrollbar-thumb,
+.mention-menu::-webkit-scrollbar-thumb,
+.drawer-panel::-webkit-scrollbar-thumb {
+  background: rgba(127, 127, 127, 0.25);
+  border-radius: 3px;
+  transition: background 0.15s;
+}
+.chat-messages:hover::-webkit-scrollbar-thumb,
+.sidebar-list:hover::-webkit-scrollbar-thumb,
+.chat-input:hover::-webkit-scrollbar-thumb,
+.drawer-panel:hover::-webkit-scrollbar-thumb {
+  background: rgba(127, 127, 127, 0.45);
+}
+.chat-messages::-webkit-scrollbar-thumb:hover,
+.sidebar-list::-webkit-scrollbar-thumb:hover,
+.chat-input::-webkit-scrollbar-thumb:hover,
+.task-menu::-webkit-scrollbar-thumb:hover,
+.sub-menu::-webkit-scrollbar-thumb:hover,
+.mention-menu::-webkit-scrollbar-thumb:hover,
+.drawer-panel::-webkit-scrollbar-thumb:hover {
+  background: rgba(127, 127, 127, 0.65);
+}
+/* 表格横向滚动条同款 */
+.msg-bubble table.md-table::-webkit-scrollbar {
+  height: 6px;
+}
+.msg-bubble table.md-table::-webkit-scrollbar-thumb {
+  background: rgba(127, 127, 127, 0.25);
+  border-radius: 3px;
+}
+.msg-bubble table.md-table::-webkit-scrollbar-thumb:hover {
+  background: rgba(127, 127, 127, 0.55);
+}
 .msg-typing { display: inline-flex; gap: 3px; align-items: center; opacity: 0.6; }
 .msg-typing span { width: 5px; height: 5px; background: currentColor; border-radius: 50%; animation: typing 1.2s ease-in-out infinite; }
 .msg-typing span:nth-child(2) { animation-delay: 0.2s; }
