@@ -45,20 +45,31 @@ chrome.action.onClicked.addListener(async () => {
 });
 
 // ── 右键菜单 ──
-// v4.3.9: MV3 SW 重启 / 扩展 reload 时 onInstalled 可能重复触发 → 同 id create 报错。
-// 修复：先 removeAll 兜底，create 加 callback 显式消费 lastError 避免 Chrome 错误页。
-chrome.runtime.onInstalled.addListener(() => {
-  chrome.contextMenus.removeAll(() => {
-    chrome.contextMenus.create(
-      { id: "ai-arena-ask", title: "用 AI Arena 提问", contexts: ["selection"] },
-      () => {
-        if (chrome.runtime.lastError) {
-          console.warn("[Arena] contextMenus.create:", chrome.runtime.lastError.message);
-        }
-      }
-    );
-  });
-});
+// v4.3.9/12: MV3 SW 重启 / 扩展 reload 时 onInstalled 可能重复触发 → 同 id create 报错。
+// 双层兜底：① async/await + try/catch 任一步骤失败都不抛 ② lastError 也消费
+async function ensureContextMenu() {
+  try {
+    await chrome.contextMenus.removeAll();
+  } catch (e) {
+    console.warn("[Arena] contextMenus.removeAll:", e?.message);
+  }
+  try {
+    await chrome.contextMenus.create({
+      id: "ai-arena-ask",
+      title: "用 AI Arena 提问",
+      contexts: ["selection"],
+    });
+  } catch (e) {
+    // 即使理论上 removeAll 后 create 不该重复，也兜底吞掉
+    console.warn("[Arena] contextMenus.create:", e?.message);
+  }
+  // 显式消费 lastError 防 Chrome 错误页弹红字
+  if (chrome.runtime.lastError) {
+    console.warn("[Arena] runtime.lastError consumed:", chrome.runtime.lastError.message);
+  }
+}
+chrome.runtime.onInstalled.addListener(ensureContextMenu);
+chrome.runtime.onStartup.addListener(ensureContextMenu);
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   if (info.menuItemId === "ai-arena-ask" && info.selectionText) {
     chrome.runtime.sendMessage({ type: "contextMenuText", text: info.selectionText }).catch(() => {});

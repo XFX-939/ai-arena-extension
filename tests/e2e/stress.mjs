@@ -191,7 +191,7 @@ try {
   // 测试组 D：版本号 4 处同步
   // ─────────────────────────────────────────
   console.log("\n=== D. 版本号同步（feedback_ai_arena_version_bump 铁律） ===");
-  const expectedVersion = "4.3.11-beta";
+  const expectedVersion = "4.3.12-beta";
   const manifest = JSON.parse(fs.readFileSync(path.join(EXT_PATH, "manifest.json"), "utf8"));
   const popupHtml = fs.readFileSync(path.join(EXT_PATH, "popup.html"), "utf8");
   const sidepanelHtml = fs.readFileSync(path.join(EXT_PATH, "sidepanel.html"), "utf8");
@@ -378,6 +378,29 @@ try {
   check("H7: CSP 不拦截外部 https 图（无 Refused to load 报错）",
     cspErrors.length === 0,
     cspErrors.join(" | ").slice(0, 200));
+
+  // H9 (v4.3.12): contextMenus 双层兜底防 duplicate id 报错
+  const bgSrc = fs.readFileSync(path.join(EXT_PATH, "background.js"), "utf8");
+  check("H9a: contextMenus.removeAll + create 用 async/await 包裹",
+    /async function ensureContextMenu/.test(bgSrc));
+  check("H9b: removeAll/create 都在 try/catch 内",
+    (bgSrc.match(/try\s*\{[\s\S]{0,80}chrome\.contextMenus\.(removeAll|create)/g) || []).length >= 2);
+  check("H9c: 显式消费 chrome.runtime.lastError",
+    /lastError consumed|lastError\?\.message|lastError\.message/.test(bgSrc));
+  check("H9d: 同时绑定 onInstalled + onStartup",
+    /onInstalled\.addListener\(ensureContextMenu\)/.test(bgSrc)
+    && /onStartup\.addListener\(ensureContextMenu\)/.test(bgSrc));
+  // 实际触发模拟：直接调 SW 内的 ensureContextMenu() 两次，验证幂等不抛
+  const ctxMenuTest = await sw.evaluate(async () => {
+    if (typeof ensureContextMenu !== "function") return { ok: false, reason: "ensureContextMenu not exposed" };
+    let threwOnFirst = null, threwOnSecond = null;
+    try { await ensureContextMenu(); } catch (e) { threwOnFirst = e.message; }
+    try { await ensureContextMenu(); } catch (e) { threwOnSecond = e.message; }
+    try { await ensureContextMenu(); } catch (e) {}
+    return { ok: !threwOnFirst && !threwOnSecond, threwOnFirst, threwOnSecond };
+  });
+  check("H9e: 连续多次调 ensureContextMenu 不抛错（幂等）",
+    ctxMenuTest.ok === true, JSON.stringify(ctxMenuTest));
 
   // H8: manifest 含 img-src 放开
   const manifestSrc = fs.readFileSync(path.join(EXT_PATH, "manifest.json"), "utf8");
