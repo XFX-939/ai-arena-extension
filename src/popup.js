@@ -206,8 +206,8 @@
     if (!list.length) return hideMentionMenu();
     $mentionMenu.innerHTML = list.map((c, i) => `
       <div class="mention-item ${i === 0 ? 'active' : ''}" data-id="${c.id}">
-        <span class="msg-avatar ${AVATAR_CLASS[c.id]}" style="width:18px;height:18px;font-size:9px;">${AVATAR_INITIAL[c.id]}</span>
-        <span>${c.name}</span>
+        <img class="mention-logo" src="${BRAND_SVG[c.id] || ''}" alt="${c.id}">
+        <span class="mention-name">${c.name}</span>
       </div>
     `).join("");
     $mentionMenu.hidden = false;
