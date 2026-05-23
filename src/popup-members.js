@@ -14,6 +14,9 @@
   const SERVICE_MAP = Object.fromEntries(ALL_SERVICES.map(s => [s.id, s]));
 
   const state = { participants: [], layoutMode: "tiled" };
+  // v4.3.11: 成员状态直接跟主区气泡同步，不依赖 StateMachine 字段更新
+  // key=service, value="busy"|"ready"|"error"|"skipped"
+  const streamStatus = new Map();
 
   function escapeHtml(s) {
     return String(s).replace(/[&<>"']/g, c => ({
@@ -22,12 +25,20 @@
   }
 
   function statusOf(p) {
+    // v4.3.11: 优先使用 streamStatus（跟主区气泡同步）
+    const s = streamStatus.get(p.service);
+    if (s) return s === "skipped" ? "" : s;
     if (p.error) return "error";
     if (p.isStreaming || p.responsePreview && !p.response) return "busy";
     if (p.response || p.responsePreview) return "ready";
     return "";
   }
   function statusTextOf(p) {
+    const s = streamStatus.get(p.service);
+    if (s === "busy") return "输出中…";
+    if (s === "ready") return "已完成";
+    if (s === "error") return "失败";
+    if (s === "skipped") return "已跳过";
     if (p.error) return "失败";
     if (p.isStreaming || p.responsePreview && !p.response) return "输出中…";
     if (p.response || p.responsePreview) return "已完成";
@@ -163,14 +174,40 @@
   document.addEventListener("state:updated", refresh);
 
   // 监听 background 推送参与者状态变化（state-machine._broadcastStateUpdate）
+  // v4.3.11: 同时监听 chatStreamUpdate 让成员状态跟主区气泡完全同步
   try {
     chrome.runtime.onMessage.addListener((msg) => {
       if (msg?.type === "stateUpdate") {
         if (Array.isArray(msg.participants)) state.participants = msg.participants;
         render();
+        return;
+      }
+      if (msg?.type === "chatStreamUpdate" && msg.role === "user") {
+        // 新一轮 → 清空旧状态，等 AI 端 polling 自动设 busy
+        streamStatus.clear();
+        render();
+        return;
+      }
+      if (msg?.type === "chatStreamUpdate" && msg.role === "ai" && msg.participantId) {
+        const svc = msg.participantId;
+        let next = "busy";
+        if (msg.skipped) next = "skipped";
+        else if (msg.emptyTimeout) next = "error";
+        else if (msg.isDone) next = "ready";
+        streamStatus.set(svc, next);
+        render();
+        return;
+      }
+      if (msg?.type === "chatClear" || msg?.type === "hardReset") {
+        streamStatus.clear();
+        render();
       }
     });
   } catch (_) {}
+  // 用户主动发新一轮 → 之前的 ready/error 应清空标记，等新一轮 streaming 重新设置
+  document.addEventListener("roster:changed", () => {
+    // 不主动清除（避免抖动），仅在下次 user msg 推来时由 chat-bus 自然变成 busy
+  });
 
   window.ChatMembers = { refresh, render };
 
