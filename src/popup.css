@@ -733,6 +733,55 @@ body {
   letter-spacing: -0.005em;
 }
 
+/* v4.4.0: 辩论总结卡片（学术 arXiv 风格 HTML 报告） */
+.msg-summary .msg-bubble.summary-bubble {
+  background: linear-gradient(135deg, rgba(10,94,58,0.06), rgba(10,132,255,0.06)) !important;
+  border: 1px solid var(--accent);
+  border-left: 3px solid #0a5e3a;
+  padding: 0;
+  overflow: hidden;
+}
+.summary-pitch {
+  padding: 12px 14px;
+  display: flex; flex-direction: column; gap: 4px;
+  font-size: 13px;
+}
+.summary-pitch strong {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--ink);
+  letter-spacing: -0.01em;
+}
+.summary-pitch-meta {
+  font-size: 11px;
+  color: var(--ink-soft);
+  font-family: "SF Mono", "Consolas", monospace;
+  letter-spacing: 0.02em;
+}
+.summary-iframe {
+  width: 100%;
+  height: 600px;
+  border: 0;
+  background: #fdfdfb;
+  display: block;
+  border-top: 1px solid var(--border);
+}
+.msg-summary .msg-meta .acts button[data-act^="summary-"] {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--accent);
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-family: inherit;
+  margin-left: 2px;
+}
+.msg-summary .msg-meta .acts button[data-act^="summary-"]:hover {
+  background: rgba(10,132,255,0.08);
+  border-color: var(--accent);
+}
+
 /* v4.3.6: AI 长文折叠 */
 .msg-bubble-foldable {
   position: relative;

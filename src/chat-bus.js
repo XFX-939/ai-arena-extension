@@ -222,6 +222,14 @@ const ChatBus = (() => {
           if (typeof readOneResponse === "function") {
             readOneResponse(participant.id).catch(() => {});
           }
+          // v4.4.0: 如果当前 polling 完成的 AI 是 pendingSummary 的裁判，触发 finalize
+          try {
+            const ps = StateMachine.pendingSummary;
+            if (ps && ps.judgeId === participant.id && text && typeof finalizeDebateSummary === "function") {
+              StateMachine.pendingSummary = null;
+              finalizeDebateSummary(text, ps).catch(e => console.warn("[chat-bus] finalize summary fail:", e?.message));
+            }
+          } catch (e) { console.warn("[chat-bus] pendingSummary check fail:", e?.message); }
         }
       } else {
         state.lastStableKey = stableKey;

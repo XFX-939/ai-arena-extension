@@ -20,6 +20,9 @@ const StateMachine = {
   lastSentByPid: {},
   // 每个参与者最近一次已接受的 AI 回复；即使进入下一轮清空 response，也用于拒绝上一轮残留。
   lastAcceptedByPid: {},
+  // v4.4.0: 待解析的裁判总结 — { judgeId, judgeName, judgeService, customInstruction, ts }
+  // chat-bus polling 完成时检查；匹配则触发 finalizeDebateSummary
+  pendingSummary: null,
 
   // ── 初始化（从 storage 恢复） ──
   async init() {

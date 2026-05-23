@@ -19,6 +19,35 @@
     const bubble = row.querySelector(".msg-bubble");
     const text = bubble?.innerText?.trim() || "";
 
+    if (act === "summary-toggle") {
+      // v4.4.0: 展开/收起辩论总结 iframe
+      const iframe = row.querySelector(".summary-iframe");
+      if (iframe) {
+        const showing = iframe.style.display !== "none";
+        iframe.style.display = showing ? "none" : "block";
+        btn.textContent = showing ? "▾ 查看完整报告" : "▴ 收起报告";
+      }
+      return;
+    }
+    if (act === "summary-open") {
+      // v4.4.0: 用 blob URL 在新标签打开（chrome-extension:// 下可以）
+      const html = row._summaryHtml;
+      if (!html) return;
+      try {
+        const blob = new Blob([html], { type: "text/html;charset=utf-8" });
+        const url = URL.createObjectURL(blob);
+        window.open(url, "_blank");
+        setTimeout(() => URL.revokeObjectURL(url), 60000);
+      } catch (e) { alert("打开失败: " + e.message); }
+      return;
+    }
+    if (act === "summary-redownload") {
+      // v4.4.0: 再次下载（用 message 让 background 调 chrome.downloads）
+      const did = parseInt(btn.dataset.did, 10);
+      if (isNaN(did)) return;
+      chrome.downloads.show(did);
+      return;
+    }
     if (act === "fold-toggle") {
       // v4.3.6: 展开/收起长文
       const bubble = btn.closest(".msg-bubble");

@@ -374,10 +374,48 @@
       if (role === "user") appendUserMessage(text, msgId);
       else updateAIBubble(msgId, participantId, text, isDone, hasRichContent, richTypes);
     } else if (msg.type === "chatLogPayload") {
-      // Task 11: 历史回放
       restoreLog(msg.messages);
+    } else if (msg.type === "debateSummaryReady") {
+      // v4.4.0: 裁判输出的 HTML 总结
+      appendDebateSummaryCard(msg.html, msg.meta, msg.downloadId);
     }
   });
+
+  // v4.4.0: 辩论总结 HTML 卡片
+  function appendDebateSummaryCard(html, meta, downloadId) {
+    ensureEmptyHidden();
+    const row = document.createElement("div");
+    row.className = "msg ai msg-summary";
+    row.innerHTML = `
+      <div class="msg-avatar" style="background:#0a5e3a;color:#fff;font-weight:700">📋</div>
+      <div class="msg-body">
+        <div class="msg-meta">
+          <span class="name">辩论总结</span>
+          <span class="time">${escapeHtml(meta?.date || "")}</span>
+          <span class="stat done"><span class="pip"></span>已生成</span>
+          <span class="acts">
+            <button data-act="summary-toggle" title="展开/收起报告">▾ 查看完整报告</button>
+            <button data-act="summary-open" title="在新标签页打开">↗</button>
+            ${downloadId != null ? `<button data-act="summary-redownload" data-did="${downloadId}" title="再次下载">⬇</button>` : ""}
+          </span>
+        </div>
+        <div class="msg-bubble summary-bubble">
+          <div class="summary-pitch">
+            <strong>${escapeHtml(meta?.topic || "辩论总结")}</strong>
+            <span class="summary-pitch-meta">${escapeHtml(meta?.participants?.join(" · ") || "")} · ${escapeHtml(meta?.rounds || 0)} 轮</span>
+          </div>
+          <iframe class="summary-iframe" sandbox="allow-same-origin" srcdoc="${escapeAttr(html)}" style="display:none"></iframe>
+        </div>
+      </div>`;
+    $messages.appendChild(row);
+    // 保存 HTML 引用供 open 按钮使用
+    row._summaryHtml = html;
+    scrollToBottom();
+  }
+
+  function escapeAttr(s) {
+    return String(s).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+  }
 
   function restoreLog(messages) {
     if (!messages?.length) return;

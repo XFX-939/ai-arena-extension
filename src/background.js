@@ -3,7 +3,7 @@
 // 从 sidepanel 缓存的屏幕尺寸；双屏时用于判断 AI 窗口应放到哪块屏幕。
 let lastKnownScreen = { width: 1920, height: 1080, left: 0, top: 0 };
 
-importScripts("selectors-config.js", "state-machine.js", "debate-engine.js", "chat-bus.js", "ppt-prompts.js");
+importScripts("selectors-config.js", "state-machine.js", "debate-engine.js", "chat-bus.js", "ppt-prompts.js", "debate-summary-template.js");
 
 const SERVICES = {
   claude:   { url: "https://claude.ai/new",              name: "Claude" },
@@ -565,6 +565,17 @@ async function handleSummary(judgeId, customInstruction = "") {
   );
 
   StateMachine.setFlowState(FlowState.SUMMARY);
+  // v4.4.0: 标记 pendingSummary — chat-bus polling 完成时识别为总结输出 → 渲染 HTML
+  StateMachine.pendingSummary = {
+    judgeId: judge.id,
+    judgeName: judge.name,
+    judgeService: judge.service,
+    customInstruction,
+    topic: StateMachine.debateSession.originalQuestion || "",
+    rounds: StateMachine.debateSession.rounds.length || 0,
+    participants: StateMachine.participants.map(p => p.name),
+    ts: Date.now(),
+  };
   notifyStatus(`正在由 ${judge.name} 总结...`);
   try {
     StateMachine.setLastSent(judge.id, prompt);
@@ -572,19 +583,81 @@ async function handleSummary(judgeId, customInstruction = "") {
     if (result?.status === "error") {
       const error = result.error || "注入失败";
       notifyStatus(`总结失败: ${error}`);
+      StateMachine.pendingSummary = null;
       return { ok: false, error };
     }
     const tab = await chrome.tabs.get(judge.tabId);
     await chrome.tabs.update(judge.tabId, { active: true });
     await chrome.windows.update(tab.windowId, { focused: true });
     notifyStatus(`总结已发送给 ${judge.name}`);
-    // 同步 popup 群聊
     try {
       const displayText = `📋 裁判总结请求 → ${judge.name}${customInstruction ? '：' + customInstruction : ''}`;
       ChatBus.notifyRoundStart(displayText, [judge.service]);
     } catch (e) { console.warn("[chat-bus] notifyRoundStart failed:", e.message); }
     return { ok: true, result };
-  } catch (e) { notifyStatus(`总结失败: ${e.message}`); return { ok: false, error: e.message }; }
+  } catch (e) {
+    StateMachine.pendingSummary = null;
+    notifyStatus(`总结失败: ${e.message}`);
+    return { ok: false, error: e.message };
+  }
+}
+
+// v4.4.0: 解析 AI 输出的 JSON → 渲染 arXiv 风格 HTML → 写文件 + 推送 popup
+async function finalizeDebateSummary(rawText, pending) {
+  try {
+    const data = self.DebateSummaryTemplate?.parse(rawText);
+    if (!data) {
+      console.warn("[summary] JSON 解析失败，原文回退展示");
+      notifyStatus("总结 JSON 解析失败，已显示原文");
+      return { ok: false, error: "parse_failed" };
+    }
+    const date = new Date(pending.ts).toISOString().slice(0, 10);
+    const duration_min = Math.max(1, Math.round((Date.now() - pending.ts) / 60000));
+    const html = self.DebateSummaryTemplate.render(data, {
+      topic: pending.topic,
+      date,
+      participants: pending.participants,
+      rounds: pending.rounds,
+      duration_min,
+    });
+    if (!html) return { ok: false, error: "render_failed" };
+
+    // 写文件（chrome.downloads → 下载目录）
+    let downloadId = null;
+    try {
+      const fileName = `debate-summary-${date}-${pending.ts}.html`;
+      const blob = new Blob([html], { type: "text/html;charset=utf-8" });
+      // SW 中无法 URL.createObjectURL Blob（MV3 限制），用 data URL
+      const reader = new FileReader();
+      const dataUrl = await new Promise((res, rej) => {
+        reader.onload = () => res(reader.result);
+        reader.onerror = rej;
+        reader.readAsDataURL(blob);
+      });
+      downloadId = await chrome.downloads.download({
+        url: dataUrl,
+        filename: `ai-arena/${fileName}`,
+        saveAs: false,
+      });
+    } catch (e) {
+      console.warn("[summary] 写文件失败:", e?.message);
+    }
+
+    // 推送 popup 渲染 iframe 预览
+    chrome.runtime.sendMessage({
+      type: "debateSummaryReady",
+      html,
+      data,
+      meta: { ...pending, date, duration_min },
+      downloadId,
+    }).catch(() => {});
+
+    notifyStatus(`📋 辩论总结 HTML 已生成${downloadId ? `（已保存到下载目录）` : ""}`);
+    return { ok: true, downloadId };
+  } catch (e) {
+    console.warn("[summary] finalize fail:", e);
+    return { ok: false, error: e.message };
+  }
 }
 
 // ── 无标记完成检测（文本稳定 + stop button 消失） ──

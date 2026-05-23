@@ -191,7 +191,7 @@ try {
   // 测试组 D：版本号 4 处同步
   // ─────────────────────────────────────────
   console.log("\n=== D. 版本号同步（feedback_ai_arena_version_bump 铁律） ===");
-  const expectedVersion = "4.3.17-beta";
+  const expectedVersion = "4.4.0-beta";
   const manifest = JSON.parse(fs.readFileSync(path.join(EXT_PATH, "manifest.json"), "utf8"));
   const popupHtml = fs.readFileSync(path.join(EXT_PATH, "popup.html"), "utf8");
   const sidepanelHtml = fs.readFileSync(path.join(EXT_PATH, "sidepanel.html"), "utf8");
@@ -423,6 +423,79 @@ try {
   check("H10: reextractOne 后 p.response 被更新（避免辩论'回答不足'）",
     reextractTest.response === "RE-EXTRACTED-TEXT",
     JSON.stringify(reextractTest));
+
+  // ─────────────────────────────────────────
+  // I. v4.4.0 辩论 HTML 总结
+  // ─────────────────────────────────────────
+  console.log("\n=== I. v4.4.0 辩论 HTML 总结 ===");
+
+  // I1: DebateSummaryTemplate.parse() 容错
+  const parseTest = await sw.evaluate(() => {
+    const tpl = self.DebateSummaryTemplate;
+    if (!tpl) return { hasTpl: false };
+    return {
+      hasTpl: true,
+      // 围栏 + 前言
+      withFence: !!tpl.parse('好的，以下是：\n```json\n{"topic":"X","consensus":["a"]}\n```\n'),
+      // 中文引号
+      withCnQuotes: !!tpl.parse('{"topic":"测试","consensus":["a"]}'.replace(/"/g,'"').replace(/^"/,'"')),
+      // 尾随逗号
+      withTrailingComma: !!tpl.parse('{"topic":"X","consensus":["a",],}'),
+      // 完全错误
+      garbage: tpl.parse("这不是 JSON"),
+    };
+  });
+  check("I1a: DebateSummaryTemplate 暴露", parseTest.hasTpl === true);
+  check("I1b: parse 容错 ```json 围栏", parseTest.withFence === true);
+  check("I1c: parse 容错尾随逗号", parseTest.withTrailingComma === true);
+  check("I1d: parse 完全错误 → null", parseTest.garbage === null);
+
+  // I2: render() 输出合法 HTML
+  const renderTest = await sw.evaluate(() => {
+    const data = {
+      topic: "测试命题",
+      core_conclusion: "测试核心结论",
+      consensus: ["共识 1", "共识 2"],
+      disagreements: ["分歧 1"],
+      open_questions: [],
+      key_arguments: [{ title: "论点 1", supports: [{ ai: "Claude", text: "支持理由" }], opposes: [] }],
+      highlights: [{ ai: "GPT", text: "金句", round: 4 }],
+      next_steps: ["方向 1"],
+      rounds: [{ num: 1, title: "开局", voices: [{ ai: "Claude", text: "立场" }] }],
+    };
+    const html = self.DebateSummaryTemplate.render(data, { topic: "测试", date: "2026-05-24", participants: ["Claude","GPT"], rounds: 1 });
+    return {
+      starts: html.startsWith("<!doctype html>"),
+      hasTopic: html.includes("测试命题"),
+      hasConsensus: html.includes("共识 1"),
+      hasArgTitle: html.includes("论点 1"),
+      hasQuote: html.includes("金句"),
+      hasRound: html.includes("开局"),
+      hasFooter: html.includes("DEBATE SUMMARY"),
+      length: html.length,
+    };
+  });
+  check("I2a: render 输出 HTML doctype 开头", renderTest.starts === true);
+  check("I2b: 含命题", renderTest.hasTopic === true);
+  check("I2c: 含共识列表", renderTest.hasConsensus === true);
+  check("I2d: 含论点标题", renderTest.hasArgTitle === true);
+  check("I2e: 含金句", renderTest.hasQuote === true);
+  check("I2f: 含轮次回顾", renderTest.hasRound === true);
+  check("I2g: 含 footer", renderTest.hasFooter === true);
+  check("I2h: HTML 长度合理 (>2000 chars)", renderTest.length > 2000);
+
+  // I3: buildSummaryPrompt 引导输出 JSON
+  const bgSrc2 = fs.readFileSync(path.join(EXT_PATH, "debate-engine.js"), "utf8");
+  check("I3: buildSummaryPrompt 含 JSON schema 引导",
+    /直接输出一份 JSON/.test(bgSrc2) && /core_conclusion/.test(bgSrc2) && /key_arguments/.test(bgSrc2));
+
+  // I4: manifest 含 downloads 权限
+  const manSrc = fs.readFileSync(path.join(EXT_PATH, "manifest.json"), "utf8");
+  check("I4: manifest 含 downloads 权限", /"downloads"/.test(manSrc));
+
+  // I5: state-machine 加 pendingSummary 字段
+  const smSrc = fs.readFileSync(path.join(EXT_PATH, "state-machine.js"), "utf8");
+  check("I5: StateMachine.pendingSummary 字段", /pendingSummary/.test(smSrc));
 
   // H8: manifest 含 img-src 放开
   const manifestSrc = fs.readFileSync(path.join(EXT_PATH, "manifest.json"), "utf8");
