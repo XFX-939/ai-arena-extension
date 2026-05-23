@@ -45,8 +45,19 @@ chrome.action.onClicked.addListener(async () => {
 });
 
 // ── 右键菜单 ──
+// v4.3.9: MV3 SW 重启 / 扩展 reload 时 onInstalled 可能重复触发 → 同 id create 报错。
+// 修复：先 removeAll 兜底，create 加 callback 显式消费 lastError 避免 Chrome 错误页。
 chrome.runtime.onInstalled.addListener(() => {
-  chrome.contextMenus.create({ id: "ai-arena-ask", title: "用 AI Arena 提问", contexts: ["selection"] });
+  chrome.contextMenus.removeAll(() => {
+    chrome.contextMenus.create(
+      { id: "ai-arena-ask", title: "用 AI Arena 提问", contexts: ["selection"] },
+      () => {
+        if (chrome.runtime.lastError) {
+          console.warn("[Arena] contextMenus.create:", chrome.runtime.lastError.message);
+        }
+      }
+    );
+  });
 });
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   if (info.menuItemId === "ai-arena-ask" && info.selectionText) {
