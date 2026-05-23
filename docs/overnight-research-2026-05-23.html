@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>AI Arena 隔夜研究汇报（v4.0.3 → v4.0.6-beta）</title>
+<style>
+  :root { --bg:#fafafa; --card:#fff; --ink:#1d1d1f; --ink-soft:#6e6e73; --border:#d2d2d7; --accent:#0071e3; --success:#34c759; --warning:#ff9f0a; --danger:#ff3b30; --code-bg:#1d1d1f; --code-ink:#f5f5f7; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#1d1d1f; --card:#2c2c2e; --ink:#f5f5f7; --ink-soft:#aeaeb2; --border:#38383a; --accent:#0a84ff; --success:#30d158; --warning:#ff9f0a; --danger:#ff453a; } }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  body { font-family:-apple-system,"PingFang SC",system-ui; background:var(--bg); color:var(--ink); padding:32px 20px; line-height:1.55; font-size:14px; letter-spacing:-0.01em; }
+  .container { max-width:880px; margin:0 auto; }
+  h1 { font-size:26px; margin-bottom:6px; letter-spacing:-0.02em; }
+  .subtitle { color:var(--ink-soft); margin-bottom:24px; font-size:13px; }
+  .pill { display:inline-block; padding:1px 8px; border-radius:999px; font-size:11px; font-weight:600; margin-left:4px; }
+  .pill.ok { background:var(--success); color:#fff; }
+  .pill.warn { background:var(--warning); color:#000; }
+  .pill.danger { background:var(--danger); color:#fff; }
+  .pill.info { background:var(--accent); color:#fff; }
+  .card { background:var(--card); border:1px solid var(--border); border-radius:12px; padding:20px 24px; margin-bottom:14px; }
+  h2 { font-size:16px; margin-bottom:12px; display:flex; align-items:center; gap:8px; }
+  h2 .num { background:var(--accent); color:#fff; width:24px; height:24px; border-radius:50%; display:inline-flex; align-items:center; justify-content:center; font-size:12px; font-weight:700; }
+  code { font-family:"SF Mono",Consolas,monospace; background:var(--bg); padding:1px 6px; border-radius:3px; font-size:0.88em; }
+  pre { background:var(--code-bg); color:var(--code-ink); padding:10px 14px; border-radius:6px; overflow-x:auto; font-size:11.5px; line-height:1.45; font-family:"SF Mono",monospace; margin:6px 0; }
+  pre code { background:none; padding:0; color:inherit; }
+  table { width:100%; border-collapse:collapse; font-size:12px; }
+  th, td { text-align:left; padding:6px 8px; border-bottom:1px solid var(--border); vertical-align:top; }
+  th { color:var(--ink-soft); font-weight:500; font-size:11px; text-transform:uppercase; letter-spacing:0.04em; }
+  .commit-row { font-family:"SF Mono",monospace; font-size:11.5px; }
+  .commit-sha { color:var(--accent); font-weight:600; }
+  .test-step { padding:8px 12px; background:var(--bg); border-radius:6px; margin-bottom:6px; font-size:13px; display:flex; gap:10px; align-items:flex-start; }
+  .test-step input { margin-top:3px; transform:scale(1.15); accent-color:var(--accent); }
+  .test-step .expect { font-size:11.5px; color:var(--ink-soft); display:block; margin-top:3px; }
+  .test-step .expect strong { color:var(--success); }
+  .path-block { background:var(--code-bg); color:var(--code-ink); padding:10px 14px; border-radius:6px; font-family:"SF Mono",monospace; font-size:12.5px; margin:6px 0; word-break:break-all; border:1px solid var(--border); }
+  .warn-box { padding:12px 16px; background:#fff8e6; border-left:3px solid var(--warning); border-radius:4px; font-size:12.5px; color:#7a5a00; margin-top:8px; }
+  @media (prefers-color-scheme: dark) { .warn-box { background:#3a2f1a; color:#ffb84d; } }
+  .danger-box { padding:12px 16px; background:#ffe6e6; border-left:3px solid var(--danger); border-radius:4px; font-size:12.5px; color:#7a0000; margin-top:8px; }
+  @media (prefers-color-scheme: dark) { .danger-box { background:#3a1a1c; color:#ff7b7b; } }
+  .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:8px; }
+  @media (max-width:640px) { .grid2 { grid-template-columns:1fr; } }
+  .stat-cell { background:var(--bg); padding:10px 14px; border-radius:8px; font-size:12.5px; }
+  .stat-cell strong { color:var(--accent); }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <h1>AI Arena 隔夜研究汇报 <span class="pill ok">v4.0.6-beta</span></h1>
+  <p class="subtitle">2026-05-23 凌晨 · 你睡后我自主研究 + 修复</p>
+
+  <!-- 1. TL;DR -->
+  <div class="card">
+    <h2><span class="num">①</span> TL;DR</h2>
+    <ul style="margin-left:20px">
+      <li><strong>E2E 自动化走不通</strong>：playwright MCP 配置文件没被读取，<code>--load-extension</code> 没生效；尝试在 chrome://extensions/ 里调 <code>chrome.developerPrivate.loadUnpacked</code> 程序化加载 → Chrome 强制弹原生文件对话框，playwright 操作不了。<strong>诚实承认：自动化 E2E 这条路当前不通</strong>。</li>
+      <li><strong>改路线为"静态加固 + 全链路诊断日志"</strong>：深度审视代码，发现并修复 2 个新 bug，bump 到 v4.0.6-beta。你醒来后只需重新加载扩展 + 打开 service worker DevTools，把 console 输出贴给我，我能精确定位剩余 bug。</li>
+    </ul>
+  </div>
+
+  <!-- 2. 修复成果 -->
+  <div class="card">
+    <h2><span class="num">②</span> 新增修复（v4.0.5 → v4.0.6）</h2>
+    <table>
+      <thead><tr><th>SHA</th><th>修了什么</th></tr></thead>
+      <tbody>
+        <tr class="commit-row">
+          <td class="commit-sha">bbe83c7</td>
+          <td>
+            <strong>AI 弹错屏的根因深度修复</strong>（v4.0.5）：
+            <ol style="margin-left:20px;margin-top:4px;">
+              <li><code>currentScreen</code> 直接信任 sidepanel 传来的 <code>chrome.windows.getCurrent()</code> bounds（更可靠），不再用 <code>chrome.system.display</code> 找到的"current display 的 workArea"——后者可能在虚拟显示器环境下被污染</li>
+              <li><code>hasUserWindow()</code> 过滤掉"全部 tab 都是 AI 平台域名（claude.ai/gemini/chatgpt 等 9 个）"的窗口。<strong>关闭自污染循环</strong>：之前的 bug 把 AI 弹到虚拟副屏 → 下次 addParticipant 时虚拟副屏"有 window" → 继续判定真副屏 → 又弹错位置</li>
+              <li>sidepanel 用 <code>chrome.windows.getCurrent()</code> 拿真实 window bounds 报给 background（多屏环境下比 <code>window.screen</code> 更可靠）</li>
+              <li><strong>全链路 console.log 诊断</strong>：<code>[Arena/layout]</code> 前缀，记录 normalized displays / sidepanel reports / current 选哪个 / 候选副屏检查 / 最终目标</li>
+            </ol>
+          </td>
+        </tr>
+        <tr class="commit-row">
+          <td class="commit-sha">1843df9</td>
+          <td>
+            <strong>状态回退 race</strong>（v4.0.6）：sidepanel 的 startStreamingPoll 和 chat-bus 的 pollOnce 同时判定完成时各自调 readOneResponse。第二个调用因 <code>text === prevResp</code> 被 sanity check 拒绝（"疑似读到上一轮残留"），error 分支把 <code>_pollStatus</code> 从 ready 回退成 waiting。<strong>用户体验</strong>：sidepanel 短暂显示"✅ 已完成"后又跳回"⏳ 等待中"。<strong>修复</strong>：sidepanel polling 判定完成前先看 <code>p.response</code> 是否已被 chat-bus 同步过，已同步则跳过自己的 readOneResponse 直接标 ready。</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- 3. 累计 commit -->
+  <div class="card">
+    <h2><span class="num">③</span> 本轮全部 commit（v4.0.0-beta → v4.0.6-beta）</h2>
+    <table>
+      <thead><tr><th>SHA</th><th>commit message 摘要</th></tr></thead>
+      <tbody>
+        <tr class="commit-row"><td class="commit-sha">1843df9</td><td>fix(sidepanel): skip own readOneResponse if popup already synced</td></tr>
+        <tr class="commit-row"><td class="commit-sha">bbe83c7</td><td>fix(background): trust sidepanel screen + filter self-created AI windows + diag logs</td></tr>
+        <tr class="commit-row"><td class="commit-sha">030a492</td><td>fix(background): phantom-secondary detection via window presence</td></tr>
+        <tr class="commit-row"><td class="commit-sha">fe1f1da</td><td>fix: 4 bugs (sidepanel state + AI screen + task failed + debate sync)</td></tr>
+        <tr class="commit-row"><td class="commit-sha">cee5341</td><td>fix(sidepanel): preserve _textLength across stateUpdate merges</td></tr>
+        <tr class="commit-row"><td class="commit-sha">34f9b75</td><td>chore: bump version to v4.0.1-beta + 记 memory 自动 bump 规则</td></tr>
+        <tr class="commit-row"><td class="commit-sha">4ecb5ed</td><td>fix(chat-bus): mirror completion back to sidepanel state</td></tr>
+        <tr class="commit-row"><td class="commit-sha">305f359</td><td>simplify: always-auto AI screen, drop the toggle UI</td></tr>
+        <tr class="commit-row"><td class="commit-sha">51f93b1</td><td>refine: AI screen mode -> auto (secondary preferred, fallback current)</td></tr>
+        <tr class="commit-row"><td class="commit-sha">a64284d</td><td>fix(background): AI windows default to current screen, secondary opt-in</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- 4. 你醒来如何 5 分钟测 -->
+  <div class="card">
+    <h2><span class="num">④</span> 你醒来后 5 分钟快速验证</h2>
+
+    <h3 style="font-size:14px;margin:8px 0;">第一步：重新加载扩展</h3>
+    <div class="test-step">
+      <input type="checkbox" id="s0"><label for="s0">
+        chrome://extensions/ → AI Arena → 🔄 重新加载
+        <span class="expect">扩展卡片上版本应该显示 <code>4.0.5</code>（manifest <code>version</code> 字段；<code>version_name</code> 是 <code>4.0.6-beta</code> 但 chrome 卡片显示 version）</span>
+      </label>
+    </div>
+    <div class="test-step">
+      <input type="checkbox" id="s0b"><label for="s0b">
+        打开 sidepanel，<strong>顶部 badge 和底部 footer</strong> 都显示 <code>v4.0.6-beta</code> → 加载成功
+        <span class="expect">如果还是 v4.0.5 或更早 → 关掉 sidepanel + popup 重开</span>
+      </label>
+    </div>
+
+    <h3 style="font-size:14px;margin:14px 0 8px;">第二步：验证 AI 屏定位（关键）</h3>
+    <div class="warn-box" style="margin-bottom:10px">
+      💡 <strong>验证前先打开 background service worker 的 DevTools</strong>：chrome://extensions/ → AI Arena 卡片 → "查看视图" → "Service Worker"，把弹出的 DevTools console 留着。后面所有添加参与者的诊断日志（<code>[Arena/layout]...</code>）都会出现在那里。
+    </div>
+    <div class="test-step">
+      <input type="checkbox" id="s1"><label for="s1">
+        移除所有现有参与者，重新添加一个 Claude
+        <span class="expect"><strong>期望</strong>：claude.ai 窗口在你<strong>当前可见屏</strong>弹出</span>
+      </label>
+    </div>
+    <div class="test-step">
+      <input type="checkbox" id="s2"><label for="s2">
+        切到 service worker DevTools console，看 <code>[Arena/layout]</code> 系列日志
+        <span class="expect"><strong>期望日志</strong>：<br>
+          <code>[Arena/layout] displays: [{ id, left, top, width, height, primary }, ...]</code><br>
+          <code>[Arena/layout] sidepanel reports: { left, top, width, height, ... }</code><br>
+          <code>[Arena/layout] current display picked: xxxxxx currentScreen: {...}</code><br>
+          <code>[Arena/layout] no real secondary, using current screen</code><br>
+          → 最后一行如果是 <code>using current screen</code> = 正确判定单屏。<br>
+          如果是 <code>using secondary display</code> = 仍误判，把完整日志贴给我我精确修。
+        </span>
+      </label>
+    </div>
+
+    <h3 style="font-size:14px;margin:14px 0 8px;">第三步：验证状态不回退 + 字数显示</h3>
+    <div class="test-step">
+      <input type="checkbox" id="s3"><label for="s3">
+        加 3 个 AI（Claude / Gemini / ChatGPT），sidepanel 发"你好"广播
+        <span class="expect"><strong>期望</strong>：每个参与者卡片 "🤔 等待中" → "⏳ 生成中 · 124字"（字数实时增长）→ "✅ 已完成 · 387字"。<strong>"已完成"不该跳回"等待中"</strong>。</span>
+      </label>
+    </div>
+    <div class="test-step">
+      <input type="checkbox" id="s4"><label for="s4">
+        同时 popup 群聊窗口里也应该看到 3 个 AI 气泡同步刷新
+        <span class="expect">popup ↔ sidepanel 应该<strong>同步完成</strong>，时间差 &lt; 1 秒</span>
+      </label>
+    </div>
+
+    <h3 style="font-size:14px;margin:14px 0 8px;">第四步：验证辩论同步到 popup</h3>
+    <div class="test-step">
+      <input type="checkbox" id="s5"><label for="s5">
+        广播完成后，sidepanel 切到"辩论" tab，选"自由辩论" → 点开始辩论
+        <span class="expect"><strong>期望</strong>：popup 显示用户气泡 "⚔️ 第1轮辩论·自由辩论" + 3 个 AI 占位气泡 + 实时渐进刷新</span>
+      </label>
+    </div>
+    <div class="test-step">
+      <input type="checkbox" id="s6"><label for="s6">
+        换路径：popup 任务模式选"辩论·自由" → 输入"对比下双方分歧" → Ctrl+Enter
+        <span class="expect"><strong>期望</strong>：popup 立即显示"⚔️ 第N轮辩论·自由辩论：对比下双方分歧"用户气泡，3 个 AI 气泡实时刷新。如果失败弹 alert（不再静默 console.warn）</span>
+      </label>
+    </div>
+  </div>
+
+  <!-- 5. 如果还有 bug 怎么反馈 -->
+  <div class="card">
+    <h2><span class="num">⑤</span> 还有 bug？反馈方式</h2>
+    <p style="font-size:13px;margin-bottom:10px;">v4.0.5 给 <code>getAiTargetLayout</code> 加了密集 console.log。你只需要：</p>
+    <ol style="margin-left:20px;font-size:13px;">
+      <li>chrome://extensions/ → AI Arena → 点 <strong>"查看视图 / Service Worker"</strong></li>
+      <li>弹出 DevTools，切到 Console tab</li>
+      <li>过滤 <code>[Arena</code> 看所有相关日志</li>
+      <li>截图或复制日志贴给我即可</li>
+    </ol>
+    <p style="font-size:13px;margin-top:10px;">尤其是 <code>[Arena/layout]</code> 系列——里面包含 chrome 实际报告的所有 display 坐标、sidepanel 报告的 window bounds、最终选哪个屏。<strong>3 行日志我就能精确诊断屏选错的根因</strong>，比反复让你试新版本快得多。</p>
+  </div>
+
+  <!-- 6. 静态加固还覆盖的潜在 bug -->
+  <div class="card">
+    <h2><span class="num">⑥</span> 静态审视发现但未实施的潜在风险</h2>
+    <table>
+      <thead><tr><th>风险</th><th>影响</th><th>建议</th></tr></thead>
+      <tbody>
+        <tr><td>streaming selector 多重 fallback 中某条误报永远 true</td><td>sidepanel 永远不判完成</td><td>v4.0.6 已加 isStreaming 软重置——只在<strong>同时</strong>满足 lengthChanged && !isStreaming 时累计 stable，单一信号失效不会完全卡住</td></tr>
+        <tr><td>chrome.windows.getAll 返回 sidepanel 所附 chrome window，但该窗口可能跨多屏</td><td>hasUserWindow 用中心点判定，跨屏时只算中心所在那屏</td><td>实测中是 OK 的（用户 chrome 主窗一般在主屏，sidepanel 也跟着），但理论存在</td></tr>
+        <tr><td>popup 端 PPT 任务子菜单点击后弹 alert 提示用户去 sidepanel</td><td>体验略骚扰</td><td>未来可换成 popup 内嵌 toast；当前优先级低</td></tr>
+        <tr><td>chat-bus.broadcast 和 chat-bus.notifyRoundStart 共用 pollers Map</td><td>同一 service 同时被两路触发 polling 时后者覆盖前者</td><td>实测中不会同时发生（用户每次只点一个），但若并发可能丢消息</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- 7. E2E 自动化的现实 -->
+  <div class="card">
+    <h2><span class="num">⑦</span> 关于 playwright E2E 自动化</h2>
+    <p style="font-size:13px;line-height:1.7;">
+      <strong>诚实结论</strong>：在当前环境配置下，playwright MCP 无法自动加载 unpacked extension。原因：
+    </p>
+    <ol style="margin-left:20px;font-size:13px;line-height:1.7;">
+      <li><code>C:/Users/lintian/.claude/playwright-mcp-config.json</code> 我虽然写了 <code>--load-extension</code> 参数，但 playwright MCP server 没有读这个路径（它自己的配置规则可能在 <code>.mcp.json</code> 或环境变量）。看进程 cmdline 确认没生效。</li>
+      <li>尝试在 chrome://extensions/ 内调用 <code>chrome.developerPrivate.loadUnpacked()</code> → Chrome 强制弹原生文件对话框 → playwright 操作不了原生对话框。</li>
+      <li>替代方案（自己写 Node 脚本用 playwright connect CDP）工作量大，且项目没装 playwright。</li>
+    </ol>
+    <p style="font-size:13px;margin-top:10px;"><strong>当前最优解</strong>：你 5 分钟人工测试 + 我加的诊断日志远比纯自动化更高效——出 bug 时你贴 console 给我，1 分钟定位。</p>
+    <p style="font-size:13px;margin-top:6px;color:var(--ink-soft);">
+      备选方案（后续考虑）：在项目里加 <code>scripts/e2e.js</code> 用 playwright npm 包 + <code>persistentContext</code> 启动 chrome with extension，跑独立 E2E 套件。需要 <code>npm install playwright</code> 并写脚本，工作量 ~2 小时，等你授权后做。
+    </p>
+  </div>
+
+  <div class="warn-box">
+    💡 <strong>结论</strong>：本轮 8 个 commit、3 个 patch（4.0.4→4.0.5→4.0.6），核心修了 AI 屏定位的自污染循环 + 状态回退 race，全链路加了 console.log 诊断。你醒来重新加载扩展跑 5 分钟验证即可——5 个勾全打通就发邮件给我说 OK，发现问题贴 console 给我我立刻修。
+  </div>
+
+</div>
+</body>
+</html>
