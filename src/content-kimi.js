@@ -159,19 +159,41 @@ async function injectAndSend(text) {
 
 async function readLatestResponse() {
   await sleep(500);
+  // v4.3.8: 直接 hardcoded Kimi 当前 DOM 结构 — 不依赖异步加载的 selectors
+  // 顺序：精确 selector → markdown 通配 → heuristic 大文本块
+  const tryGet = (sel) => {
+    const els = document.querySelectorAll(sel);
+    return els.length ? els[els.length - 1] : null;
+  };
+  const direct = tryGet('div.segment.segment-assistant')
+              || tryGet('div[class*="segment-assistant"]')
+              || tryGet('.markdown-container')
+              || tryGet('[class*="markdown-container"]');
+  if (direct) {
+    const t = _extractEl(direct).trim();
+    if (t) return t;
+  }
+  // 1) 配置 selector
   const responses = queryBySelectors("response", { all: true });
-  if (responses.length > 0) return _extractEl(responses[responses.length - 1]).trim();
+  if (responses.length > 0) {
+    const t = _extractEl(responses[responses.length - 1]).trim();
+    if (t) return t;
+  }
+  // 2) markdown 通配
   const prose = document.querySelectorAll('.markdown-body, .prose, [class*="markdown"]');
-  if (prose.length > 0) return _extractEl(prose[prose.length - 1]).trim();
-  // v4.3.7 更激进兜底：扫整页找最后一个"大文本块且不在 input/header/nav"
+  if (prose.length > 0) {
+    const t = _extractEl(prose[prose.length - 1]).trim();
+    if (t) return t;
+  }
+  // 3) heuristic — 阈值降到 20 字适应短问候
   const all = document.querySelectorAll("div, article, section");
   for (let i = all.length - 1; i >= 0; i--) {
     const el = all[i];
     if (el.closest("nav, header, footer, [role=banner], [role=navigation]")) continue;
     if (el.querySelector("textarea, input, [contenteditable]")) continue;
-    const t = (el.innerText || "").trim();
-    if (t.length > 80 && el.getBoundingClientRect().height > 50) {
-      return _extractEl(el).trim();
+    const t = (el.innerText || el.textContent || "").trim();
+    if (t.length > 20 && el.getBoundingClientRect().height > 30) {
+      return _extractEl(el).trim() || t;
     }
   }
   return "";

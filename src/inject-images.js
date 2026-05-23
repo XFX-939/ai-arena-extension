@@ -303,7 +303,12 @@ function _doExtractWithFences(clone) {
     if (!t) return;
     c.parentNode.replaceChild(document.createTextNode("`" + t + "`"), c);
   });
-  return clone.innerText || "";
+  // v4.3.8: cloneNode 后游离的 DOM 上 innerText 在 Chrome 上不可靠（嵌套结构
+  // 经常返回空字符串），优先用 innerText，fallback 到 textContent。
+  // 这是 Kimi 等深嵌套布局抓不到内容的根因。
+  const out = clone.innerText;
+  if (out && out.trim()) return out;
+  return clone.textContent || "";
 }
 
 function extractTextWithFences(el) {
@@ -312,6 +317,6 @@ function extractTextWithFences(el) {
     const clone = el.cloneNode(true);
     return _doExtractWithFences(clone);
   } catch (e) {
-    return el.innerText || "";
+    return el.innerText || el.textContent || "";
   }
 }
