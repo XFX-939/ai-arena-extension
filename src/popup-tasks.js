@@ -134,35 +134,109 @@
     });
   }
 
+  const PPT_TEMPLATES = [
+    { key: "intro",     name: "技术介绍", desc: "核心原理" },
+    { key: "topic",     name: "技术专题", desc: "总分结构" },
+    { key: "compare",   name: "技术对比", desc: "As-Is / To-Be" },
+    { key: "insight",   name: "技术洞察", desc: "新技术科普" },
+    { key: "landscape", name: "技术全景", desc: "领域沙盘" },
+  ];
+
+  const pptUi = {
+    template: "intro",
+    prompt: "",
+    lastKind: null,
+  };
+
   function renderPpt() {
-    const k = state.kind || "copy";
-    const kindLabel = { copy: "📝 文案", image: "🎨 图片", pptx: "📊 PPT" }[k] || "?";
+    const k = state.kind || pptUi.lastKind || "copy";
+    const kindLabel = { copy: "📝 文案生成", image: "🎨 图片生成", pptx: "📊 PPT 生成" }[k] || "📝 文案生成";
+    const tpl = pptUi.template;
+    const showTemplate = k === "image";
     return `
-      <div class="rp-section-title">PPT 工坊</div>
-      <div class="rp-empty" style="text-align:left;padding:6px 0;color:var(--ink)">
-        当前已选：<strong>${kindLabel} 生成</strong><br>
-        <br>
-        Phase 1 阶段 PPT 完整工坊仍依赖 sidepanel —
-        请点击下方按钮打开 sidepanel 完成。
+      <div class="rp-section-title">PPT 工坊 · 三步流程</div>
+      <div class="rp-ppt-steps">
+        <button class="rp-ppt-step ${k === "copy" ? "active" : ""}" data-kind="copy">1️⃣ 文案</button>
+        <button class="rp-ppt-step ${k === "image" ? "active" : ""}" data-kind="image">2️⃣ 图片</button>
+        <button class="rp-ppt-step ${k === "pptx" ? "active" : ""}" data-kind="pptx">3️⃣ PPT</button>
       </div>
-      <button class="rp-btn primary" id="rp-btn-open-sidepanel">在 sidepanel 打开 PPT 工坊</button>
-      <button class="rp-btn" id="rp-btn-ppt-quick">⚡ 快速发送给 ChatGPT</button>
+      ${showTemplate ? `
+        <div class="rp-section-title" style="margin-top:10px">模板（图片生成用）</div>
+        <div class="rp-ppt-tpl-grid">
+          ${PPT_TEMPLATES.map(t => `
+            <button class="rp-ppt-tpl ${t.key === tpl ? "active" : ""}" data-tpl="${t.key}" title="${t.desc}">
+              ${escapeHtml(t.name)}
+            </button>
+          `).join("")}
+        </div>
+      ` : ""}
+      <div class="rp-section-title" style="margin-top:10px">${kindLabel} prompt</div>
+      <textarea class="rp-textarea" id="rp-ppt-prompt" placeholder="点击上方 1/2/3 任一步骤按钮生成 prompt，或在这里粘贴/编辑后发送" style="min-height:140px;font-size:11px;font-family:'SF Mono','Consolas',monospace">${escapeHtml(pptUi.prompt)}</textarea>
+      <button class="rp-btn primary" id="rp-btn-ppt-send">📤 发送给 ChatGPT</button>
+      <button class="rp-btn" id="rp-btn-ppt-copy-text" title="复制 prompt 到剪贴板">📋 复制 prompt</button>
+      <div class="rp-empty" style="font-size:10px;padding:4px 0;color:var(--ink-soft);text-align:left">
+        ⓘ 流程：① 文案 → AI 整理材料 ② 图片 → AI 生成华为风格效果图 ③ PPT → AI 转 PPTX
+      </div>
     `;
   }
 
   function bindPpt(root) {
-    root.querySelector("#rp-btn-open-sidepanel")?.addEventListener("click", () => {
-      chrome.runtime.sendMessage({ type: "openSidepanel" }, () => {});
+    // 1/2/3 step 按钮
+    root.querySelectorAll(".rp-ppt-step").forEach(b => {
+      b.addEventListener("click", async () => {
+        const kind = b.dataset.kind;
+        pptUi.lastKind = kind;
+        state.kind = kind;
+        await loadPptPrompt(kind);
+        render();
+      });
     });
-    root.querySelector("#rp-btn-ppt-quick")?.addEventListener("click", () => {
-      const text = prompt("快速发送 PPT 任务内容到 ChatGPT：", "请帮我设计一份 PPT");
-      if (!text) return;
+    // 模板选择
+    root.querySelectorAll(".rp-ppt-tpl").forEach(b => {
+      b.addEventListener("click", async () => {
+        pptUi.template = b.dataset.tpl;
+        if ((state.kind || pptUi.lastKind) === "image") await loadPptPrompt("image");
+        render();
+      });
+    });
+    // textarea 同步到 state
+    const ta = root.querySelector("#rp-ppt-prompt");
+    ta?.addEventListener("input", () => { pptUi.prompt = ta.value; });
+    // 发送
+    root.querySelector("#rp-btn-ppt-send")?.addEventListener("click", () => {
+      const text = ta?.value?.trim();
+      if (!text) { alert("prompt 为空，先点 1/2/3 按钮生成"); return; }
       chrome.runtime.sendMessage({
-        type: "sendPromptToService",
-        service: "chatgpt",
-        text,
-      }, () => {});
+        type: "sendPromptToService", service: "chatgpt", text,
+      }, (resp) => {
+        if (resp && !resp.ok) alert(`发送失败：${resp.error || "未知错误"}\n（请先添加 GPT 参与者并打开 chatgpt.com 标签页）`);
+      });
     });
+    root.querySelector("#rp-btn-ppt-copy-text")?.addEventListener("click", () => {
+      const text = ta?.value?.trim();
+      if (!text) return;
+      navigator.clipboard.writeText(text).then(() => {
+        const btn = root.querySelector("#rp-btn-ppt-copy-text");
+        if (btn) { const o = btn.textContent; btn.textContent = "✓ 已复制"; setTimeout(() => btn.textContent = o, 1000); }
+      }).catch(() => {});
+    });
+  }
+
+  async function loadPptPrompt(kind) {
+    try {
+      const r = await new Promise(res => {
+        chrome.runtime.sendMessage({
+          type: "pptBuildPrompt",
+          kind,
+          template: pptUi.template,
+        }, resp => res(resp || {}));
+      });
+      if (r.ok && r.prompt) {
+        pptUi.prompt = r.prompt;
+      } else if (r.error) {
+        alert("生成 prompt 失败：" + r.error);
+      }
+    } catch (e) { console.warn("loadPptPrompt fail", e); }
   }
 
   async function refreshJudges() {

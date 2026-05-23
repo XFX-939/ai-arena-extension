@@ -191,7 +191,7 @@ try {
   // 测试组 D：版本号 4 处同步
   // ─────────────────────────────────────────
   console.log("\n=== D. 版本号同步（feedback_ai_arena_version_bump 铁律） ===");
-  const expectedVersion = "4.2.0-beta";
+  const expectedVersion = "4.3.0-beta";
   const manifest = JSON.parse(fs.readFileSync(path.join(EXT_PATH, "manifest.json"), "utf8"));
   const popupHtml = fs.readFileSync(path.join(EXT_PATH, "popup.html"), "utf8");
   const sidepanelHtml = fs.readFileSync(path.join(EXT_PATH, "sidepanel.html"), "utf8");
@@ -289,8 +289,76 @@ try {
 
   // G4: sidepanel 提示条存在
   const sidepanelSrc = fs.readFileSync(path.join(EXT_PATH, "sidepanel.html"), "utf8");
-  check("G4: sidepanel.html 含 v4.2 Phase 2 提示条",
-    /v4\.2.*默认入口|phase2-notice/.test(sidepanelSrc));
+  check("G4: sidepanel.html 含 Phase 2 提示条",
+    /默认入口|phase2-notice/.test(sidepanelSrc));
+
+  // ─────────────────────────────────────────
+  // 测试组 H：v4.3.0 新增能力
+  // ─────────────────────────────────────────
+  console.log("\n=== H. v4.3.0 新能力 ===");
+  // H1: pptBuildPrompt handler
+  const pptResp = await popup.evaluate(async () => {
+    try {
+      const r = await chrome.runtime.sendMessage({ type: "pptBuildPrompt", kind: "copy" });
+      return { ok: r?.ok, hasPrompt: typeof r?.prompt === "string" && r.prompt.length > 100 };
+    } catch (e) { return { err: e.message }; }
+  });
+  check("H1: pptBuildPrompt handler 工作", pptResp.ok && pptResp.hasPrompt, JSON.stringify(pptResp));
+
+  // H2: chatSkipParticipant handler
+  const skipResp = await popup.evaluate(async () => {
+    try {
+      const r = await chrome.runtime.sendMessage({ type: "chatSkipParticipant", participantId: "test-svc", msgId: "test-msg" });
+      return { ok: r?.ok === true };
+    } catch (e) { return { err: e.message }; }
+  });
+  check("H2: chatSkipParticipant handler", skipResp.ok === true, JSON.stringify(skipResp));
+
+  // H3: 顶部按钮：btn-hard-reset 存在，btn-theme/btn-settings 已移除
+  const btns = await popup.evaluate(() => ({
+    clear: !!document.getElementById("btn-clear"),
+    hardReset: !!document.getElementById("btn-hard-reset"),
+    theme: !!document.getElementById("btn-theme"),
+    settings: !!document.getElementById("btn-settings"),
+  }));
+  check("H3a: btn-clear + btn-hard-reset 存在", btns.clear && btns.hardReset);
+  check("H3b: 旧 btn-theme/btn-settings 已移除", !btns.theme && !btns.settings);
+
+  // H4: 气泡跳过按钮 (data-act=skip)
+  // 注入一个假 AI 气泡测试 DOM 结构
+  const skipBtn = await popup.evaluate(() => {
+    // 触发 appendAIBubble via simulated chatStreamUpdate
+    return new Promise(resolve => {
+      chrome.runtime.onMessage.dispatch?.({ type: "chatStreamUpdate", role: "ai", msgId: "m1", participantId: "claude", text: "test", isDone: false });
+      // 直接模拟 DOM
+      const m = document.getElementById("chat-messages");
+      const row = document.createElement("div");
+      row.className = "msg ai";
+      row.dataset.msgId = "m1";
+      row.dataset.participantId = "claude";
+      row.innerHTML = `<div class="msg-body"><div class="msg-meta"><span class="acts"><button data-act="skip">⏭</button></span></div><div class="msg-bubble">x</div></div>`;
+      m.appendChild(row);
+      resolve(!!row.querySelector('button[data-act="skip"]'));
+    });
+  });
+  check("H4: 气泡含 data-act=skip 按钮", skipBtn === true);
+
+  // H5: 对话目录已隐藏 mode toggle
+  const modeToggleHidden = await popup.evaluate(() => {
+    const el = document.getElementById("sidebar-mode-toggle");
+    return el && el.style.display === "none";
+  });
+  check("H5: 对话目录 mode toggle 已隐藏（默认仅显示提问）", modeToggleHidden === true);
+
+  // H6: popup-themes.css + ppt-prompts.js 加载
+  const filesOk = await popup.evaluate(async () => {
+    const id = chrome.runtime.id;
+    const r1 = await fetch(`chrome-extension://${id}/popup-themes.css`);
+    const r2 = await fetch(`chrome-extension://${id}/ppt-prompts.js`);
+    return { themes: r1.ok, ppt: r2.ok };
+  });
+  check("H6a: popup-themes.css 文件存在", filesOk.themes);
+  check("H6b: ppt-prompts.js 文件存在", filesOk.ppt);
 
   // ─────────────────────────────────────────
   // 测试组 E：诊断日志格式

@@ -42,6 +42,25 @@
         { type: "sendPromptToService", service: participantId, text: userText },
         () => { btn.disabled = false; btn.textContent = orig; }
       );
+    } else if (act === "skip") {
+      // 跳过本轮：标记气泡"已跳过"，通知 background 取消该 AI 的 polling 但保留 participant
+      if (!participantId) return;
+      const msgId = row.dataset.msgId;
+      const bubble = row.querySelector(".msg-bubble");
+      const stat = row.querySelector(".msg-meta .stat");
+      if (bubble) {
+        bubble.innerHTML = '<span class="msg-skipped">⏭ 已跳过本轮</span>';
+      }
+      if (stat) {
+        stat.className = "stat skipped";
+        stat.innerHTML = '<span class="pip"></span>已跳过';
+      }
+      row.classList.add("msg-skipped-row");
+      // 通知 background 停 polling 并把该 AI 标为 skipped（让"等待全部完成"不卡）
+      chrome.runtime.sendMessage({
+        type: "chatSkipParticipant",
+        msgId, participantId,
+      }, () => {});
     }
   });
 })();

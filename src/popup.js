@@ -95,6 +95,7 @@
           <span class="acts">
             <button data-act="reextract" title="重新提取">🔄</button>
             <button data-act="resend" title="重新发送">📤</button>
+            <button data-act="skip" title="跳过本轮（避免卡住流程）">⏭</button>
             <button data-act="copy" title="复制">📋</button>
             <button data-act="jump" title="跳原页">↗</button>
           </span>
@@ -308,13 +309,19 @@
     });
   });
 
-  // ── 顶部三图标 🎨 / 🗑（上方）/ ⚙️ ──
-  document.getElementById("btn-theme")?.addEventListener("click", () => {
-    document.dispatchEvent(new CustomEvent("theme:cycle"));
-    window.ChatRightPanel?.activate("settings");
-  });
-  document.getElementById("btn-settings")?.addEventListener("click", () => {
-    window.ChatRightPanel?.activate("settings");
+  // ── 顶部彻底初始化按钮 ⚡ ──
+  document.getElementById("btn-hard-reset")?.addEventListener("click", () => {
+    if (!confirm("⚡ 彻底初始化将：\n  · 移除全部已加入的 AI 参与者\n  · 清空群聊窗口\n  · 清空辩论轮次 / 总结上下文\n\n确认继续？")) return;
+    chrome.runtime.sendMessage({ type: "hardReset" }, () => {
+      // 同步清 popup 端 UI
+      $messages.innerHTML = "";
+      $messages.appendChild($empty);
+      $empty.style.display = "";
+      bubbleByKey.clear();
+      window.ChatHistory?.clear();
+      window.ChatMembers?.refresh?.();
+      window.ChatStats?.refresh?.();
+    });
   });
 
   // ── 接收 background 推送 ──

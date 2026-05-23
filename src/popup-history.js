@@ -1,4 +1,5 @@
-// AI Arena — popup 左侧对话目录（搜索 / 时间分组 / drag-resize / 右键复制）
+// AI Arena — popup 左侧对话目录
+// v4.3.0：默认只显示用户提问；每条下方有"▾ N 条回答"按钮可内联展开 AI 回答
 (function () {
   const $list = document.getElementById("sidebar-list");
   const $count = document.getElementById("sidebar-count");
@@ -9,17 +10,31 @@
   const $grabber = document.getElementById("sidebar-grabber");
   if (!$list || !$count) return;
 
+  // v4.3.0：隐藏不再需要的 mode toggle
+  if ($modeToggle) $modeToggle.style.display = "none";
+
   // AI 显示名（与 popup.js 一致）
   const NAME = {
     claude: "Claude", gemini: "Gemini", chatgpt: "ChatGPT",
     deepseek: "DeepSeek", doubao: "豆包", qwen: "千问",
     kimi: "Kimi", yuanbao: "元宝", grok: "Grok",
   };
+  const BRAND_LOGO = {
+    claude: "icons/brands/claude.svg",
+    gemini: "icons/brands/gemini.svg",
+    chatgpt: "icons/brands/openai.svg",
+    deepseek: "icons/brands/deepseek.svg",
+    doubao: "icons/brands/doubao.svg",
+    qwen: "icons/brands/qwen.svg",
+    kimi: "icons/brands/kimi.svg",
+    yuanbao: "icons/brands/yuanbao.svg",
+    grok: "icons/brands/grok.svg",
+  };
 
   // ── 状态 ──
   let allLog = [];                 // 完整 chatLog 副本（user + ai 完成态）
-  let searchMode = "question";     // "question" 仅搜提问 | "global" 全局含 AI 回答
   let query = "";
+  const expandedMsgs = new Set();  // 展开了 AI 回答的 user msgId 集合
 
   // ── 工具 ──
   function escapeHtml(s) {
@@ -37,8 +52,8 @@
     if (dT.getTime() === yesterday.getTime()) return "昨天";
     return d.toLocaleDateString("zh-CN", { month: "numeric", day: "numeric" });
   }
-  function previewOf(text) {
-    return (text || "").slice(0, 48);
+  function previewOf(text, n = 60) {
+    return (text || "").slice(0, n);
   }
   function highlightQuery(text, q) {
     const safe = escapeHtml(text);
@@ -52,48 +67,89 @@
       + escapeHtml(text.slice(idx + q.length));
   }
 
-  function getDisplayItems() {
-    let items = searchMode === "global"
-      ? allLog.filter(m => !!m.text)   // 全局：user + ai 都展示
-      : allLog.filter(m => m.role === "user");
-    if (query) {
-      const q = query.toLowerCase();
-      items = items.filter(m => (m.text || "").toLowerCase().includes(q));
+  // 把 log 按"对话回合"组织：以每条 user 消息为锚，下面挂相关 AI 回答
+  function buildTurns() {
+    const turns = [];
+    let cur = null;
+    for (const m of allLog) {
+      if (m.role === "user") {
+        cur = { user: m, replies: [] };
+        turns.push(cur);
+      } else if (m.role === "ai") {
+        if (cur) cur.replies.push(m);
+        else {
+          // 没有前置 user 的孤立 AI（理论上少见）
+          turns.push({ user: null, replies: [m] });
+        }
+      }
     }
-    return items;
+    return turns;
+  }
+
+  function matchTurn(turn, q) {
+    if (!q) return true;
+    const lc = q.toLowerCase();
+    if (turn.user && (turn.user.text || "").toLowerCase().includes(lc)) return true;
+    return turn.replies.some(r => (r.text || "").toLowerCase().includes(lc));
   }
 
   function renderList() {
-    const items = getDisplayItems();
-    $count.textContent = String(items.length);
-    if (!items.length) {
+    const allTurns = buildTurns();
+    const turns = query ? allTurns.filter(t => matchTurn(t, query)) : allTurns;
+    $count.textContent = String(turns.length);
+    if (!turns.length) {
       $list.innerHTML = `<div class="sidebar-empty">${query ? "无匹配" : "暂无对话"}</div>`;
       return;
     }
-    // 按时间分组（今天 / 昨天 / 更早）
+    // 按时间分组
     const groupOrder = [];
     const groups = new Map();
-    items.forEach(m => {
-      const g = fmtDateGroup(m.ts || Date.now());
+    turns.forEach(t => {
+      const ts = t.user?.ts || t.replies[0]?.ts || Date.now();
+      const g = fmtDateGroup(ts);
       if (!groups.has(g)) { groups.set(g, []); groupOrder.push(g); }
-      groups.get(g).push(m);
+      groups.get(g).push(t);
     });
+
     let html = "";
-    let globalIdx = 0;
+    let idx = 0;
     for (const g of groupOrder) {
       html += `<div class="sidebar-group-label">${escapeHtml(g)}</div>`;
-      groups.get(g).forEach(m => {
-        globalIdx++;
-        const isAi = m.role === "ai";
-        const roleLabel = isAi ? (NAME[m.participantId] || m.participantId || "AI") : "我";
-        html += `<div class="sidebar-item ${isAi ? "is-ai" : ""}" data-msg-id="${escapeHtml(m.msgId || "")}" data-role="${m.role}" data-participant="${escapeHtml(m.participantId || "")}">
-          <div class="sidebar-item-head">
-            <span class="sidebar-item-num">#${globalIdx}</span>
-            <span class="sidebar-item-role ${isAi ? "role-ai" : "role-user"}">${escapeHtml(roleLabel)}</span>
-            <span class="sidebar-item-time">${fmtTime(m.ts || Date.now())}</span>
-          </div>
-          <div class="sidebar-item-text">${highlightQuery(previewOf(m.text), query)}</div>
-        </div>`;
+      groups.get(g).forEach(t => {
+        idx++;
+        const u = t.user;
+        const isExpanded = u?.msgId && expandedMsgs.has(u.msgId);
+        const replyCount = t.replies.length;
+        const userTs = u?.ts || t.replies[0]?.ts || Date.now();
+        const userText = u?.text || "(无提问)";
+        const msgId = u?.msgId || `orphan-${idx}`;
+        html += `<div class="sidebar-turn" data-msg-id="${escapeHtml(msgId)}">
+          <div class="sidebar-item" data-msg-id="${escapeHtml(msgId)}" data-role="user">
+            <div class="sidebar-item-head">
+              <span class="sidebar-item-num">#${idx}</span>
+              <span class="sidebar-item-time">${fmtTime(userTs)}</span>
+              ${replyCount > 0
+                ? `<button class="sidebar-toggle-replies" data-msg-id="${escapeHtml(msgId)}" title="${isExpanded ? "折叠" : "展开"} AI 回答">${isExpanded ? "▾" : "▸"} ${replyCount}</button>`
+                : `<span class="sidebar-item-pending" title="尚无回答">…</span>`}
+            </div>
+            <div class="sidebar-item-text">${highlightQuery(previewOf(userText, 70), query)}</div>
+          </div>`;
+        if (isExpanded && t.replies.length) {
+          html += `<div class="sidebar-replies">`;
+          for (const r of t.replies) {
+            const brand = BRAND_LOGO[r.participantId];
+            const aiName = NAME[r.participantId] || r.participantId || "AI";
+            html += `<div class="sidebar-reply" data-msg-id="${escapeHtml(r.msgId)}" data-role="ai" data-participant="${escapeHtml(r.participantId || "")}">
+              ${brand ? `<img class="sidebar-reply-logo" src="${brand}" alt="${escapeHtml(aiName)}">` : `<span class="sidebar-reply-logo-fallback">${escapeHtml(aiName[0] || "?")}</span>`}
+              <div class="sidebar-reply-body">
+                <div class="sidebar-reply-name">${escapeHtml(aiName)}</div>
+                <div class="sidebar-reply-text">${highlightQuery(previewOf(r.text, 80), query)}</div>
+              </div>
+            </div>`;
+          }
+          html += `</div>`;
+        }
+        html += `</div>`;
       });
     }
     $list.innerHTML = html;
@@ -108,29 +164,40 @@
       renderList();
     }, 80);
   });
-  $modeToggle?.addEventListener("click", () => {
-    searchMode = searchMode === "question" ? "global" : "question";
-    $modeToggle.dataset.mode = searchMode;
-    if (searchMode === "global") {
-      $modeToggle.textContent = "🌐";
-      $modeToggle.title = "全局搜索（含 AI 回答），点击切回仅搜提问";
-    } else {
-      $modeToggle.textContent = "❓";
-      $modeToggle.title = "仅搜提问，点击切换全局（含 AI 回答）";
+
+  // ── 点击跳转 + 展开折叠 ──
+  $list.addEventListener("click", (e) => {
+    // 展开 / 折叠 AI 回答
+    const toggleBtn = e.target.closest(".sidebar-toggle-replies");
+    if (toggleBtn) {
+      e.stopPropagation();
+      const mid = toggleBtn.dataset.msgId;
+      if (expandedMsgs.has(mid)) expandedMsgs.delete(mid);
+      else expandedMsgs.add(mid);
+      renderList();
+      return;
     }
-    try { chrome.storage.local.set({ sidebarSearchMode: searchMode }); } catch {}
-    renderList();
+    // 点 user 条目跳转
+    const userItem = e.target.closest(".sidebar-item[data-role=user]");
+    if (userItem) {
+      const msgId = userItem.dataset.msgId;
+      scrollToMsg(msgId, null);
+      [...$list.querySelectorAll(".sidebar-item")].forEach(el => el.classList.remove("active"));
+      userItem.classList.add("active");
+      return;
+    }
+    // 点 AI 回答跳转
+    const reply = e.target.closest(".sidebar-reply[data-role=ai]");
+    if (reply) {
+      const msgId = reply.dataset.msgId;
+      const participant = reply.dataset.participant;
+      scrollToMsg(msgId, participant);
+    }
   });
 
-  // ── 点击跳转 ──
-  $list.addEventListener("click", (e) => {
-    const item = e.target.closest(".sidebar-item");
-    if (!item) return;
-    const msgId = item.dataset.msgId;
-    const role = item.dataset.role;
-    const participant = item.dataset.participant;
+  function scrollToMsg(msgId, participant) {
     if (!msgId) return;
-    const sel = role === "ai" && participant
+    const sel = participant
       ? `.msg.ai[data-msg-id="${CSS.escape(msgId)}"][data-participant-id="${CSS.escape(participant)}"]`
       : `.msg[data-msg-id="${CSS.escape(msgId)}"]`;
     const row = document.querySelector(sel);
@@ -139,18 +206,18 @@
     row.scrollIntoView({ behavior: "smooth", block: "center" });
     row.classList.add("msg-highlight");
     setTimeout(() => row.classList.remove("msg-highlight"), 1600);
-    [...$list.querySelectorAll(".sidebar-item")].forEach(el => el.classList.remove("active"));
-    item.classList.add("active");
-  });
+  }
 
-  // ── 右键菜单：复制 ──
+  // ── 右键复制 ──
   $list.addEventListener("contextmenu", (e) => {
+    const reply = e.target.closest(".sidebar-reply");
     const item = e.target.closest(".sidebar-item");
-    if (!item) return;
+    const target = reply || item;
+    if (!target) return;
     e.preventDefault();
-    const msgId = item.dataset.msgId;
-    const role = item.dataset.role;
-    const participant = item.dataset.participant;
+    const msgId = target.dataset.msgId;
+    const role = target.dataset.role || (reply ? "ai" : "user");
+    const participant = target.dataset.participant;
     const entry = allLog.find(m =>
       m.msgId === msgId && m.role === role &&
       (role !== "ai" || m.participantId === participant)
@@ -160,12 +227,12 @@
       const badge = document.createElement("span");
       badge.className = "sidebar-toast";
       badge.textContent = "✓ 已复制";
-      item.appendChild(badge);
+      target.appendChild(badge);
       setTimeout(() => badge.remove(), 1200);
     }).catch(() => {});
   });
 
-  // ── 折叠 / 展开 ──
+  // ── 折叠 / 展开 整个 sidebar ──
   $toggle?.addEventListener("click", () => {
     $sidebar.classList.toggle("collapsed");
     $toggle.textContent = $sidebar.classList.contains("collapsed") ? "›" : "‹";
@@ -201,15 +268,7 @@
 
   // ── 恢复持久化状态 ──
   try {
-    chrome.storage.local.get(["sidebarCollapsed", "sidebarWidth", "sidebarSearchMode"], (data) => {
-      if (data.sidebarSearchMode === "global") {
-        searchMode = "global";
-        if ($modeToggle) {
-          $modeToggle.textContent = "🌐";
-          $modeToggle.dataset.mode = "global";
-          $modeToggle.title = "全局搜索（含 AI 回答），点击切回仅搜提问";
-        }
-      }
+    chrome.storage.local.get(["sidebarCollapsed", "sidebarWidth"], (data) => {
       if (data.sidebarCollapsed) {
         $sidebar.classList.add("collapsed");
         if ($toggle) $toggle.textContent = "›";
@@ -251,7 +310,7 @@
 
   // 暴露 API（清空时调用）
   window.ChatHistory = {
-    clear: () => { allLog = []; query = ""; if ($search) $search.value = ""; renderList(); },
+    clear: () => { allLog = []; query = ""; expandedMsgs.clear(); if ($search) $search.value = ""; renderList(); },
     renderAll: (msgs) => { allLog = msgs || []; renderList(); },
   };
 })();

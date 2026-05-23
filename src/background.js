@@ -3,7 +3,7 @@
 // 从 sidepanel 缓存的屏幕尺寸；双屏时用于判断 AI 窗口应放到哪块屏幕。
 let lastKnownScreen = { width: 1920, height: 1080, left: 0, top: 0 };
 
-importScripts("selectors-config.js", "state-machine.js", "debate-engine.js", "chat-bus.js");
+importScripts("selectors-config.js", "state-machine.js", "debate-engine.js", "chat-bus.js", "ppt-prompts.js");
 
 const SERVICES = {
   claude:   { url: "https://claude.ai/new",              name: "Claude" },
@@ -151,6 +151,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           sendResponse(await ChatBus.jumpToOrigin(msg.participantId)); break;
         case "chatReextractOne":
           sendResponse(await ChatBus.reextractOne(msg.participantId)); break;
+        case "chatSkipParticipant":
+          sendResponse(ChatBus.skipParticipant(msg.participantId, msg.msgId)); break;
 
         // ── 手动操作 ──
         case "sendToOne":
@@ -166,9 +168,35 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           break;
         case "hardReset":
           StateMachine.hardReset();
-          notifyStatus("已彻底重置");
+          // v4.3.0：彻底初始化同时清空群聊 log
+          try { ChatBus.clearLog(); } catch (_) {}
+          notifyStatus("已彻底重置（AI + 群聊 + 辩论上下文）");
           sendResponse({ ok: true });
           break;
+        case "pptBuildPrompt": {
+          // v4.3.0：popup PPT 工坊调此 handler 拿 prompt 字符串
+          try {
+            const kind = msg.kind || "copy";
+            const templateKey = msg.template || "intro";
+            const state = StateMachine.getFullState();
+            const participants = state.participants || [];
+            // 从 participants.response 收集讨论
+            const responses = (StateMachine.participants || [])
+              .filter(p => (p.response || p.responsePreview || "").trim())
+              .map(p => ({ name: p.name || p.service, text: (p.response || p.responsePreview || "").trim() }));
+            const question = msg.question || "";
+            const ctx = { question, responses, imageBrief: msg.imageBrief || "" };
+            let prompt = "";
+            if (kind === "copy") prompt = self.PptPrompts.buildCopyPrompt(ctx);
+            else if (kind === "image") prompt = self.PptPrompts.buildImagePrompt(ctx, templateKey);
+            else if (kind === "pptx") prompt = self.PptPrompts.buildPptxPrompt();
+            else { sendResponse({ ok: false, error: `未知 kind: ${kind}` }); break; }
+            sendResponse({ ok: true, prompt, template: self.PptPrompts.TEMPLATE_META[templateKey] || null });
+          } catch (e) {
+            sendResponse({ ok: false, error: e.message });
+          }
+          break;
+        }
         case "openSidepanel":
           try {
             const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -232,8 +260,15 @@ async function addParticipant(service) {
   // 并列模式下自动排列窗口
   if (windowMode === "tiled") {
     // 等页面稍微加载后再排列
-    setTimeout(() => arrangeWindows().catch(() => {}), 500);
+    setTimeout(async () => {
+      try { await arrangeWindows(); } catch (_) {}
+      // v4.3.0：排列窗口后把 popup 拉回前端，避免用户失焦
+      try { await ChatBus.focusPopup(); } catch (_) {}
+    }, 500);
   }
+
+  // v4.3.0：立即把 popup 拉回前端（不等 arrange）
+  try { await ChatBus.focusPopup(); } catch (_) {}
 
   return { ok: true, participants: StateMachine.getFullState().participants };
 }

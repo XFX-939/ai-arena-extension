@@ -1,16 +1,17 @@
 // popup-members.js — 成员 Tab：参与者列表 + 添加 + ⋯ 菜单 + Tab/并列 切换
 (function () {
   const ALL_SERVICES = [
-    { id: "claude",   name: "Claude" },
-    { id: "gemini",   name: "Gemini" },
-    { id: "chatgpt",  name: "GPT" },
-    { id: "deepseek", name: "DeepSeek" },
-    { id: "doubao",   name: "豆包" },
-    { id: "qwen",     name: "千问" },
-    { id: "kimi",     name: "Kimi" },
-    { id: "yuanbao",  name: "元宝" },
-    { id: "grok",     name: "Grok" },
+    { id: "claude",   name: "Claude",   logo: "icons/brands/claude.svg" },
+    { id: "gemini",   name: "Gemini",   logo: "icons/brands/gemini.svg" },
+    { id: "chatgpt",  name: "GPT",      logo: "icons/brands/openai.svg" },
+    { id: "deepseek", name: "DeepSeek", logo: "icons/brands/deepseek.svg" },
+    { id: "doubao",   name: "豆包",     logo: "icons/brands/doubao.svg" },
+    { id: "qwen",     name: "千问",     logo: "icons/brands/qwen.svg" },
+    { id: "kimi",     name: "Kimi",     logo: "icons/brands/kimi.svg" },
+    { id: "yuanbao",  name: "元宝",     logo: "icons/brands/yuanbao.svg" },
+    { id: "grok",     name: "Grok",     logo: "icons/brands/grok.svg" },
   ];
+  const SERVICE_MAP = Object.fromEntries(ALL_SERVICES.map(s => [s.id, s]));
 
   const state = { participants: [], layoutMode: "tiled" };
 
@@ -26,6 +27,12 @@
     if (p.response || p.responsePreview) return "ready";
     return "";
   }
+  function statusTextOf(p) {
+    if (p.error) return "失败";
+    if (p.isStreaming || p.responsePreview && !p.response) return "输出中…";
+    if (p.response || p.responsePreview) return "已完成";
+    return "等待中";
+  }
 
   function render() {
     const root = document.getElementById("rp-panel-members");
@@ -35,26 +42,39 @@
     const remaining = ALL_SERVICES.filter(s => !joinedIds.has(s.id));
 
     root.innerHTML = `
-      <div class="rp-section-title">已加入 (${joined.length}/3)</div>
-      ${joined.length ? joined.map(p => `
-        <div class="rp-list-item" data-pid="${escapeHtml(p.id)}">
-          <span class="rp-status-dot ${statusOf(p)}"></span>
-          <span class="name">${escapeHtml(p.name || p.service)}</span>
+      <div class="rp-section-title">已加入 <span class="rp-count">${joined.length}/3</span></div>
+      ${joined.length ? joined.map(p => {
+        const meta = SERVICE_MAP[p.service] || { name: p.service, logo: null };
+        return `
+        <div class="rp-member-card" data-pid="${escapeHtml(p.id)}">
+          ${meta.logo
+            ? `<img class="rp-member-logo" src="${meta.logo}" alt="${escapeHtml(meta.name)}">`
+            : `<span class="rp-member-logo-fb">${escapeHtml((meta.name || "?")[0])}</span>`}
+          <div class="rp-member-info">
+            <div class="rp-member-name">${escapeHtml(p.name || meta.name)}</div>
+            <div class="rp-member-meta">
+              <span class="rp-status-dot ${statusOf(p)}"></span>
+              <span class="rp-member-status-txt">${statusTextOf(p)}</span>
+            </div>
+          </div>
           <span class="rp-more" data-pid="${escapeHtml(p.id)}" title="操作">⋯</span>
-        </div>
-      `).join("") : `<div class="rp-empty">尚未添加参与者</div>`}
+        </div>`;
+      }).join("") : `<div class="rp-empty">尚未添加参与者<br><span style="opacity:.6">点击下方按钮选择</span></div>`}
 
-      <div class="rp-section-title" style="margin-top:10px">添加</div>
+      <div class="rp-section-title" style="margin-top:14px">添加</div>
       <div class="rp-add-grid">
         ${remaining.map(s => `
-          <button class="rp-add-btn" data-service="${s.id}">+ ${escapeHtml(s.name)}</button>
+          <button class="rp-add-btn" data-service="${s.id}" title="添加 ${escapeHtml(s.name)}">
+            <img class="rp-add-logo" src="${s.logo}" alt="">
+            <span>${escapeHtml(s.name)}</span>
+          </button>
         `).join("")}
       </div>
 
       <div class="rp-section-title">AI 窗口布局</div>
       <div class="rp-mode-toggle">
-        <button class="rp-mode-btn ${state.layoutMode === "tab" ? "active" : ""}" data-mode="tab">Tab</button>
-        <button class="rp-mode-btn ${state.layoutMode === "tiled" ? "active" : ""}" data-mode="tiled">并列</button>
+        <button class="rp-mode-btn ${state.layoutMode === "tab" ? "active" : ""}" data-mode="tab" title="所有 AI 同窗口不同标签页">Tab</button>
+        <button class="rp-mode-btn ${state.layoutMode === "tiled" ? "active" : ""}" data-mode="tiled" title="每个 AI 独立窗口并列">并列</button>
       </div>
     `;
 

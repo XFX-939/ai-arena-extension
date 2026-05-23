@@ -231,6 +231,29 @@ const ChatBus = (() => {
     }
   }
 
+  // v4.3.0：跳过本轮某 AI — 停 polling，标记为"已跳过"，让"等全部完成"判定不卡住
+  function skipParticipant(participantId, msgId) {
+    const service = participantId;
+    if (pollers.has(service)) {
+      try { clearInterval(pollers.get(service).intervalId); } catch (_) {}
+      pollers.delete(service);
+    }
+    // 通知 popup（保险：popup 主动改 UI 已经做过，这里是兜底广播）
+    sendToPopup({
+      type: "chatStreamUpdate", role: "ai",
+      msgId: msgId || `skip_${Date.now()}`,
+      participantId, text: "⏭ 已跳过本轮", isDone: true,
+      skipped: true,
+    });
+    // 写入 log 让历史目录看得到
+    pushLog({
+      role: "ai", msgId: msgId || `skip_${Date.now()}`,
+      participantId, text: "⏭ 已跳过本轮",
+      ts: Date.now(), skipped: true,
+    });
+    return { ok: true };
+  }
+
   async function reextractOne(participantId) {
     const p = (StateMachine.participants || []).find(x => x.service === participantId);
     if (!p || !p.tabId) return { ok: false, error: "未找到参与者" };
@@ -254,9 +277,22 @@ const ChatBus = (() => {
     }
   }
 
+  // v4.3.0：把 popup 窗口拉回前端（添加 AI 窗口/排列窗口后调用，防止 popup 失焦）
+  async function focusPopup() {
+    if (popupWindowId == null) return { ok: false, error: "popup not open" };
+    try {
+      await chrome.windows.update(popupWindowId, { focused: true, drawAttention: false });
+      return { ok: true };
+    } catch (e) {
+      popupWindowId = null;
+      return { ok: false, error: e.message };
+    }
+  }
+
   return {
     init,
     openChatPopup,
+    focusPopup,
     onWindowRemoved,
     rememberBounds,
     broadcast,
@@ -265,6 +301,7 @@ const ChatBus = (() => {
     clearLog,
     jumpToOrigin,
     reextractOne,
+    skipParticipant,
   };
 })();
 

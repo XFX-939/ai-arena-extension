@@ -912,3 +912,247 @@ body { letter-spacing: -0.01em; }
 }
 .rp-action-menu .ai { padding: 6px 12px; cursor: pointer; }
 .rp-action-menu .ai:hover { background: rgba(255,255,255,0.1); }
+
+/* ────── v4.3.0 精致化：成员卡片 + 添加按钮 logo + 跳过气泡 + 折叠目录 + danger 按钮 ────── */
+
+.rp-count {
+  display: inline-block;
+  margin-left: 4px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 9px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 999px;
+  letter-spacing: 0.02em;
+}
+
+.rp-member-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  margin-bottom: 6px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.rp-member-card:hover {
+  border-color: var(--accent);
+  box-shadow: 0 1px 4px rgba(10,132,255,0.08);
+}
+.rp-member-logo {
+  width: 22px; height: 22px;
+  border-radius: 5px;
+  object-fit: contain;
+  background: var(--bg);
+  padding: 2px;
+  flex-shrink: 0;
+}
+.rp-member-logo-fb {
+  width: 22px; height: 22px;
+  border-radius: 5px;
+  background: var(--accent);
+  color: #fff;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 11px; font-weight: 700;
+  flex-shrink: 0;
+}
+.rp-member-info { flex: 1; min-width: 0; }
+.rp-member-name {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink);
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.rp-member-meta {
+  display: flex; align-items: center; gap: 4px;
+  margin-top: 3px;
+}
+.rp-member-status-txt {
+  font-size: 10px;
+  color: var(--ink-soft);
+  letter-spacing: 0.01em;
+}
+
+/* 添加按钮：logo + 文字 */
+.rp-add-btn {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 6px;
+  padding: 6px 8px !important;
+  font-weight: 500;
+  transition: all 0.15s;
+}
+.rp-add-logo {
+  width: 14px; height: 14px;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+.rp-add-btn:hover {
+  background: rgba(10,132,255,0.06);
+  transform: translateY(-1px);
+}
+
+/* 跳过气泡 */
+.msg-skipped {
+  display: inline-block;
+  padding: 4px 12px;
+  background: rgba(174,174,178,0.15);
+  color: var(--ink-soft);
+  border-radius: 8px;
+  font-size: 12px;
+  font-style: italic;
+}
+.msg-skipped-row .msg-bubble {
+  opacity: 0.7;
+  background: transparent !important;
+  box-shadow: none !important;
+  border: 1px dashed var(--border);
+}
+.stat.skipped {
+  color: var(--ink-soft) !important;
+}
+.stat.skipped .pip {
+  background: var(--ink-soft) !important;
+}
+
+/* 顶部 danger 按钮（⚡ 彻底初始化） */
+.btn-icon.danger { color: #ff9f0a; }
+.btn-icon.danger:hover {
+  background: rgba(255,159,10,0.12);
+  color: #ff3b30;
+}
+
+/* 折叠的对话目录：每个 turn + 内联 AI 回答 */
+.sidebar-turn {
+  margin-bottom: 4px;
+}
+.sidebar-toggle-replies {
+  margin-left: auto;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-size: 10px;
+  color: var(--ink-soft);
+  padding: 0 6px;
+  cursor: pointer;
+  font-family: inherit;
+  height: 18px;
+  line-height: 16px;
+}
+.sidebar-toggle-replies:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.sidebar-item-pending {
+  margin-left: auto;
+  font-size: 10px;
+  color: var(--ink-soft);
+  letter-spacing: 0.05em;
+}
+.sidebar-replies {
+  margin: 2px 6px 8px 14px;
+  border-left: 2px solid var(--border);
+  padding-left: 8px;
+}
+.sidebar-reply {
+  display: flex;
+  gap: 6px;
+  padding: 4px 6px;
+  margin-bottom: 2px;
+  border-radius: 5px;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+.sidebar-reply:hover { background: rgba(10,132,255,0.06); }
+.sidebar-reply-logo {
+  width: 14px; height: 14px;
+  border-radius: 3px;
+  object-fit: contain;
+  margin-top: 1px;
+  flex-shrink: 0;
+}
+.sidebar-reply-logo-fallback {
+  width: 14px; height: 14px;
+  border-radius: 3px;
+  background: var(--accent);
+  color: #fff;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 9px; font-weight: 700;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+.sidebar-reply-body { flex: 1; min-width: 0; }
+.sidebar-reply-name {
+  font-size: 10px;
+  color: var(--accent);
+  font-weight: 600;
+}
+.sidebar-reply-text {
+  font-size: 11px;
+  color: var(--ink-soft);
+  line-height: 1.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+/* PPT 工坊 */
+.rp-ppt-steps {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 4px;
+  margin-bottom: 8px;
+}
+.rp-ppt-step {
+  padding: 8px 4px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 11px;
+  cursor: pointer;
+  color: var(--ink);
+  font-family: inherit;
+  transition: all 0.15s;
+}
+.rp-ppt-step:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.rp-ppt-step.active {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+  font-weight: 600;
+}
+.rp-ppt-tpl-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  margin-bottom: 6px;
+}
+.rp-ppt-tpl {
+  padding: 5px 8px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  font-size: 11px;
+  cursor: pointer;
+  color: var(--ink-soft);
+  font-family: inherit;
+}
+.rp-ppt-tpl:hover { color: var(--ink); border-color: var(--accent); }
+.rp-ppt-tpl.active {
+  background: rgba(10,132,255,0.12);
+  border-color: var(--accent);
+  color: var(--accent);
+  font-weight: 600;
+}

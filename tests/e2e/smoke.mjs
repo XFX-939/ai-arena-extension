@@ -67,7 +67,7 @@ try {
   // 2) 读 manifest version_name 验证版本同步（直接读源文件）
   const manifest = JSON.parse(fs.readFileSync(path.join(EXT_PATH, "manifest.json"), "utf8"));
   console.log(`[smoke] manifest version: ${manifest.version}, version_name: ${manifest.version_name}`);
-  check("manifest version_name = 4.2.0-beta", manifest.version_name === "4.2.0-beta", `actual: ${manifest.version_name}`);
+  check("manifest version_name = 4.3.0-beta", manifest.version_name === "4.3.0-beta", `actual: ${manifest.version_name}`);
 
   // 3) 打开 sidepanel.html（作为普通 tab），验证 DOM
   const sidepanelPage = await context.newPage();
@@ -75,10 +75,10 @@ try {
   await sidepanelPage.waitForLoadState("domcontentloaded");
 
   const versionBadge = await sidepanelPage.locator(".version").textContent();
-  check("sidepanel version badge", versionBadge === "v4.2.0-beta", `actual: "${versionBadge}"`);
+  check("sidepanel version badge", versionBadge === "v4.3.0-beta", `actual: "${versionBadge}"`);
 
   const footerVersion = await sidepanelPage.locator(".footer").textContent();
-  check("sidepanel footer version", footerVersion?.includes("v4.2.0-beta"), `actual: "${footerVersion?.slice(0, 100)}"`);
+  check("sidepanel footer version", footerVersion?.includes("v4.3.0-beta"), `actual: "${footerVersion?.slice(0, 100)}"`);
 
   const openChatBtn = await sidepanelPage.locator("#btn-open-chat").count();
   check('sidepanel has "🪟 群聊" button', openChatBtn === 1);
@@ -96,7 +96,7 @@ try {
   await popupPage.waitForLoadState("domcontentloaded");
 
   const popupVersion = await popupPage.locator(".chat-version").textContent();
-  check("popup chat-version = v4.2.0-beta", popupVersion === "v4.2.0-beta", `actual: "${popupVersion}"`);
+  check("popup chat-version = v4.3.0-beta", popupVersion === "v4.3.0-beta", `actual: "${popupVersion}"`);
 
   // 图标资产验证（v4.0.11）
   const assetsOk = await popupPage.evaluate(async (extId) => {
@@ -158,17 +158,18 @@ try {
   check("popup 暴露 ChatScroll API（pauseFollow/resumeFollow）", chatScrollApi.hasChatScroll);
   check("popup 暴露 ChatHistory API", chatScrollApi.hasChatHistory && chatScrollApi.historyMethods.includes("renderAll"));
 
-  // 4c) v4.0.9：搜索 + 全局模式 toggle + drag grabber
+  // 4c) v4.3.0：对话目录折叠/展开（只显示 user，AI 回答可展开）
   const searchInputCount = await popupPage.locator("#sidebar-search").count();
   check("sidebar 搜索框存在", searchInputCount === 1);
-  const searchModeToggle = await popupPage.locator("#sidebar-mode-toggle").count();
-  check("sidebar 模式 toggle（仅提问 / 全局）存在", searchModeToggle === 1);
-  const defaultMode = await popupPage.locator("#sidebar-mode-toggle").getAttribute("data-mode");
-  check("默认搜索模式 = question（仅搜提问）", defaultMode === "question");
+  // mode toggle 在 v4.3.0 已隐藏
+  const modeToggleHidden = await popupPage.evaluate(() =>
+    document.getElementById("sidebar-mode-toggle")?.style.display === "none"
+  );
+  check("v4.3.0：mode toggle 已隐藏", modeToggleHidden === true);
   const grabberCount = await popupPage.locator("#sidebar-grabber").count();
   check("sidebar drag-resize grabber 存在", grabberCount === 1);
 
-  // 模拟注入几条 chatLog 数据测搜索 + 分组渲染
+  // 模拟注入 fakeLog → 默认只看到 2 个 turn（user only）
   const renderResult = await popupPage.evaluate(async () => {
     const now = Date.now();
     const fakeLog = [
@@ -179,39 +180,35 @@ try {
     ];
     window.ChatHistory.renderAll(fakeLog);
     await new Promise(r => setTimeout(r, 100));
-    const items = [...document.querySelectorAll(".sidebar-item")];
+    const turns = document.querySelectorAll(".sidebar-turn").length;
+    const userItems = document.querySelectorAll(".sidebar-item[data-role=user]").length;
+    const expandedReplies = document.querySelectorAll(".sidebar-reply").length;
+    const toggleBtns = document.querySelectorAll(".sidebar-toggle-replies").length;
     const groupLabels = [...document.querySelectorAll(".sidebar-group-label")].map(e => e.textContent);
-    return {
-      itemCount: items.length,
-      roles: items.map(i => i.dataset.role),
-      groupLabels,
-    };
+    return { turns, userItems, expandedReplies, toggleBtns, groupLabels };
   });
-  check("默认模式下只显示 user 条目（2 条）", renderResult.itemCount === 2 && renderResult.roles.every(r => r === "user"),
-    JSON.stringify(renderResult));
-  check("时间分组标签出现", renderResult.groupLabels.length >= 1,
-    `groups: ${JSON.stringify(renderResult.groupLabels)}`);
+  check("v4.3.0：默认显示 2 个 turn（每 user 1 个）", renderResult.turns === 2, JSON.stringify(renderResult));
+  check("v4.3.0：每 turn 有 1 个'展开'按钮（共 2）", renderResult.toggleBtns === 2);
+  check("v4.3.0：AI 回答默认折叠（0 个 .sidebar-reply）", renderResult.expandedReplies === 0);
+  check("时间分组标签出现", renderResult.groupLabels.length >= 1);
 
-  // 切换到全局模式 → 显示 4 条
-  await popupPage.locator("#sidebar-mode-toggle").click();
+  // 点展开按钮 → 应该看到 1 个 AI 回答
+  await popupPage.locator(".sidebar-toggle-replies").first().click();
   await popupPage.waitForTimeout(150);
-  const globalCount = await popupPage.locator(".sidebar-item").count();
-  check("全局模式下显示 4 条（含 AI 回答）", globalCount === 4, `actual: ${globalCount}`);
+  const expandedCount = await popupPage.locator(".sidebar-reply").count();
+  check("v4.3.0：点击展开后显示 AI 回答（1 个）", expandedCount === 1, `actual: ${expandedCount}`);
 
-  // 搜索"周转" → 应该只剩 user "存货周转怎样" 1 条（全局模式下还有 AI "存货周转天数..." → 2 条）
+  // 搜索"周转" → 应该匹配到 turn u2
   await popupPage.locator("#sidebar-search").fill("周转");
   await popupPage.waitForTimeout(150);
-  const searchMatched = await popupPage.locator(".sidebar-item").count();
-  check("搜索'周转'匹配 2 条（user + ai 各 1）", searchMatched === 2, `actual: ${searchMatched}`);
-  const markCount = await popupPage.locator(".sidebar-item mark").count();
-  check("搜索关键词高亮 <mark>", markCount === 2);
+  const searchMatched = await popupPage.locator(".sidebar-turn").count();
+  check("搜索'周转'匹配 1 个 turn", searchMatched === 1, `actual: ${searchMatched}`);
 
-  // 清空搜索 + 切回 question 模式
+  // 清空搜索 → 恢复 2 turns
   await popupPage.locator("#sidebar-search").fill("");
-  await popupPage.locator("#sidebar-mode-toggle").click();
   await popupPage.waitForTimeout(150);
-  const backCount = await popupPage.locator(".sidebar-item").count();
-  check("切回 question 模式 + 清空搜索 → 恢复 2 条", backCount === 2, `actual: ${backCount}`);
+  const backCount = await popupPage.locator(".sidebar-turn").count();
+  check("清空搜索恢复 2 turns", backCount === 2);
 
   // 5) 单元测试 popup-markdown 渲染（在 popup 上下文 evaluate）
   const mdResult = await popupPage.evaluate(() => {
@@ -283,12 +280,13 @@ try {
     rpTabs.length === 4 && rpTabs.map(t => t.name).join(",") === "members,tasks,stats,settings",
     JSON.stringify(rpTabs));
   const headerBtns = await popupPage.evaluate(() => ({
-    theme: !!document.getElementById("btn-theme"),
     clear: !!document.getElementById("btn-clear"),
+    hardReset: !!document.getElementById("btn-hard-reset"),
+    theme: !!document.getElementById("btn-theme"),
     settings: !!document.getElementById("btn-settings"),
   }));
-  check("popup header 三图标 🎨 🗑 ⚙️",
-    headerBtns.theme && headerBtns.clear && headerBtns.settings,
+  check("v4.3.0：header 含 🗑 + ⚡（移除 🎨/⚙️）",
+    headerBtns.clear && headerBtns.hardReset && !headerBtns.theme && !headerBtns.settings,
     JSON.stringify(headerBtns));
   // popup-themes.css 是否加载（探测 <link rel=stylesheet href*=popup-themes>）
   const hasThemesCss = await popupPage.evaluate(() =>
