@@ -230,11 +230,47 @@
     // 5) 回填行内 code（renderInline 内部已处理，但代码块外的 inline 占位也要收尾）
     result = result.replace(/\x02INLINE([\s\S]*?)\x02/g, (m, c) => `<code>${c}</code>`);
 
-    // 6) 回填代码块
+    // 6) 回填代码块（含 html/svg 预览支持）
     result = result.replace(/\x01CODE(\d+)\x01/g, (m, idx) => {
       const { lang, code } = codeBlocks[Number(idx)];
-      const langClass = lang ? ` class="language-${escapeHtml(lang)}"` : "";
-      return `<pre><code${langClass}>${escapeHtml(code)}</code></pre>`;
+      // 没有 lang 标记时用启发式检测代码内容是否像 HTML/SVG
+      // （AI 平台 DOM 抓取时 class 可能不是标准 language-html，fence 会缺 lang）
+      let effectiveLang = lang;
+      if (!effectiveLang && code) {
+        if (/<!DOCTYPE\s+html/i.test(code) || /<html[\s>]/i.test(code)) {
+          effectiveLang = "html";
+        } else if (/^\s*<svg[\s>]/i.test(code)) {
+          effectiveLang = "svg";
+        } else {
+          // 含 ≥3 个常见 HTML 块级标签 → 视为 HTML 片段
+          const tagMatches = code.match(/<\/?(html|head|body|div|p|span|h[1-6]|ul|ol|table|section|nav|footer|header|main|article|button|input|form|a|img|script|style|link|meta)\b/gi);
+          if (tagMatches && tagMatches.length >= 3) effectiveLang = "html";
+        }
+      }
+      const displayLang = effectiveLang || "";
+      const langClass = displayLang ? ` class="language-${escapeHtml(displayLang)}"` : "";
+      const preHtml = `<pre><code${langClass}>${escapeHtml(code)}</code></pre>`;
+      const previewable = /^x?html$/i.test(displayLang) || /^svg$/i.test(displayLang);
+      if (!previewable) return preHtml;
+      // 把原始 code base64 存到 data-* —— popup-codepreview.js 切到预览时 decode 设 iframe.srcdoc
+      let b64 = "";
+      try {
+        if (typeof btoa === "function") {
+          b64 = btoa(unescape(encodeURIComponent(code)));
+        } else {
+          b64 = Buffer.from(code, "utf8").toString("base64");
+        }
+      } catch { b64 = ""; }
+      const labelLang = displayLang.toUpperCase();
+      return `<div class="code-block-wrap" data-lang="${escapeHtml(displayLang)}">
+<div class="code-block-tabs">
+<button class="code-block-tab active" data-tab="code">代码 ${escapeHtml(labelLang)}</button>
+<button class="code-block-tab" data-tab="preview" title="在沙箱 iframe 中渲染">▶ 预览</button>
+<button class="code-block-tab code-block-copy" data-tab="copy" title="复制">📋</button>
+</div>
+<div class="code-block-pane code-block-pane-code">${preHtml}</div>
+<div class="code-block-pane code-block-pane-preview" data-html-b64="${b64}" hidden></div>
+</div>`;
     });
 
     return result;
