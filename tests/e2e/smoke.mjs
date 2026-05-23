@@ -67,7 +67,7 @@ try {
   // 2) 读 manifest version_name 验证版本同步（直接读源文件）
   const manifest = JSON.parse(fs.readFileSync(path.join(EXT_PATH, "manifest.json"), "utf8"));
   console.log(`[smoke] manifest version: ${manifest.version}, version_name: ${manifest.version_name}`);
-  check("manifest version_name = 4.4.2-beta", manifest.version_name === "4.4.2-beta", `actual: ${manifest.version_name}`);
+  check("manifest version_name = 4.5.0-beta", manifest.version_name === "4.5.0-beta", `actual: ${manifest.version_name}`);
 
   // 3) 打开 sidepanel.html（作为普通 tab），验证 DOM
   const sidepanelPage = await context.newPage();
@@ -75,10 +75,10 @@ try {
   await sidepanelPage.waitForLoadState("domcontentloaded");
 
   const versionBadge = await sidepanelPage.locator(".version").textContent();
-  check("sidepanel version badge", versionBadge === "v4.4.2-beta", `actual: "${versionBadge}"`);
+  check("sidepanel version badge", versionBadge === "v4.5.0-beta", `actual: "${versionBadge}"`);
 
   const footerVersion = await sidepanelPage.locator(".footer").textContent();
-  check("sidepanel footer version", footerVersion?.includes("v4.4.2-beta"), `actual: "${footerVersion?.slice(0, 100)}"`);
+  check("sidepanel footer version", footerVersion?.includes("v4.5.0-beta"), `actual: "${footerVersion?.slice(0, 100)}"`);
 
   const openChatBtn = await sidepanelPage.locator("#btn-open-chat").count();
   check('sidepanel has "🪟 群聊" button', openChatBtn === 1);
@@ -96,7 +96,7 @@ try {
   await popupPage.waitForLoadState("domcontentloaded");
 
   const popupVersion = await popupPage.locator(".chat-version").textContent();
-  check("popup chat-version = v4.4.2-beta", popupVersion === "v4.4.2-beta", `actual: "${popupVersion}"`);
+  check("popup chat-version = v4.5.0-beta", popupVersion === "v4.5.0-beta", `actual: "${popupVersion}"`);
 
   // 图标资产验证（v4.0.11）
   const assetsOk = await popupPage.evaluate(async (extId) => {
@@ -276,8 +276,8 @@ try {
     const tabs = Array.from(document.querySelectorAll(".rp-tab"));
     return tabs.map(t => ({ name: t.dataset.tab, text: t.innerText.trim() }));
   });
-  check("popup 右栏 4 Tab DOM",
-    rpTabs.length === 4 && rpTabs.map(t => t.name).join(",") === "members,tasks,stats,settings",
+  check("v4.5.0：popup 右栏 5 Tab DOM (含 templates)",
+    rpTabs.length === 5 && rpTabs.map(t => t.name).join(",") === "members,tasks,stats,templates,settings",
     JSON.stringify(rpTabs));
   const headerBtns = await popupPage.evaluate(() => ({
     clear: !!document.getElementById("btn-clear"),
@@ -302,6 +302,154 @@ try {
     } catch (e) { return { err: e.message }; }
   }).catch(e => ({ evalErr: e.message }));
   check("getSelectors handler (claude) response+streaming", selectorResult.hasResponse === true && selectorResult.hasStreaming === true, JSON.stringify(selectorResult));
+
+  // ========== v4.5.0：📋 模板库 ==========
+  console.log("\n[smoke] === v4.5.0 模板库 ===");
+
+  // 10) Store API + Builtin 暴露
+  const storeApi = await popupPage.evaluate(() => ({
+    hasStore: typeof window.ArenaTemplateStore === "object",
+    hasBuiltin: typeof window.ArenaBuiltinTemplates === "object",
+    builtinKeys: Object.keys(window.ArenaBuiltinTemplates || {}).sort(),
+    storeMethods: window.ArenaTemplateStore ? Object.keys(window.ArenaTemplateStore).sort() : []
+  }));
+  check("v4.5.0: ArenaTemplateStore 暴露", storeApi.hasStore === true);
+  check("v4.5.0: ArenaBuiltinTemplates 暴露", storeApi.hasBuiltin === true);
+  check("v4.5.0: 4 个内置 binding (debate.collab/debate.free/ppt/summary)",
+    storeApi.builtinKeys.join(",") === "debate.collab,debate.free,ppt,summary",
+    JSON.stringify(storeApi.builtinKeys));
+  check("v4.5.0: Store 关键方法齐全",
+    ["resolve", "saveOverride", "resetOverride", "resetAllOverrides", "addUserTemplate", "deleteUserTemplate"]
+      .every(m => storeApi.storeMethods.includes(m)),
+    JSON.stringify(storeApi.storeMethods));
+
+  // 11) 切到 templates Tab + 渲染
+  await popupPage.click('.rp-tab[data-tab="templates"]');
+  await popupPage.waitForTimeout(300);
+
+  const builtinItemCount = await popupPage.locator("#tpl-builtin-list .tpl-item").count();
+  check("v4.5.0: 模板 Tab 渲染 4 个内置任务模板", builtinItemCount === 4, `actual: ${builtinItemCount}`);
+
+  const userEmptyText = await popupPage.locator("#tpl-user-list .tpl-empty").textContent().catch(() => null);
+  check("v4.5.0: 我的模板初始为空（空状态文案）",
+    !!userEmptyText && userEmptyText.includes("还没有自定义模板"),
+    `actual: ${userEmptyText}`);
+
+  // 12) override + resolve 闭环（debate.free.r2）
+  const ovTest = await popupPage.evaluate(async () => {
+    await window.ArenaTemplateStore.saveOverride("debate.free", "r2", "TEST_OVERRIDE_R2");
+    await new Promise(r => setTimeout(r, 100));
+    const got = window.ArenaTemplateStore.resolve("debate.free", "r2");
+    return { got };
+  });
+  check("v4.5.0: saveOverride 后 resolve 返回新值",
+    ovTest.got === "TEST_OVERRIDE_R2", JSON.stringify(ovTest));
+
+  // 13) resetOverride 后回 builtin
+  const resetTest = await popupPage.evaluate(async () => {
+    await window.ArenaTemplateStore.resetOverride("debate.free", "r2");
+    await new Promise(r => setTimeout(r, 100));
+    const got = window.ArenaTemplateStore.resolve("debate.free", "r2");
+    const builtin = window.ArenaBuiltinTemplates["debate.free"].fields.find(f => f.key === "r2").value;
+    return { restored: got === builtin };
+  });
+  check("v4.5.0: resetOverride 后回 builtin",
+    resetTest.restored === true, JSON.stringify(resetTest));
+
+  // 14) 新建自定义模板 + 单击插入输入框
+  const insertTest = await popupPage.evaluate(async () => {
+    const t = await window.ArenaTemplateStore.addUserTemplate({
+      name: "E2E_TEST_TEMPLATE",
+      body: "HELLO_INSERT_TEST"
+    });
+    await new Promise(r => setTimeout(r, 200));
+    const userItem = document.querySelector(`#tpl-user-list .tpl-item[data-user-id="${t.id}"]`);
+    if (!userItem) return { err: "user item not rendered", id: t.id };
+    const input = document.getElementById("chat-input");
+    input.textContent = "";
+    userItem.querySelector(".tpl-row").click();
+    await new Promise(r => setTimeout(r, 150));
+    const content = input.textContent;
+    // 清理
+    await window.ArenaTemplateStore.deleteUserTemplate(t.id);
+    return { content };
+  });
+  check("v4.5.0: 单击自定义模板插入到 #chat-input",
+    insertTest.content === "HELLO_INSERT_TEST", JSON.stringify(insertTest));
+
+  // 15) 编辑器弹层
+  const editorTest = await popupPage.evaluate(async () => {
+    const row = document.querySelector('#tpl-builtin-list .tpl-item[data-binding="debate.free"]');
+    if (!row) return { err: "row not found" };
+    // hover 显示 actions
+    row.querySelector(".tpl-mini-btn[data-act='edit']").click();
+    await new Promise(r => setTimeout(r, 100));
+    const mask = document.getElementById("tpl-modal-mask");
+    const open = mask && !mask.hidden;
+    const fieldTabs = document.querySelectorAll(".tpl-field-tab").length;
+    // 关闭
+    document.getElementById("tpl-editor-cancel")?.click();
+    await new Promise(r => setTimeout(r, 100));
+    const closed = mask.hidden === true;
+    return { open, closed, fieldTabs };
+  });
+  check("v4.5.0: 编辑器打开（debate.free 有 4 字段 tab）",
+    editorTest.open === true && editorTest.fieldTabs === 4, JSON.stringify(editorTest));
+  check("v4.5.0: 编辑器取消按钮关闭弹层", editorTest.closed === true);
+
+  // 16) resetAllOverrides 清空所有 overrides
+  const resetAllTest = await popupPage.evaluate(async () => {
+    await window.ArenaTemplateStore.saveOverride("debate.free", "main", "X");
+    await window.ArenaTemplateStore.saveOverride("ppt", "intro", "Y");
+    await window.ArenaTemplateStore.resetAllOverrides();
+    await new Promise(r => setTimeout(r, 100));
+    return new Promise(res => {
+      chrome.storage.local.get(["arena_templates_v1"], r => {
+        res({ ov: r?.arena_templates_v1?.overrides || null });
+      });
+    });
+  });
+  check("v4.5.0: resetAllOverrides 后 storage.overrides 为空",
+    JSON.stringify(resetAllTest.ov || {}) === "{}", JSON.stringify(resetAllTest));
+
+  // 17) 验证 buildDebatePrompt 真用了 override（SW 侧）
+  const buildResult = await serviceWorker.evaluate(async () => {
+    await self.ArenaTemplateStore.saveOverride("debate.free", "main", "OVERRIDE_MAIN_TEST");
+    await new Promise(r => setTimeout(r, 100));
+    const fakeResponses = {
+      "claude": { name: "Claude", text: "Claude 回答" },
+      "gemini": { name: "Gemini", text: "Gemini 回答" }
+    };
+    const prompt = self.DebateEngine.buildDebatePrompt("chatgpt", fakeResponses, "free", 1, "", false);
+    await self.ArenaTemplateStore.resetOverride("debate.free", "main");
+    return { containsOverride: prompt.includes("OVERRIDE_MAIN_TEST"), len: prompt.length };
+  }).catch(e => ({ err: e.message }));
+  check("v4.5.0: buildDebatePrompt 使用 override 后的 main",
+    buildResult.containsOverride === true, JSON.stringify(buildResult));
+
+  // 18) 验证 buildImagePrompt 用了 ppt override 的 seed（SW 侧）
+  const pptBuildResult = await serviceWorker.evaluate(async () => {
+    await self.ArenaTemplateStore.saveOverride("ppt", "intro", "OVERRIDE_PPT_SEED_TEST");
+    await new Promise(r => setTimeout(r, 100));
+    const prompt = self.PptPrompts.buildImagePrompt({ question: "q", responses: [] }, "intro");
+    await self.ArenaTemplateStore.resetOverride("ppt", "intro");
+    return { containsOverride: prompt.includes("OVERRIDE_PPT_SEED_TEST"), len: prompt.length };
+  }).catch(e => ({ err: e.message }));
+  check("v4.5.0: buildImagePrompt 使用 override 后的 seed",
+    pptBuildResult.containsOverride === true, JSON.stringify(pptBuildResult));
+
+  // 19) summary instruction 也走模板
+  const summaryBuildResult = await serviceWorker.evaluate(async () => {
+    await self.ArenaTemplateStore.saveOverride("summary", "instruction", "OVERRIDE_SUMMARY_INSTRUCTION");
+    await new Promise(r => setTimeout(r, 100));
+    const prompt = self.DebateEngine.buildSummaryPrompt("q", [], {
+      "claude": { name: "Claude", text: "c" }
+    }, "");
+    await self.ArenaTemplateStore.resetOverride("summary", "instruction");
+    return { containsOverride: prompt.includes("OVERRIDE_SUMMARY_INSTRUCTION") };
+  }).catch(e => ({ err: e.message }));
+  check("v4.5.0: buildSummaryPrompt 使用 override 后的 instruction",
+    summaryBuildResult.containsOverride === true, JSON.stringify(summaryBuildResult));
 
   // 等几秒收集 layout logs
   await popupPage.waitForTimeout(2000);

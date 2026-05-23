@@ -113,6 +113,11 @@ ${source}
 function buildImagePrompt(ctx, templateKey) {
   const t = PPT_TEMPLATE_META[templateKey] || PPT_TEMPLATE_META.intro;
   const copy = ctx.imageBrief || buildDiscussionFromContext(ctx || {});
+  // v4.5.0: huaweiSeed 优先从用户模板 override 取（templates-builtin.js / template-store.js）
+  const store = (typeof self !== "undefined" ? self : globalThis).ArenaTemplateStore;
+  const fieldKey = PPT_TEMPLATE_META[templateKey] ? templateKey : "intro";
+  const userSeed = store ? store.resolve("ppt", fieldKey) : "";
+  const seed = userSeed || t.huaweiSeed;
   return `你是华为风格企业技术汇报 PPT 的视觉生成器。请把前面已经形成的 PPT 文案，转化为一页 16:9 华为内部技术评审 PPT 效果图。
 
 当前阶段：第 2 步 / 3 步：文案生成 → 图片生成 → PPT生成
@@ -123,7 +128,7 @@ ${copy}
 选定模板：${t.title}
 
 模板风格与版式规则：
-${t.huaweiSeed}
+${seed}
 
 本模板的差异化任务：
 - 叙事角度：${t.angle}

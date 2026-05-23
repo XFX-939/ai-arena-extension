@@ -1,0 +1,171 @@
+// templates-builtin.js — 内置任务模板的默认数据（纯数据，无依赖）
+// 被 background.js importScripts 和 popup.html 直接 <script> 加载
+// 用户的覆盖存在 chrome.storage.local["arena_templates_v1"].overrides[binding][fieldKey]
+// resolve 顺序：override?.[fieldKey] ?? builtin field.value
+
+(function (root) {
+  const BUILTIN = {
+    "debate.free": {
+      binding: "debate.free",
+      emoji: "⚔️",
+      name: "辩论 · 自由",
+      category: "辩论",
+      fields: [
+        {
+          key: "main",
+          label: "主提示",
+          value: "以下是其他 AI 对同一问题的回答，请分析他们的观点，指出你认同和不认同的地方，并给出你的改进回答。"
+        },
+        {
+          key: "r1",
+          label: "第 1 轮引导",
+          value: "这是第1轮辩论。请仔细阅读其他参与者的初始回答，找出核心分歧和共识。"
+        },
+        {
+          key: "r2",
+          label: "第 2 轮引导",
+          value: "这是第2轮辩论。经过上一轮交锋，请聚焦于仍存在分歧的关键点，深化你的论证或修正你的观点。"
+        },
+        {
+          key: "r3",
+          label: "第 3 轮引导",
+          value: "这是第3轮辩论。辩论已进入深水区，请避免重复已达成共识的内容，集中攻克剩余分歧点，给出最终立场。"
+        }
+      ]
+    },
+    "debate.collab": {
+      binding: "debate.collab",
+      emoji: "🤝",
+      name: "辩论 · 群策群力",
+      category: "辩论",
+      fields: [
+        {
+          key: "main",
+          label: "主提示",
+          value: "以下是你的队友们对同一问题的回答。你们是协作关系，目标是共同得出最优方案。请：1) 吸收队友回答中的亮点和你没想到的角度；2) 补充你认为队友遗漏的重要内容；3) 整合所有人的优势，给出一个更完善的综合回答。不要攻击或否定队友，而是取长补短。"
+        },
+        {
+          key: "r1",
+          label: "第 1 轮引导",
+          value: "这是第1轮协作。请仔细阅读队友们的回答，找出各自的亮点和你没想到的角度。"
+        },
+        {
+          key: "r2",
+          label: "第 2 轮引导",
+          value: "这是第2轮协作。队友们已经互相补充了一轮，请在此基础上进一步整合，查漏补缺。"
+        },
+        {
+          key: "r3",
+          label: "第 3 轮引导",
+          value: "这是第3轮协作。方案已趋于成熟，请做最终打磨——精简冗余，强化核心结论，形成一份完整方案。"
+        }
+      ]
+    },
+    "summary": {
+      binding: "summary",
+      emoji: "⚖️",
+      name: "裁判总结",
+      category: "总结",
+      // 说明：buildSummaryPrompt 会在此字段前自动拼接"你是一场多 AI 辩论的最终裁判 + 问题 + 历史 + 各 AI 观点"的固定 header。
+      // 用户编辑这里 = 调整裁判的输出格式 / schema / 严格要求。
+      fields: [
+        {
+          key: "instruction",
+          label: "裁判指令（输出格式 / schema）",
+          value: `请你作为裁判，**直接输出一份 JSON**（不要任何前言/后言/markdown 标记，仅 JSON）按以下 schema：
+
+\`\`\`json
+{
+  "topic": "辩论的核心命题（精炼成一句话）",
+  "core_conclusion": "整场辩论得出的一句话核心结论（150 字以内，是这次辩论最值得带走的认知）",
+  "consensus": [
+    "共识 1（各方都同意的具体观点，30-80 字）",
+    "共识 2"
+  ],
+  "disagreements": [
+    "分歧 1（仍有明确不同立场的点，30-80 字）",
+    "分歧 2"
+  ],
+  "open_questions": [
+    "待证 1（辩论中提出但未答的问题，30-80 字）"
+  ],
+  "key_arguments": [
+    {
+      "title": "关键论点 1 的命题（如 'Scaling Law 已撞墙'）",
+      "supports": [
+        { "ai": "Claude", "text": "Claude 支持该论点的核心理由（30-60 字）" }
+      ],
+      "opposes": [
+        { "ai": "Gemini", "text": "Gemini 反对/不同视角的核心理由" }
+      ]
+    }
+  ],
+  "highlights": [
+    { "ai": "Claude", "text": "整场最精彩的一句引用（原话或浓缩）", "round": 4 }
+  ],
+  "next_steps": [
+    "后续可继续思考的方向 1（具体可行动，30-80 字）"
+  ],
+  "rounds": [
+    {
+      "num": 1,
+      "title": "本轮的子主题（如 '初始立场' / 'Scaling Law 之争'）",
+      "voices": [
+        { "ai": "Claude", "text": "Claude 在本轮的核心观点（30-60 字浓缩）" },
+        { "ai": "Gemini", "text": "..." }
+      ]
+    }
+  ]
+}
+\`\`\`
+
+**严格要求**：
+1. **整个输出必须是一段合法 JSON**，不要加 \`\`\`json 围栏、不要前言"好的"/"以下是"、不要后续解释
+2. AI 名字用前面给出的参与者名字（数组里就用这些字符串）
+3. consensus / disagreements / open_questions 数组各 1-5 条
+4. key_arguments 数组 2-4 条（最有代表性的论点）
+5. highlights 数组 2-4 条（最精彩的引用）
+6. next_steps 数组 2-5 条（具体可行动方向）
+7. rounds 数组对应实际辩论的每一轮，voices 数组覆盖该轮发言的所有 AI
+8. 所有字段必须填充，没有内容就给空数组 []`
+        }
+      ]
+    },
+    "ppt": {
+      binding: "ppt",
+      emoji: "📊",
+      name: "PPT 风格",
+      category: "PPT",
+      fields: [
+        {
+          key: "intro",
+          label: "技术介绍",
+          value: "请生成一页 16:9 华为内部技术评审 PPT 截图风格的效果图。白底、高信息密度、左上红色结论标题、顶部细线、右上可放黄色推进箭头、底部保留页码 / Huawei Confidential。标题写成结论句不要写营销口号。主体采用'问题约束 → 机制拆解 → 实验/指标证据 → 输出收益'的因果链。2-4 个紧凑区域，每框包含小标题、2-4 条短句、指标数字、方法标签或微型图表，文字/标注占框内 70%-90%。"
+        },
+        {
+          key: "topic",
+          label: "技术专题",
+          value: "请生成一页 16:9 华为内部技术专题 PPT 截图风格的效果图。'上方总判断 + 下方多方向证据'的总分结构。上方用 1 条横向技术链路概括，下方拆成 3-5 个正交方向，每个方向包含目标、方法、指标、证据图四类信息中的至少 3 类。"
+        },
+        {
+          key: "compare",
+          label: "技术对比",
+          value: "16:9 华为内部技术对比 PPT 截图风格。左中右结构：左侧 As-Is 现有链路/痛点/基线指标，中间用粗细结合的演进箭头和红色关键变化标注，右侧 To-Be 目标架构/新机制/目标指标。"
+        },
+        {
+          key: "insight",
+          label: "技术洞察",
+          value: "16:9 华为内部技术洞察 PPT 截图风格。'约束/痛点 → 技术变化 → 机制解释 → 场景收益'四段横向链路，下方放 2-3 个证据区。"
+        },
+        {
+          key: "landscape",
+          label: "技术全景",
+          value: "16:9 华为内部技术全景 PPT 截图风格的'领域沙盘/演进地图'。横向体现阶段、链路或时间演进，纵向体现能力层/数据层/模型层/场景层。顶部 3 步关键突破，中部主架构/数据链路，下部 3-4 个场景扩展或能力增强证据块。"
+        }
+      ]
+    }
+  };
+
+  // self 在 SW 中是 ServiceWorkerGlobalScope，在 popup 中是 window
+  root.ArenaBuiltinTemplates = BUILTIN;
+})(typeof self !== "undefined" ? self : window);

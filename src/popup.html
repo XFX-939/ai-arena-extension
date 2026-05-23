@@ -29,7 +29,7 @@
         <img class="chat-icon" src="icons/icon48.png" alt="">
         <span class="chat-name">AI Arena</span>
         <span class="chat-subtitle">群聊</span>
-        <span class="chat-version">v4.4.2-beta</span>
+        <span class="chat-version">v4.5.0-beta</span>
       </div>
       <div class="chat-actions">
         <button class="btn-icon" id="btn-clear" title="仅清空群聊窗口（不动 AI / 辩论上下文）" aria-label="清空群聊">
@@ -126,6 +126,16 @@
           </svg>
           <span>统计</span>
         </button>
+        <button class="rp-tab" data-tab="templates" aria-label="模板">
+          <svg class="rp-tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+            <polyline points="14 2 14 8 20 8"/>
+            <line x1="9" y1="13" x2="15" y2="13"/>
+            <line x1="9" y1="17" x2="15" y2="17"/>
+            <line x1="9" y1="9" x2="11" y2="9"/>
+          </svg>
+          <span>模板</span>
+        </button>
         <button class="rp-tab" data-tab="settings" aria-label="设置">
           <svg class="rp-tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <line x1="4" y1="21" x2="4" y2="14"/>
@@ -144,9 +154,22 @@
       <div class="rp-panel active" data-rp-panel="members" id="rp-panel-members"></div>
       <div class="rp-panel" data-rp-panel="tasks" id="rp-panel-tasks"></div>
       <div class="rp-panel" data-rp-panel="stats" id="rp-panel-stats"></div>
+      <div class="rp-panel" data-rp-panel="templates" id="rp-panel-templates"></div>
       <div class="rp-panel" data-rp-panel="settings" id="rp-panel-settings"></div>
     </aside>
   </div>
+  <div class="tpl-modal-mask" id="tpl-modal-mask" hidden>
+    <div class="tpl-modal">
+      <div class="tpl-modal-header">
+        <span class="tpl-modal-emoji" id="tpl-modal-emoji">⚔️</span>
+        <span class="tpl-modal-title" id="tpl-modal-title">编辑模板</span>
+        <span class="tpl-modal-badge" id="tpl-modal-badge">内置</span>
+      </div>
+      <div class="tpl-modal-body" id="tpl-modal-body"></div>
+      <div class="tpl-modal-footer" id="tpl-modal-footer"></div>
+    </div>
+  </div>
+  <div class="tpl-toast" id="tpl-toast"></div>
   <script src="popup-markdown.js"></script>
   <script src="popup-codepreview.js"></script>
   <script src="popup-bubble-actions.js"></script>
@@ -157,6 +180,9 @@
   <script src="popup-tasks.js"></script>
   <script src="popup-stats.js"></script>
   <script src="popup-settings.js"></script>
+  <script src="templates-builtin.js"></script>
+  <script src="template-store.js"></script>
+  <script src="popup-templates.js"></script>
   <script src="popup-task-menu.js"></script>
   <script src="popup.js"></script>
 </body>
