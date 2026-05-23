@@ -104,8 +104,32 @@
       </div>`;
     $messages.appendChild(row);
     bubbleByKey.set(`${msgId}-${participantId}`, row);
+    // v4.3.6: 如果是非 typing 初始化（restoreLog 重放）且 initialText 已完整，应用折叠
+    if (!isTyping && initialText) {
+      const bubble = row.querySelector(".msg-bubble");
+      if (bubble) applyFoldClass(bubble, initialText, true);
+    }
     scrollToBottom();
     return row;
+  }
+
+  // v4.3.6: AI 长文折叠（>800 字且已完成时显示"展开全文"按钮）
+  const FOLD_THRESHOLD = 800;
+  function applyFoldClass(bubble, text, isDone) {
+    if (!bubble) return;
+    // 移除旧 toggle
+    bubble.querySelectorAll(".msg-fold-toggle").forEach(el => el.remove());
+    if (!isDone || (text || "").length <= FOLD_THRESHOLD) {
+      bubble.classList.remove("msg-bubble-foldable", "expanded");
+      return;
+    }
+    bubble.classList.add("msg-bubble-foldable");
+    bubble.classList.remove("expanded");  // 完成时默认折叠
+    const btn = document.createElement("button");
+    btn.className = "msg-fold-toggle";
+    btn.dataset.act = "fold-toggle";
+    btn.innerHTML = `<span class="msg-fold-icon">▾</span> 展开全文 <span class="msg-fold-count">${(text || "").length} 字</span>`;
+    bubble.appendChild(btn);
   }
 
   function updateAIBubble(msgId, participantId, text, isDone, hasRichContent, richTypes) {
@@ -115,6 +139,7 @@
     const stat = row.querySelector(".msg-meta .stat");
     if (!bubble) return;
     bubble.innerHTML = text ? renderMarkdown(text) : `<span class="msg-typing"><span></span><span></span><span></span></span>`;
+    if (text) applyFoldClass(bubble, text, isDone);
     if (stat) {
       if (isDone) {
         stat.className = "stat done";

@@ -167,10 +167,18 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           sendResponse({ ok: true });
           break;
         case "hardReset":
+          // v4.3.6: hardReset 之前关闭所有 AI 网页 tab
+          try {
+            const tabIds = (StateMachine.participants || [])
+              .map(p => p.tabId)
+              .filter(id => typeof id === "number");
+            if (tabIds.length) {
+              await chrome.tabs.remove(tabIds).catch(() => {});
+            }
+          } catch (_) {}
           StateMachine.hardReset();
-          // v4.3.0：彻底初始化同时清空群聊 log
           try { ChatBus.clearLog(); } catch (_) {}
-          notifyStatus("已彻底重置（AI + 群聊 + 辩论上下文）");
+          notifyStatus("已彻底重置（AI 标签页 + 群聊 + 辩论上下文）");
           sendResponse({ ok: true });
           break;
         case "pptBuildPrompt": {

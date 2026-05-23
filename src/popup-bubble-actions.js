@@ -19,6 +19,27 @@
     const bubble = row.querySelector(".msg-bubble");
     const text = bubble?.innerText?.trim() || "";
 
+    if (act === "fold-toggle") {
+      // v4.3.6: 展开/收起长文
+      const bubble = btn.closest(".msg-bubble");
+      if (bubble) {
+        const isExpanded = bubble.classList.toggle("expanded");
+        const icon = btn.querySelector(".msg-fold-icon");
+        if (icon) icon.textContent = isExpanded ? "▴" : "▾";
+        // 文本"展开全文"/"收起" 切换
+        const countSpan = btn.querySelector(".msg-fold-count");
+        const countTxt = countSpan ? countSpan.outerHTML : "";
+        btn.innerHTML = isExpanded
+          ? `<span class="msg-fold-icon">▴</span> 收起 ${countTxt}`
+          : `<span class="msg-fold-icon">▾</span> 展开全文 ${countTxt}`;
+        // 收起后 scroll 回气泡顶部
+        if (!isExpanded) {
+          const row = btn.closest(".msg");
+          if (row) row.scrollIntoView({ behavior: "smooth", block: "start" });
+        }
+      }
+      return;
+    }
     if (act === "copy") {
       try {
         await navigator.clipboard.writeText(text);

@@ -573,6 +573,65 @@ body {
   box-shadow: 0 4px 12px rgba(0,0,0,0.15);
   min-width: 140px; padding: 4px; z-index: 10;
 }
+/* v4.3.6: AI 长文折叠 */
+.msg-bubble-foldable {
+  position: relative;
+}
+.msg-bubble-foldable:not(.expanded) {
+  max-height: 320px;
+  overflow: hidden;
+  padding-bottom: 40px;  /* 给 toggle 按钮留位 */
+}
+.msg-bubble-foldable:not(.expanded)::before {
+  content: "";
+  position: absolute;
+  left: 0; right: 0;
+  bottom: 38px;
+  height: 56px;
+  background: linear-gradient(transparent, var(--bubble-them));
+  pointer-events: none;
+  z-index: 1;
+}
+.msg-fold-toggle {
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  background: var(--bubble-them);
+  border: none;
+  border-top: 1px solid var(--border);
+  padding: 8px 12px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--accent);
+  cursor: pointer;
+  text-align: center;
+  font-family: inherit;
+  letter-spacing: 0.02em;
+  z-index: 2;
+  transition: background 0.15s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+.msg-fold-toggle:hover { background: rgba(10,132,255,0.06); }
+.msg-bubble-foldable.expanded .msg-fold-toggle {
+  position: relative;
+  margin-top: 8px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  border-top: 1px solid var(--border);
+}
+.msg-fold-icon {
+  font-size: 10px;
+  display: inline-block;
+}
+.msg-fold-count {
+  font-size: 10px;
+  color: var(--ink-soft);
+  font-family: "SF Mono", "Consolas", monospace;
+  font-weight: 500;
+}
+
 /* v4.3.5: mention item 显示真实 brand logo */
 .mention-item {
   padding: 7px 12px;
