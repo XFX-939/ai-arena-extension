@@ -191,7 +191,7 @@ try {
   // 测试组 D：版本号 4 处同步
   // ─────────────────────────────────────────
   console.log("\n=== D. 版本号同步（feedback_ai_arena_version_bump 铁律） ===");
-  const expectedVersion = "4.4.0-beta";
+  const expectedVersion = "4.4.1-beta";
   const manifest = JSON.parse(fs.readFileSync(path.join(EXT_PATH, "manifest.json"), "utf8"));
   const popupHtml = fs.readFileSync(path.join(EXT_PATH, "popup.html"), "utf8");
   const sidepanelHtml = fs.readFileSync(path.join(EXT_PATH, "sidepanel.html"), "utf8");
@@ -496,6 +496,20 @@ try {
   // I5: state-machine 加 pendingSummary 字段
   const smSrc = fs.readFileSync(path.join(EXT_PATH, "state-machine.js"), "utf8");
   check("I5: StateMachine.pendingSummary 字段", /pendingSummary/.test(smSrc));
+
+  // I6 (v4.4.1): "输出文本总结"按钮 + format=text 路径
+  const deSrc = fs.readFileSync(path.join(EXT_PATH, "debate-engine.js"), "utf8");
+  check("I6a: debate-engine 含 buildSummaryPromptText", /buildSummaryPromptText/.test(deSrc));
+  check("I6b: 文本版 prompt 保留老的 4 段结构（共识/分歧/裁定/建议）",
+    /共识结论/.test(deSrc) && /分歧焦点/.test(deSrc) && /最终裁定/.test(deSrc) && /实操建议/.test(deSrc));
+  const bgSrc3 = fs.readFileSync(path.join(EXT_PATH, "background.js"), "utf8");
+  check("I6c: handleSummary 接受 format 参数", /handleSummary\([^)]*format/.test(bgSrc3));
+  check("I6d: format=text 不设 pendingSummary（走老气泡路径）",
+    /useJsonHtml\s*\?\s*\{[\s\S]*?\}\s*:\s*null/.test(bgSrc3));
+  const ptSrc = fs.readFileSync(path.join(EXT_PATH, "popup-tasks.js"), "utf8");
+  check("I6e: popup-tasks 含 rp-btn-summary-text 按钮", /rp-btn-summary-text/.test(ptSrc));
+  check("I6f: popup-tasks dispatchSummary 接受 html/text format",
+    /dispatchSummary\(["']html["']\)/.test(ptSrc) && /dispatchSummary\(["']text["']\)/.test(ptSrc));
 
   // H8: manifest 含 img-src 放开
   const manifestSrc = fs.readFileSync(path.join(EXT_PATH, "manifest.json"), "utf8");

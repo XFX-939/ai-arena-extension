@@ -104,14 +104,15 @@
         <option value="">选择裁判…</option>
         ${opts}
       </select>
-      <button class="rp-btn primary" id="rp-btn-summary">📋 输出总结</button>
+      <button class="rp-btn primary" id="rp-btn-summary" title="输出结构化 HTML 报告（可归档可分享）">📋 输出总结</button>
+      <button class="rp-btn" id="rp-btn-summary-text" title="输出老版 markdown 散文（共识/分歧/裁定/建议四段）">📄 输出文本总结</button>
       <button class="rp-btn" id="rp-btn-export">📤 导出会话</button>
       <button class="rp-btn danger-soft" id="rp-btn-reset">⚡ 重置</button>
     `;
   }
 
   function bindSummary(root) {
-    root.querySelector("#rp-btn-summary")?.addEventListener("click", () => {
+    function dispatchSummary(format) {
       const judgeId = root.querySelector("#rp-judge")?.value;
       if (!judgeId) { alert("请先选择裁判"); return; }
       state.judgeId = judgeId;
@@ -119,10 +120,13 @@
         type: "summary",
         judgeId,
         customInstruction: "",
+        format,
       }, (resp) => {
         if (resp && !resp.ok) alert(`总结失败：${resp.error || "未知错误"}`);
       });
-    });
+    }
+    root.querySelector("#rp-btn-summary")?.addEventListener("click", () => dispatchSummary("html"));
+    root.querySelector("#rp-btn-summary-text")?.addEventListener("click", () => dispatchSummary("text"));
     root.querySelector("#rp-btn-export")?.addEventListener("click", () => {
       chrome.runtime.sendMessage({ type: "exportSession" }, (resp) => {
         if (resp && !resp.ok) alert(`导出失败：${resp.error || "未知错误"}`);

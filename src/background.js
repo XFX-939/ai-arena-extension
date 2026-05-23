@@ -148,7 +148,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         case "removeParticipant": sendResponse(await removeParticipant(msg.id)); break;
         case "broadcast":         sendResponse(await handleBroadcast(msg.text, msg.images)); break;
         case "debateRound":       sendResponse(await handleDebateRound(msg.style, msg.guidance, msg.concise)); break;
-        case "summary":           sendResponse(await handleSummary(msg.judgeId, msg.customInstruction)); break;
+        case "summary":           sendResponse(await handleSummary(msg.judgeId, msg.customInstruction, msg.format)); break;
         case "checkAllCompletion": sendResponse(await checkAllCompletion()); break;
         case "focusTab":          sendResponse(await handleFocusTab(msg.id)); break;
         case "readOneResponse":   sendResponse(await readOneResponse(msg.participantId)); break;
@@ -544,7 +544,7 @@ async function handleDebateRound(style = "free", guidance = "", concise = false)
 
 // ── 辩论总结 ──
 
-async function handleSummary(judgeId, customInstruction = "") {
+async function handleSummary(judgeId, customInstruction = "", format = "html") {
   if (StateMachine.participants.length < 2) { notifyStatus("至少需要 2 个参与者"); return { ok: false, error: "参与者不足" }; }
   const judge = StateMachine.getParticipant(judgeId);
   if (!judge?.tabId) { notifyStatus("裁判未打开"); return { ok: false, error: "裁判未打开" }; }
@@ -557,16 +557,25 @@ async function handleSummary(judgeId, customInstruction = "") {
   }
   if (Object.keys(responses).length < 2) { notifyStatus("回答不足"); return { ok: false, error: "回答不足" }; }
 
-  const prompt = DebateEngine.buildSummaryPrompt(
-    StateMachine.debateSession.originalQuestion,
-    StateMachine.debateSession.rounds,
-    responses,
-    customInstruction
-  );
+  // v4.4.1: format 决定走 JSON→HTML 还是老的 markdown 散文
+  const useJsonHtml = format !== "text";
+  const prompt = useJsonHtml
+    ? DebateEngine.buildSummaryPrompt(
+        StateMachine.debateSession.originalQuestion,
+        StateMachine.debateSession.rounds,
+        responses,
+        customInstruction
+      )
+    : DebateEngine.buildSummaryPromptText(
+        StateMachine.debateSession.originalQuestion,
+        StateMachine.debateSession.rounds,
+        responses,
+        customInstruction
+      );
 
   StateMachine.setFlowState(FlowState.SUMMARY);
-  // v4.4.0: 标记 pendingSummary — chat-bus polling 完成时识别为总结输出 → 渲染 HTML
-  StateMachine.pendingSummary = {
+  // v4.4.0: 仅 html 模式设置 pendingSummary（text 模式走老路径，气泡显示散文即可）
+  StateMachine.pendingSummary = useJsonHtml ? {
     judgeId: judge.id,
     judgeName: judge.name,
     judgeService: judge.service,
@@ -575,7 +584,7 @@ async function handleSummary(judgeId, customInstruction = "") {
     rounds: StateMachine.debateSession.rounds.length || 0,
     participants: StateMachine.participants.map(p => p.name),
     ts: Date.now(),
-  };
+  } : null;
   notifyStatus(`正在由 ${judge.name} 总结...`);
   try {
     StateMachine.setLastSent(judge.id, prompt);
