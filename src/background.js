@@ -637,10 +637,14 @@ async function arrangeWindows(screen = lastKnownScreen) {
   return { ok: true, screen: targetScreen, displayId: targetLayout.displayId, isDifferentDisplay: targetLayout.isDifferentDisplay };
 }
 
+// AI 平台域名（用于过滤"我们自己创建的 AI window"，避免它们污染 hasUserWindow 判定）
+const AI_HOSTS = /(?:^|\.)(claude\.ai|gemini\.google\.com|chatgpt\.com|deepseek\.com|doubao\.com|qianwen\.com|tongyi\.aliyun\.com|kimi\.com|kimi\.moonshot\.cn|yuanbao\.tencent\.com|grok\.com)$/i;
+
 async function getAiTargetLayout(sidepanelScreen = lastKnownScreen) {
   const fallback = normalizeScreen(sidepanelScreen);
   try {
     if (!chrome.system?.display?.getInfo) {
+      console.log("[Arena/layout] chrome.system.display unavailable, using sidepanel screen");
       return { screen: fallback, displayId: null, isDifferentDisplay: false };
     }
     const displays = await chrome.system.display.getInfo();
@@ -648,21 +652,42 @@ async function getAiTargetLayout(sidepanelScreen = lastKnownScreen) {
       .map(d => ({ id: d.id, screen: normalizeScreen(d.workArea || d.bounds), isPrimary: !!d.isPrimary }))
       .filter(d => d.screen.width > 0 && d.screen.height > 0);
 
+    console.log("[Arena/layout] displays:", normalized.map(d => ({ id: d.id.slice(-6), ...d.screen, primary: d.isPrimary })));
+    console.log("[Arena/layout] sidepanel reports:", fallback);
+
     // 找到 sidepanel 所在屏（current display）
     const current = findDisplayForScreen(fallback, normalized) || normalized.find(d => d.isPrimary) || normalized[0];
-    const currentScreen = current?.screen || fallback;
+    // 关键：currentScreen 直接信任 sidepanelScreen（用户屏），不使用 normalized display 的 workArea
+    // 因为 chrome.system.display 偶尔返回虚拟坐标，而 sidepanel 的 window.screen 是浏览器内核报告的真实屏
+    const currentScreen = fallback;
+    console.log("[Arena/layout] current display picked:", current?.id?.slice(-6), "currentScreen:", currentScreen);
 
     // 自动：副屏优先 + 不存在真副屏则回退同屏
     if (normalized.length < 2) {
+      console.log("[Arena/layout] single display detected, using current");
       return { screen: currentScreen, displayId: current?.id || null, isDifferentDisplay: false };
     }
 
-    // 检测"真副屏"：(1) 与 current 屏物理不重叠 AND (2) 该 display 上至少存在一个用户 chrome window
-    // 条件 (2) 用于排除 Chrome 在 Windows 上偶尔报告的虚拟显示器（HDR/远程桌面/旧设备缓存）—
-    // 这些 display 物理上不存在，自然没有任何窗口会落在其上。
-    const allWindows = await chrome.windows.getAll().catch(() => []);
+    // 检测"真副屏"：
+    //   (1) 与 current 屏物理不重叠
+    //   (2) 该 display 上至少存在一个【非 AI 平台】的用户 chrome window
+    // 条件 (2) 防虚拟副屏 + 防"上一次错误弹到虚拟副屏的 AI window 自污染"
+    const allWindows = await chrome.windows.getAll({ populate: true }).catch(() => []);
+    function isUserWindow(w) {
+      // 无 tab 信息：保守视为用户窗口
+      if (!w.tabs?.length) return true;
+      // 我们之前创建的 AI 窗口都是单 tab 且 url 是 AI 平台 → 全部 tab 都 match AI 域名时跳过
+      return !w.tabs.every(t => {
+        try {
+          if (!t.url) return false;
+          const host = new URL(t.url).hostname;
+          return AI_HOSTS.test(host);
+        } catch { return false; }
+      });
+    }
     function hasUserWindow(displayScreen) {
       return allWindows.some(w => {
+        if (!isUserWindow(w)) return false;
         if (typeof w.left !== "number" || typeof w.width !== "number") return false;
         const cx = w.left + w.width / 2;
         const cy = w.top + w.height / 2;
@@ -673,20 +698,24 @@ async function getAiTargetLayout(sidepanelScreen = lastKnownScreen) {
       });
     }
 
-    const others = normalized.filter(d =>
-      d.id !== current.id
-      && !overlapsDisplay(d.screen, currentScreen)
-      && hasUserWindow(d.screen)
-    );
+    const others = normalized.filter(d => {
+      if (d.id === current.id) return false;
+      const notOverlap = !overlapsDisplay(d.screen, currentScreen);
+      const hasUser = hasUserWindow(d.screen);
+      console.log("[Arena/layout] other display", d.id.slice(-6), "notOverlap:", notOverlap, "hasUserWindow:", hasUser);
+      return notOverlap && hasUser;
+    });
+
     if (others.length === 0) {
-      // 没有"既不重叠 又有真实 window"的副屏 → 视为单屏环境，用当前屏
+      console.log("[Arena/layout] no real secondary, using current screen");
       return { screen: currentScreen, displayId: current?.id || null, isDifferentDisplay: false };
     }
     const currentCenter = centerOf(currentScreen);
     const target = others.sort((a, b) => distance(centerOf(a.screen), currentCenter) - distance(centerOf(b.screen), currentCenter))[0];
+    console.log("[Arena/layout] using secondary display", target.id.slice(-6), target.screen);
     return { screen: target.screen, displayId: target.id, isDifferentDisplay: true };
   } catch (e) {
-    console.warn("[Arena] system.display unavailable, falling back to current screen:", e?.message || e);
+    console.warn("[Arena/layout] error, falling back to sidepanel screen:", e?.message || e);
     return { screen: fallback, displayId: null, isDifferentDisplay: false };
   }
 }

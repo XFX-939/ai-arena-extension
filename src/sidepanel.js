@@ -853,15 +853,40 @@ $$(".task-tab").forEach(btn => {
 });
 
 // ── 添加参与者 ──
-$$(".btn-add").forEach(b => b.addEventListener("click", async () => {
-  if (participants.length >= 3) { addLog("最多 3 个参与者", "error"); return; }
-  addLog(`添加 ${b.dataset.service}...`);
-  const screen = {
+// 报告 sidepanel 当前所在 chrome window 的 bounds 给 background（用于推断真实物理屏）
+async function getCurrentScreenInfo() {
+  // 优先用 chrome.windows.getCurrent，因为 sidepanel 的 window.screen 在某些 chrome 版本会
+  // 返回全 desktop union 而非真实所在屏；getCurrent 拿到 sidepanel 附着的 chrome window
+  // 的 left/top/width/height，background 再据此找物理屏。
+  try {
+    const w = await chrome.windows.getCurrent();
+    if (w && typeof w.left === "number") {
+      return {
+        width: w.width,
+        height: w.height,
+        left: w.left,
+        top: w.top,
+        // 同时报告 window.screen 作为 fallback 信号
+        screenAvailWidth: window.screen.availWidth,
+        screenAvailHeight: window.screen.availHeight,
+        screenAvailLeft: window.screen.availLeft || 0,
+        screenAvailTop: window.screen.availTop || 0,
+      };
+    }
+  } catch {}
+  // fallback：用 window.screen
+  return {
     width: window.screen.availWidth,
     height: window.screen.availHeight,
     left: window.screen.availLeft || 0,
     top: window.screen.availTop || 0,
   };
+}
+
+$$(".btn-add").forEach(b => b.addEventListener("click", async () => {
+  if (participants.length >= 3) { addLog("最多 3 个参与者", "error"); return; }
+  addLog(`添加 ${b.dataset.service}...`);
+  const screen = await getCurrentScreenInfo();
   await chrome.runtime.sendMessage({ type: "addParticipant", service: b.dataset.service, screen });
 }));
 
