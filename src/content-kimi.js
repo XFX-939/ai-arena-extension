@@ -162,7 +162,18 @@ async function readLatestResponse() {
   const responses = queryBySelectors("response", { all: true });
   if (responses.length > 0) return _extractEl(responses[responses.length - 1]).trim();
   const prose = document.querySelectorAll('.markdown-body, .prose, [class*="markdown"]');
-  if (prose.length > 0) return prose[prose.length - 1].innerText.trim();
+  if (prose.length > 0) return _extractEl(prose[prose.length - 1]).trim();
+  // v4.3.7 更激进兜底：扫整页找最后一个"大文本块且不在 input/header/nav"
+  const all = document.querySelectorAll("div, article, section");
+  for (let i = all.length - 1; i >= 0; i--) {
+    const el = all[i];
+    if (el.closest("nav, header, footer, [role=banner], [role=navigation]")) continue;
+    if (el.querySelector("textarea, input, [contenteditable]")) continue;
+    const t = (el.innerText || "").trim();
+    if (t.length > 80 && el.getBoundingClientRect().height > 50) {
+      return _extractEl(el).trim();
+    }
+  }
   return "";
 }
 

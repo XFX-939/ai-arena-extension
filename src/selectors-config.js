@@ -190,9 +190,16 @@ const DEFAULT_SELECTORS = {
       "textarea"
     ],
     response: [
+      // v4.3.7 加宽 — Kimi 网页改 class 频繁
+      '[class*="segment-assistant"]',
+      '[class*="assistant-segment"]',
       '[class*="message-content"]',
       '[class*="assistant"] [class*="content"]',
-      '[class*="assistant"] [class*="markdown"]'
+      '[class*="assistant"] [class*="markdown"]',
+      '[class*="markdown-body"]',
+      '[data-role="assistant"]',
+      'div.markdown',
+      '[class*="ChatBubble"][class*="assistant"]'
     ],
     streaming: [
       'button[class*="stop"]',

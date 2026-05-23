@@ -256,12 +256,15 @@ function _doExtractWithFences(clone) {
   // 公共抽取逻辑（被 extractTextWithFences 异步/同步版复用）
   const imgs = clone.querySelectorAll("img");
   const seenSrcs = new Set();  // v4.3.3: 按 src 去重，避免 ChatGPT 等嵌套渲染同图多副本
+  // v4.3.7: 引用源 / 搜索结果 / link card 容器内的图视为装饰，跳过
+  const CITATION_ANCESTOR_SEL = '[class*="citation"], [class*="reference"], [class*="search-result"], [class*="search_result"], [class*="link-card"], [class*="link_card"], [class*="ref-card"], [class*="ref_card"], [class*="source-card"], [class*="source_card"], [class*="quote-card"], [class*="ref-item"], [class*="ref_item"], [class*="hyper-link"], [class*="hyper_link"]';
   imgs.forEach((img, idx) => {
     const src = img.getAttribute("src") || "";
     if (!src) { img.remove(); return; }
     const w = img.naturalWidth || img.width || parseInt(img.getAttribute("width") || "0", 10);
     const h = img.naturalHeight || img.height || parseInt(img.getAttribute("height") || "0", 10);
-    const isTinyIcon = (w && w < 40) || (h && h < 40);
+    // v4.3.7: 阈值从 40 提到 60，过滤元宝太极图等装饰小图
+    const isTinyIcon = (w && w < 60) || (h && h < 60);
     const okHttp = /^https?:\/\//i.test(src);
     const okData = /^data:image\//i.test(src);
     const okBlob = /^blob:/i.test(src);
@@ -269,8 +272,13 @@ function _doExtractWithFences(clone) {
       img.remove();
       return;
     }
+    // v4.3.7: 在引用源/超链接卡片内的图视为装饰，跳过
+    if (img.closest(CITATION_ANCESTOR_SEL)) {
+      img.remove();
+      return;
+    }
     if (seenSrcs.has(src)) {
-      img.remove();  // 重复 src 跳过
+      img.remove();
       return;
     }
     seenSrcs.add(src);
