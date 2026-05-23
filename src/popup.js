@@ -308,6 +308,15 @@
     });
   });
 
+  // ── 顶部三图标 🎨 / 🗑（上方）/ ⚙️ ──
+  document.getElementById("btn-theme")?.addEventListener("click", () => {
+    document.dispatchEvent(new CustomEvent("theme:cycle"));
+    window.ChatRightPanel?.activate("settings");
+  });
+  document.getElementById("btn-settings")?.addEventListener("click", () => {
+    window.ChatRightPanel?.activate("settings");
+  });
+
   // ── 接收 background 推送 ──
   chrome.runtime.onMessage.addListener((msg) => {
     if (msg.type === "chatStreamUpdate") {

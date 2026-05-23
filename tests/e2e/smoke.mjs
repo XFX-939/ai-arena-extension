@@ -67,7 +67,7 @@ try {
   // 2) 读 manifest version_name 验证版本同步（直接读源文件）
   const manifest = JSON.parse(fs.readFileSync(path.join(EXT_PATH, "manifest.json"), "utf8"));
   console.log(`[smoke] manifest version: ${manifest.version}, version_name: ${manifest.version_name}`);
-  check("manifest version_name = 4.0.15-beta", manifest.version_name === "4.0.15-beta", `actual: ${manifest.version_name}`);
+  check("manifest version_name = 4.1.0-beta", manifest.version_name === "4.1.0-beta", `actual: ${manifest.version_name}`);
 
   // 3) 打开 sidepanel.html（作为普通 tab），验证 DOM
   const sidepanelPage = await context.newPage();
@@ -75,10 +75,10 @@ try {
   await sidepanelPage.waitForLoadState("domcontentloaded");
 
   const versionBadge = await sidepanelPage.locator(".version").textContent();
-  check("sidepanel version badge", versionBadge === "v4.0.15-beta", `actual: "${versionBadge}"`);
+  check("sidepanel version badge", versionBadge === "v4.1.0-beta", `actual: "${versionBadge}"`);
 
   const footerVersion = await sidepanelPage.locator(".footer").textContent();
-  check("sidepanel footer version", footerVersion?.includes("v4.0.15-beta"), `actual: "${footerVersion?.slice(0, 100)}"`);
+  check("sidepanel footer version", footerVersion?.includes("v4.1.0-beta"), `actual: "${footerVersion?.slice(0, 100)}"`);
 
   const openChatBtn = await sidepanelPage.locator("#btn-open-chat").count();
   check('sidepanel has "🪟 群聊" button', openChatBtn === 1);
@@ -96,7 +96,7 @@ try {
   await popupPage.waitForLoadState("domcontentloaded");
 
   const popupVersion = await popupPage.locator(".chat-version").textContent();
-  check("popup chat-version = v4.0.15-beta", popupVersion === "v4.0.15-beta", `actual: "${popupVersion}"`);
+  check("popup chat-version = v4.1.0-beta", popupVersion === "v4.1.0-beta", `actual: "${popupVersion}"`);
 
   // 图标资产验证（v4.0.11）
   const assetsOk = await popupPage.evaluate(async (extId) => {
@@ -272,6 +272,29 @@ try {
   check("labelOf debate-free", labelResults.debateFree === "辩论·自由");
   check("labelOf summary-Claude", labelResults.summaryClaude === "总结·Claude");
   check("labelOf ppt-copy", labelResults.pptCopy === "PPT·文案");
+
+  // 8.5) 右栏 4 Tab + 头部三图标（v4.1.0 新）
+  console.log("\n[smoke] === 右栏 4 Tab 抽屉 ===");
+  const rpTabs = await popupPage.evaluate(() => {
+    const tabs = Array.from(document.querySelectorAll(".rp-tab"));
+    return tabs.map(t => ({ name: t.dataset.tab, text: t.innerText.trim() }));
+  });
+  check("popup 右栏 4 Tab DOM",
+    rpTabs.length === 4 && rpTabs.map(t => t.name).join(",") === "members,tasks,stats,settings",
+    JSON.stringify(rpTabs));
+  const headerBtns = await popupPage.evaluate(() => ({
+    theme: !!document.getElementById("btn-theme"),
+    clear: !!document.getElementById("btn-clear"),
+    settings: !!document.getElementById("btn-settings"),
+  }));
+  check("popup header 三图标 🎨 🗑 ⚙️",
+    headerBtns.theme && headerBtns.clear && headerBtns.settings,
+    JSON.stringify(headerBtns));
+  // popup-themes.css 是否加载（探测 <link rel=stylesheet href*=popup-themes>）
+  const hasThemesCss = await popupPage.evaluate(() =>
+    Array.from(document.querySelectorAll("link[rel=stylesheet]")).some(l => l.href.includes("popup-themes"))
+  );
+  check("popup-themes.css 已加载", hasThemesCss === true);
 
   // 9) 验证 getSelectors handler（从 popup page 调，sw 自己 sendMessage 不会触发自己 listener）
   const selectorResult = await popupPage.evaluate(async () => {

@@ -1,0 +1,65 @@
+/* popup-themes.css — 6 套主题色变量，激活通过 body[data-theme="X"] */
+
+body[data-theme="C"] {
+  /* Aurora Glass */
+  --accent: #5eead4;
+}
+
+body[data-theme="A"] {
+  /* Dark Command */
+  --bg: #0d1117;
+  --card: #161b22;
+  --ink: #e6edf3;
+  --ink-soft: #7d8590;
+  --border: #30363d;
+  --accent: #4f8cff;
+  --bubble-them: #161b22;
+  --bubble-me: #4f8cff;
+}
+
+body[data-theme="B"] {
+  /* Warm Editorial */
+  --bg: #f5efe7;
+  --card: #fff8ef;
+  --ink: #2d2419;
+  --ink-soft: #8b7864;
+  --border: #d9cdb9;
+  --accent: #b85c38;
+  --bubble-them: #fff8ef;
+  --bubble-me: #b85c38;
+}
+
+body[data-theme="D"] {
+  /* Neon Cyberpunk */
+  --bg: #0a0014;
+  --card: #15082a;
+  --ink: #f0d9ff;
+  --ink-soft: #9d7fb8;
+  --border: #3a1f5a;
+  --accent: #ff2d95;
+  --bubble-them: #15082a;
+  --bubble-me: #ff2d95;
+}
+
+body[data-theme="E"] {
+  /* Minimal Light */
+  --bg: #ffffff;
+  --card: #fafafa;
+  --ink: #1a1a2e;
+  --ink-soft: #8b8b9b;
+  --border: #e5e5ea;
+  --accent: #1a1a2e;
+  --bubble-them: #fafafa;
+}
+
+body[data-theme="F"] {
+  /* Gradient Sunset */
+  --bg: #fff5ed;
+  --card: #fff;
+  --ink: #4a2c1f;
+  --ink-soft: #b5816c;
+  --border: #f5d4be;
+  --accent: #ff8c42;
+  --bubble-them: #fff;
+  --bubble-me: #ff8c42;
+}

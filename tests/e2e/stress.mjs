@@ -191,7 +191,7 @@ try {
   // 测试组 D：版本号 4 处同步
   // ─────────────────────────────────────────
   console.log("\n=== D. 版本号同步（feedback_ai_arena_version_bump 铁律） ===");
-  const expectedVersion = "4.0.15-beta";
+  const expectedVersion = "4.1.0-beta";
   const manifest = JSON.parse(fs.readFileSync(path.join(EXT_PATH, "manifest.json"), "utf8"));
   const popupHtml = fs.readFileSync(path.join(EXT_PATH, "popup.html"), "utf8");
   const sidepanelHtml = fs.readFileSync(path.join(EXT_PATH, "sidepanel.html"), "utf8");
@@ -200,6 +200,79 @@ try {
   const sidepanelMatches = sidepanelHtml.match(new RegExp(`v${expectedVersion.replace(/\./g,"\\.")}`, "g"));
   check("D3: sidepanel.html 至少 2 处 version 标记（badge + footer）",
     sidepanelMatches && sidepanelMatches.length >= 2, `actual: ${sidepanelMatches?.length}`);
+
+  // ─────────────────────────────────────────
+  // 测试组 F：右栏 4 Tab + task-context 联动
+  // ─────────────────────────────────────────
+  console.log("\n=== F. 右栏 4 Tab + task-context 联动 ===");
+  // F1: 4 Tab DOM 存在 + API 暴露
+  const rpInit = await popup.evaluate(() => {
+    const tabs = Array.from(document.querySelectorAll(".rp-tab")).map(t => t.dataset.tab);
+    const panels = Array.from(document.querySelectorAll(".rp-panel")).map(p => p.dataset.rpPanel);
+    return {
+      tabs, panels,
+      hasRP: typeof window.ChatRightPanel === "object",
+      hasMembers: typeof window.ChatMembers === "object",
+      hasTasks: typeof window.ChatTasks === "object",
+      hasStats: typeof window.ChatStats === "object",
+      hasSettings: typeof window.ChatSettings === "object",
+    };
+  });
+  check("F1: 4 Tab DOM", rpInit.tabs.join(",") === "members,tasks,stats,settings", JSON.stringify(rpInit.tabs));
+  check("F1b: 4 Panel DOM", rpInit.panels.join(",") === "members,tasks,stats,settings", JSON.stringify(rpInit.panels));
+  check("F2a: ChatRightPanel API", rpInit.hasRP === true);
+  check("F2b: ChatMembers API", rpInit.hasMembers === true);
+  check("F2c: ChatTasks API", rpInit.hasTasks === true);
+  check("F2d: ChatStats API", rpInit.hasStats === true);
+  check("F2e: ChatSettings API", rpInit.hasSettings === true);
+
+  // F3: 点击切 Tab
+  await popup.click('.rp-tab[data-tab="stats"]');
+  await popup.waitForTimeout(150);
+  const activePanel = await popup.evaluate(() => {
+    const a = document.querySelector(".rp-panel.active");
+    return a?.dataset.rpPanel;
+  });
+  check("F3: 切 Tab 后 panel 激活", activePanel === "stats", String(activePanel));
+
+  // F4: task:changed → debate 触发任务 Tab 切到 debate 控制台
+  await popup.evaluate(() => {
+    document.dispatchEvent(new CustomEvent("task:changed", { detail: { task: "debate", style: "free" } }));
+  });
+  await popup.waitForTimeout(150);
+  const debateHtml = await popup.$eval("#rp-panel-tasks", el => el.innerHTML);
+  check("F4: task=debate 任务 Tab 含'开始辩论'", debateHtml.includes("开始辩论"));
+  check("F4b: 含模式 toggle", debateHtml.includes("自由") && debateHtml.includes("群策"));
+
+  // F5: task:changed → summary
+  await popup.evaluate(() => {
+    document.dispatchEvent(new CustomEvent("task:changed", { detail: { task: "summary", judgeId: "x", judgeName: "Test" } }));
+  });
+  await popup.waitForTimeout(200);
+  const summaryHtml = await popup.$eval("#rp-panel-tasks", el => el.innerHTML);
+  check("F5: task=summary 任务 Tab 含'输出总结'", summaryHtml.includes("输出总结"));
+
+  // F6: task:changed → ppt
+  await popup.evaluate(() => {
+    document.dispatchEvent(new CustomEvent("task:changed", { detail: { task: "ppt", kind: "copy" } }));
+  });
+  await popup.waitForTimeout(150);
+  const pptHtml = await popup.$eval("#rp-panel-tasks", el => el.innerHTML);
+  check("F6: task=ppt 任务 Tab 含'PPT 工坊'", pptHtml.includes("PPT 工坊"));
+
+  // F7: task:changed → ask 显示提示
+  await popup.evaluate(() => {
+    document.dispatchEvent(new CustomEvent("task:changed", { detail: { task: "ask" } }));
+  });
+  await popup.waitForTimeout(150);
+  const askHtml = await popup.$eval("#rp-panel-tasks", el => el.innerHTML);
+  check("F7: task=ask 任务 Tab 显示提示", askHtml.includes("Ctrl+Enter") || askHtml.includes("输入"));
+
+  // F8: 主题切换
+  await popup.evaluate(() => window.ChatSettings?.setTheme("A"));
+  await popup.waitForTimeout(100);
+  const theme = await popup.evaluate(() => document.body.getAttribute("data-theme"));
+  check("F8: setTheme('A') 后 body.data-theme=A", theme === "A", String(theme));
 
   // ─────────────────────────────────────────
   // 测试组 E：诊断日志格式

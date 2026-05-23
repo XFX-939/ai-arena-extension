@@ -152,6 +152,19 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           notifyStatus("已彻底重置");
           sendResponse({ ok: true });
           break;
+        case "openSidepanel":
+          try {
+            const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+            if (tabs[0]?.windowId != null && chrome.sidePanel?.open) {
+              await chrome.sidePanel.open({ windowId: tabs[0].windowId });
+              sendResponse({ ok: true });
+            } else {
+              sendResponse({ ok: false, error: "sidePanel API 不可用" });
+            }
+          } catch (e) {
+            sendResponse({ ok: false, error: e.message });
+          }
+          break;
 
         default: sendResponse({ ok: false, error: "Unknown message type" });
       }

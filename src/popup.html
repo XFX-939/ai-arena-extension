@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <title>AI Arena 群聊</title>
   <link rel="stylesheet" href="popup.css">
+  <link rel="stylesheet" href="popup-themes.css">
 </head>
 <body>
   <div class="chat-app">
@@ -27,9 +28,10 @@
       <div class="chat-title">
         <span class="chat-icon">🪟</span>
         <span class="chat-name">AI Arena 群聊</span>
-        <span class="chat-version">v4.0.15-beta</span>
+        <span class="chat-version">v4.1.0-beta</span>
       </div>
       <div class="chat-actions">
+        <button class="btn-icon" id="btn-theme" title="切换主题">🎨</button>
         <button class="btn-icon" id="btn-clear" title="清空群聊">🗑</button>
         <button class="btn-icon" id="btn-settings" title="设置">⚙️</button>
       </div>
@@ -82,12 +84,29 @@
       <button class="btn-send" id="btn-send" title="发送 (Ctrl+Enter)">↑</button>
     </footer>
     </div>
+    <aside class="chat-rightpanel" id="chat-rightpanel">
+      <div class="rp-tabs">
+        <button class="rp-tab active" data-tab="members"><span class="em">👥</span><span>成员</span></button>
+        <button class="rp-tab" data-tab="tasks"><span class="em">⚙️</span><span>任务</span></button>
+        <button class="rp-tab" data-tab="stats"><span class="em">📊</span><span>统计</span></button>
+        <button class="rp-tab" data-tab="settings"><span class="em">🔧</span><span>设置</span></button>
+      </div>
+      <div class="rp-panel active" data-rp-panel="members" id="rp-panel-members"></div>
+      <div class="rp-panel" data-rp-panel="tasks" id="rp-panel-tasks"></div>
+      <div class="rp-panel" data-rp-panel="stats" id="rp-panel-stats"></div>
+      <div class="rp-panel" data-rp-panel="settings" id="rp-panel-settings"></div>
+    </aside>
   </div>
   <script src="popup-markdown.js"></script>
   <script src="popup-codepreview.js"></script>
   <script src="popup-bubble-actions.js"></script>
   <script src="popup-history.js"></script>
   <script src="popup-roster.js"></script>
+  <script src="popup-rightpanel.js"></script>
+  <script src="popup-members.js"></script>
+  <script src="popup-tasks.js"></script>
+  <script src="popup-stats.js"></script>
+  <script src="popup-settings.js"></script>
   <script src="popup-task-menu.js"></script>
   <script src="popup.js"></script>
 </body>

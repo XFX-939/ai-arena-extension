@@ -40,8 +40,8 @@ const ChatBus = (() => {
     try {
       const displays = await chrome.system.display.getInfo();
       const primary = displays.find(d => d.isPrimary) || displays[0];
-      const w = Math.min(800, Math.round(primary.workArea.width / 2));
-      const h = Math.min(900, Math.round(primary.workArea.height * 0.9));
+      const w = Math.min(1100, Math.round(primary.workArea.width * 0.7));
+      const h = Math.min(720, Math.round(primary.workArea.height * 0.85));
       return {
         left: primary.workArea.left + primary.workArea.width - w - 20,
         top: primary.workArea.top + 40,
@@ -49,7 +49,7 @@ const ChatBus = (() => {
         height: h,
       };
     } catch {
-      return { left: 100, top: 100, width: 600, height: 800 };
+      return { left: 100, top: 100, width: 1100, height: 720 };
     }
   }
 

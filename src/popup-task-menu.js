@@ -68,9 +68,17 @@
     }
     refreshPill();
     close();
+    // 通知右栏任务 Tab 同步内容
+    document.dispatchEvent(new CustomEvent("task:changed", {
+      detail: { ...current }
+    }));
   });
 
   refreshPill();
+  // 首次启动也发一次 task:changed，让右栏任务 Tab 初始化
+  document.dispatchEvent(new CustomEvent("task:changed", {
+    detail: { ...current }
+  }));
 
   // 暴露给 popup.js handleSend 用
   window.ChatTaskMenu = {
