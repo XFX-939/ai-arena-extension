@@ -191,7 +191,7 @@ try {
   // 测试组 D：版本号 4 处同步
   // ─────────────────────────────────────────
   console.log("\n=== D. 版本号同步（feedback_ai_arena_version_bump 铁律） ===");
-  const expectedVersion = "4.1.0-beta";
+  const expectedVersion = "4.2.0-beta";
   const manifest = JSON.parse(fs.readFileSync(path.join(EXT_PATH, "manifest.json"), "utf8"));
   const popupHtml = fs.readFileSync(path.join(EXT_PATH, "popup.html"), "utf8");
   const sidepanelHtml = fs.readFileSync(path.join(EXT_PATH, "sidepanel.html"), "utf8");
@@ -273,6 +273,24 @@ try {
   await popup.waitForTimeout(100);
   const theme = await popup.evaluate(() => document.body.getAttribute("data-theme"));
   check("F8: setTheme('A') 后 body.data-theme=A", theme === "A", String(theme));
+
+  // ─────────────────────────────────────────
+  // 测试组 G：Phase 2 — chrome.action 默认开 popup（v4.2.0）
+  // ─────────────────────────────────────────
+  console.log("\n=== G. Phase 2 默认入口切换 (v4.2.0) ===");
+  // G1: background.js 源码包含 setPanelBehavior false
+  const bgSource = fs.readFileSync(path.join(EXT_PATH, "background.js"), "utf8");
+  check("G1: setPanelBehavior openPanelOnActionClick=false",
+    /setPanelBehavior\s*\(\s*\{\s*openPanelOnActionClick:\s*false/.test(bgSource));
+  check("G2: chrome.action.onClicked listener 注册",
+    /chrome\.action\.onClicked\.addListener/.test(bgSource));
+  check("G3: action.onClicked 调用 ChatBus.openChatPopup",
+    /chrome\.action\.onClicked\.addListener[\s\S]{0,400}ChatBus\.openChatPopup/.test(bgSource));
+
+  // G4: sidepanel 提示条存在
+  const sidepanelSrc = fs.readFileSync(path.join(EXT_PATH, "sidepanel.html"), "utf8");
+  check("G4: sidepanel.html 含 v4.2 Phase 2 提示条",
+    /v4\.2.*默认入口|phase2-notice/.test(sidepanelSrc));
 
   // ─────────────────────────────────────────
   // 测试组 E：诊断日志格式

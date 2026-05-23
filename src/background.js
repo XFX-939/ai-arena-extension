@@ -25,7 +25,24 @@ chrome.storage.local.get("windowMode", (d) => { if (d.windowMode) windowMode = d
 // ── 初始化 ──
 const initPromise = Promise.all([StateMachine.init(), ChatBus.init()]);
 
-chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
+// v4.2.0 Phase 2: 默认点扩展图标 → 开 popup 群聊窗口（而非 sidepanel）
+// sidepanel 仍可通过 popup 内"打开 sidepanel"按钮或 openSidepanel message 进入
+chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: false }).catch(() => {});
+
+chrome.action.onClicked.addListener(async () => {
+  try {
+    await ChatBus.openChatPopup();
+  } catch (e) {
+    console.warn("[Arena] action.onClicked openChatPopup fail:", e);
+    // fallback: 退化到 sidepanel
+    try {
+      const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+      if (tabs[0]?.windowId != null) {
+        await chrome.sidePanel.open({ windowId: tabs[0].windowId });
+      }
+    } catch (_) {}
+  }
+});
 
 // ── 右键菜单 ──
 chrome.runtime.onInstalled.addListener(() => {
