@@ -191,7 +191,7 @@ try {
   // 测试组 D：版本号 4 处同步
   // ─────────────────────────────────────────
   console.log("\n=== D. 版本号同步（feedback_ai_arena_version_bump 铁律） ===");
-  const expectedVersion = "4.3.12-beta";
+  const expectedVersion = "4.3.13-beta";
   const manifest = JSON.parse(fs.readFileSync(path.join(EXT_PATH, "manifest.json"), "utf8"));
   const popupHtml = fs.readFileSync(path.join(EXT_PATH, "popup.html"), "utf8");
   const sidepanelHtml = fs.readFileSync(path.join(EXT_PATH, "sidepanel.html"), "utf8");
@@ -401,6 +401,28 @@ try {
   });
   check("H9e: 连续多次调 ensureContextMenu 不抛错（幂等）",
     ctxMenuTest.ok === true, JSON.stringify(ctxMenuTest));
+
+  // H10 (v4.3.13): reextractOne 必须更新 StateMachine.participants[i].response
+  // 否则用户重新提取后第二轮辩论会"回答不足"
+  const reextractTest = await sw.evaluate(async () => {
+    // mock participant + tab response
+    StateMachine.participants = [{
+      id: "p_h10", service: "claude", tabId: -999, name: "H10-test",
+      response: null, responsePreview: null,
+    }];
+    // stub chrome.tabs.sendMessage 返回固定 text
+    const origSend = chrome.tabs.sendMessage;
+    chrome.tabs.sendMessage = (tabId, msg) => Promise.resolve({ text: "RE-EXTRACTED-TEXT", hasRichContent: false });
+    try {
+      await ChatBus.reextractOne("claude");
+    } finally {
+      chrome.tabs.sendMessage = origSend;
+    }
+    return { response: StateMachine.participants[0].response };
+  });
+  check("H10: reextractOne 后 p.response 被更新（避免辩论'回答不足'）",
+    reextractTest.response === "RE-EXTRACTED-TEXT",
+    JSON.stringify(reextractTest));
 
   // H8: manifest 含 img-src 放开
   const manifestSrc = fs.readFileSync(path.join(EXT_PATH, "manifest.json"), "utf8");

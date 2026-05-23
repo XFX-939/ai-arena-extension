@@ -283,22 +283,35 @@ const ChatBus = (() => {
   }
 
   async function reextractOne(participantId) {
-    const p = (StateMachine.participants || []).find(x => x.service === participantId);
+    // v4.3.13: participantId 既可能是 service 名（来自气泡 dataset），也可能是
+    // participant.id（来自成员卡 ⋯ 菜单），两种都要支持
+    const list = StateMachine.participants || [];
+    const p = list.find(x => x.id === participantId)
+           || list.find(x => x.service === participantId);
     if (!p || !p.tabId) return { ok: false, error: "未找到参与者" };
     try {
       const r = await chrome.tabs.sendMessage(p.tabId, { action: "readResponse" });
       const text = (r?.text || "").trim();
       const msgId = `manual_${Date.now()}`;
+      // v4.3.13 关键修复：用户主动重新提取，强制覆盖 StateMachine.participants[i].response
+      // 否则辩论流程查 p.response 时仍是旧值（或上轮被清后的 null），导致"回答不足"
+      if (text && typeof StateMachine.setParticipantResponse === "function") {
+        try { StateMachine.setParticipantResponse(p.id, text); }
+        catch (e) { console.warn("[chat-bus] setParticipantResponse:", e?.message); }
+      }
       sendToPopup({
         type: "chatStreamUpdate", role: "ai", msgId,
-        participantId, text, isDone: true,
+        participantId: p.service,
+        text, isDone: true,
         hasRichContent: !!r?.hasRichContent, richTypes: r?.richTypes || [],
       });
       pushLog({
-        role: "ai", msgId, participantId,
+        role: "ai", msgId, participantId: p.service,
         text, ts: Date.now(),
         hasRichContent: !!r?.hasRichContent, richTypes: r?.richTypes || [],
       });
+      // 广播 stateUpdate 让 popup-members 也能看到状态从 busy → ready 切换
+      try { StateMachine._broadcastStateUpdate?.(); } catch (_) {}
       return { ok: true, text };
     } catch (e) {
       return { ok: false, error: e.message };
