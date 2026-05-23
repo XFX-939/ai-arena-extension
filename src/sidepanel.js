@@ -697,6 +697,14 @@ function schedulePollTick() {
               stableCounts[id] = (stableCounts[id] || 0) + 1;
               if (stableCounts[id] >= POLL_READY_THRESHOLD && p._pollStatus !== "ready") {
                 p._pollStatus = "ready";
+                // 防 chat-bus 已完成同步过来：若 StateMachine 已有 response（chat-bus 抢先调过 readOneResponse），
+                // 跳过自己的 readOneResponse 调用，避免 sanity check 因 prevResp 已存在而误判为"上轮残留"，导致状态回退
+                if (p.response && p.response.trim().length > 0) {
+                  addLog(`${p.name} 已由 popup 同步 (${p.response.length}字)`, "info");
+                  p._textLength = p.response.length;
+                  renderParticipants();
+                  return;
+                }
                 chrome.runtime.sendMessage({ type: "readOneResponse", participantId: id }).then(resp => {
                   if (resp?.ok) {
                     if (resp.text) {
