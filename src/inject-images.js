@@ -254,6 +254,33 @@ async function postProcessBlobUrls(text) {
 
 function _doExtractWithFences(clone) {
   // 公共抽取逻辑（被 extractTextWithFences 异步/同步版复用）
+  // v4.3.10: 先移除 UI 噪声容器（工具栏、推荐卡片、安装按钮等），再抽文本
+  const NOISE_SEL = [
+    'button',
+    '[role="button"]',
+    '[class*="action-bar"]',
+    '[class*="action_bar"]',
+    '[class*="actions"]',
+    '[class*="toolbar"]',
+    '[class*="message-actions"]',
+    '[class*="op-bar"]',
+    '[class*="op_bar"]',
+    '[class*="opt-bar"]',
+    '[class*="recommend"]',
+    '[class*="suggest"]',
+    '[class*="related"]',
+    '[class*="install"]',
+    '[class*="download"]',
+    '[class*="select-all"]',
+    '[class*="select_all"]',
+    '[class*="footer-tip"]',
+    '[class*="bottom-tip"]',
+    '[class*="suggest-card"]',
+    '[class*="recommend-card"]',
+    '[class*="prompt-card"]',
+    '[class*="discover"]',
+  ].join(",");
+  try { clone.querySelectorAll(NOISE_SEL).forEach(el => el.remove()); } catch {}
   const imgs = clone.querySelectorAll("img");
   const seenSrcs = new Set();  // v4.3.3: 按 src 去重，避免 ChatGPT 等嵌套渲染同图多副本
   // v4.3.7: 引用源 / 搜索结果 / link card 容器内的图视为装饰，跳过

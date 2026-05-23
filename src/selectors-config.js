@@ -222,10 +222,15 @@ const DEFAULT_SELECTORS = {
       '#chat-input'
     ],
     response: [
+      // v4.3.10 优先精确 markdown 容器，避免包含底部推荐/工具栏/安装按钮等噪声
+      '[class*="bot-message"] [class*="markdown"]',
+      '[class*="assistant"] [class*="markdown"]',
+      '[class*="answer"] [class*="markdown"]',
+      '[class*="markdown-body"]',
+      // 兜底（旧匹配）
       '[class*="bot-message"]',
       '[class*="answer"]',
-      '[class*="assistant"] [class*="content"]',
-      '[class*="assistant"] [class*="markdown"]'
+      '[class*="assistant"] [class*="content"]'
     ],
     streaming: [
       'button[class*="stop"]',
