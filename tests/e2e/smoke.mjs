@@ -67,7 +67,7 @@ try {
   // 2) 读 manifest version_name 验证版本同步（直接读源文件）
   const manifest = JSON.parse(fs.readFileSync(path.join(EXT_PATH, "manifest.json"), "utf8"));
   console.log(`[smoke] manifest version: ${manifest.version}, version_name: ${manifest.version_name}`);
-  check("manifest version_name = 4.8.13-beta", manifest.version_name === "4.8.13-beta", `actual: ${manifest.version_name}`);
+  check("manifest version_name = 4.8.15-beta", manifest.version_name === "4.8.15-beta", `actual: ${manifest.version_name}`);
 
   // 3) 打开 sidepanel.html（作为普通 tab），验证 DOM
   const sidepanelPage = await context.newPage();
@@ -75,10 +75,10 @@ try {
   await sidepanelPage.waitForLoadState("domcontentloaded");
 
   const versionBadge = await sidepanelPage.locator(".version").textContent();
-  check("sidepanel version badge", versionBadge === "v4.8.13-beta", `actual: "${versionBadge}"`);
+  check("sidepanel version badge", versionBadge === "v4.8.15-beta", `actual: "${versionBadge}"`);
 
   const footerVersion = await sidepanelPage.locator(".footer").textContent();
-  check("sidepanel footer version", footerVersion?.includes("v4.8.13-beta"), `actual: "${footerVersion?.slice(0, 100)}"`);
+  check("sidepanel footer version", footerVersion?.includes("v4.8.15-beta"), `actual: "${footerVersion?.slice(0, 100)}"`);
 
   const openChatBtn = await sidepanelPage.locator("#btn-open-chat").count();
   check('sidepanel has "🪟 群聊" button', openChatBtn === 1);
@@ -96,7 +96,7 @@ try {
   await popupPage.waitForLoadState("domcontentloaded");
 
   const popupVersion = await popupPage.locator(".chat-version").textContent();
-  check("popup chat-version = v4.8.13-beta", popupVersion === "v4.8.13-beta", `actual: "${popupVersion}"`);
+  check("popup chat-version = v4.8.15-beta", popupVersion === "v4.8.15-beta", `actual: "${popupVersion}"`);
 
   // 图标资产验证（v4.0.11）
   const assetsOk = await popupPage.evaluate(async (extId) => {
@@ -722,8 +722,9 @@ try {
   check("v4.6.9: 设置 Tab 已移除「状态日志」section",
     !settingsNoLog.hasLogTitle && !settingsNoLog.hasLogBoxInside,
     JSON.stringify(settingsNoLog));
-  check("v4.6.9: 设置 Tab 只剩 2 个 section（主题 + 快捷键）",
-    settingsNoLog.sectionCount === 2, JSON.stringify(settingsNoLog));
+  // v4.8.15: 设置 Tab 新增"风格" section → 现在共 3 个 section（主题 / 风格 / 快捷键）
+  check("v4.8.15: 设置 Tab 含 3 个 section（主题 / 风格 / 快捷键），状态日志仍已抽出",
+    settingsNoLog.sectionCount === 3, JSON.stringify(settingsNoLog));
 
   // ChatLog API 暴露 + pushLog 兼容
   const logApi = await popupPage.evaluate(() => ({
@@ -1296,20 +1297,20 @@ try {
     heroLogoFieldOk.hasHeroLogoField && heroLogoFieldOk.hasHeroesPath && heroLogoFieldOk.hasFallback,
     JSON.stringify(heroLogoFieldOk));
 
-  // ③ popup.js 主对话窗口 user/AI 头像走 HERO_LOGO，"我"=huawei
+  // ③ popup.js 主对话窗口 user/AI 头像 — v4.8.15 改走 ArenaLogoStyle.heroPath()
   const popupJsCheck = await popupPage.evaluate(() => {
     return fetch(chrome.runtime.getURL("popup.js"))
       .then(r => r.text())
       .then(src => ({
-        hasHeroLogoMap:     src.includes("const HERO_LOGO ="),
-        huaweiUsesWebp:     src.includes('huawei:   "icons/heroes/huawei.webp"'),
-        brandLogoUsesHero:  src.includes("HERO_LOGO[id] || BRAND_SVG[id]"),
+        usesArenaLogoStyle: src.includes("window.ArenaLogoStyle?.heroPath(id)"),
+        huaweiViaHelper:    src.includes("brandLogoHtml('huawei')"),
+        brandLogoUsesHero:  src.includes("heroSrc || BRAND_SVG[id]"),
         meAvatarHasHuawei:  src.includes("brandLogoHtml('huawei')")
       }));
   });
-  check("v4.8.7: popup.js 含 HERO_LOGO 映射 + brandLogoHtml 优先用 hero + 我=huawei",
-    popupJsCheck.hasHeroLogoMap
-      && popupJsCheck.huaweiUsesWebp
+  check("v4.8.15: popup.js brandLogoHtml 走 ArenaLogoStyle.heroPath() + 我=huawei (代替 v4.8.7 写死 HERO_LOGO)",
+    popupJsCheck.usesArenaLogoStyle
+      && popupJsCheck.huaweiViaHelper
       && popupJsCheck.brandLogoUsesHero
       && popupJsCheck.meAvatarHasHuawei,
     JSON.stringify(popupJsCheck));
@@ -1456,6 +1457,92 @@ try {
       && pitchCheck.pitchFlexGrow === "1"
       && pitchCheck.posterObjectFit === "contain",
     JSON.stringify(pitchCheck));
+
+  // ========== v4.8.15: 卡牌 logo 风格切换 (classic / anime) ==========
+  console.log("\n[smoke] === v4.8.15 logo 风格切换 ===");
+
+  // ① 10 张 anime webp 资源全部加载（heroes-anime/*.webp）
+  const animeAssets = await popupPage.evaluate(async () => {
+    const ids = ["claude","gemini","chatgpt","deepseek","doubao","qwen","kimi","yuanbao","grok","huawei"];
+    const results = {};
+    for (const id of ids) {
+      try {
+        const r = await fetch(chrome.runtime.getURL(`icons/heroes-anime/${id}.webp`));
+        results[id] = { ok: r.ok, status: r.status };
+      } catch (e) { results[id] = { ok: false, err: e.message }; }
+    }
+    return results;
+  });
+  check("v4.8.15: 10 张 heroes-anime webp 全部加载成功",
+    Object.values(animeAssets).every(v => v.ok === true),
+    JSON.stringify(animeAssets));
+
+  // ② ArenaLogoStyle API 暴露 + 默认 classic
+  const apiCheck = await popupPage.evaluate(() => ({
+    hasApi: !!window.ArenaLogoStyle,
+    current: window.ArenaLogoStyle?.current,
+    classicPath: window.ArenaLogoStyle?.heroPath("claude"),
+    styles: window.ArenaLogoStyle?.listStyles()?.map(s => s.id) || [],
+  }));
+  check("v4.8.15: ArenaLogoStyle API 暴露 + 默认 classic + 2 风格",
+    apiCheck.hasApi
+      && apiCheck.current === "classic"
+      && apiCheck.classicPath === "icons/heroes/claude.webp"
+      && apiCheck.styles.includes("classic")
+      && apiCheck.styles.includes("anime"),
+    JSON.stringify(apiCheck));
+
+  // ③ 切换到 anime → heroPath 切换 + DOM 头像 src 跟着变
+  const switchCheck = await popupPage.evaluate(async () => {
+    // 注入一条 AI 消息（claude）让 .msg-avatar 出现
+    document.getElementById("chat-messages").innerHTML = `
+      <div class="msg ai">
+        <div class="msg-avatar claude"><img class="brand-logo" src="icons/heroes/claude.webp" data-svc="claude" alt="claude"></div>
+        <div class="msg-body"><div class="msg-bubble">测试</div></div>
+      </div>`;
+    const beforeSrc = document.querySelector(".msg.ai .msg-avatar img.brand-logo")?.getAttribute("src");
+    // 切到 anime（不 persist，避免污染后续测试）
+    window.ArenaLogoStyle.setCurrent("anime", false);
+    await new Promise(r => setTimeout(r, 100));
+    const afterSrc = document.querySelector(".msg.ai .msg-avatar img.brand-logo")?.getAttribute("src");
+    const animePathCheck = window.ArenaLogoStyle.heroPath("gemini");
+    // 切回 classic
+    window.ArenaLogoStyle.setCurrent("classic", false);
+    return { beforeSrc, afterSrc, animePathCheck };
+  });
+  check("v4.8.15: 切到 anime — heroPath('gemini') 返回 heroes-anime/gemini.webp",
+    switchCheck.animePathCheck === "icons/heroes-anime/gemini.webp",
+    JSON.stringify(switchCheck));
+  check("v4.8.15: logo-style-changed 事件触发后 .msg-avatar img.brand-logo[data-svc] 自动换 src",
+    switchCheck.beforeSrc === "icons/heroes/claude.webp"
+      && switchCheck.afterSrc === "icons/heroes-anime/claude.webp",
+    JSON.stringify(switchCheck));
+
+  // ④ 设置 Tab 渲染 2 个 .rp-style-item cards（含 active 标记）
+  const settingsCheck = await popupPage.evaluate(async () => {
+    // 切到设置 Tab
+    document.querySelector('.rp-tab[data-tab="settings"]')?.click();
+    await new Promise(r => setTimeout(r, 300));
+    const items = [...document.querySelectorAll(".rp-style-item")];
+    return {
+      count: items.length,
+      styles: items.map(i => i.dataset.style),
+      activeStyle: items.find(i => i.classList.contains("active"))?.dataset.style,
+      hasPreviewImg: items.every(i => !!i.querySelector(".rp-style-preview")),
+      sectionTitle: [...document.querySelectorAll("#rp-panel-settings .rp-section-title")]
+        .map(e => e.textContent.trim()),
+    };
+  });
+  check("v4.8.15: 设置 Tab 含 风格 section + 2 cards (classic + anime) + active=classic + 预览图",
+    settingsCheck.count === 2
+      && settingsCheck.styles.includes("classic")
+      && settingsCheck.styles.includes("anime")
+      && settingsCheck.activeStyle === "classic"
+      && settingsCheck.hasPreviewImg
+      && settingsCheck.sectionTitle.includes("风格")
+      && settingsCheck.sectionTitle.includes("主题")
+      && settingsCheck.sectionTitle.includes("快捷键"),
+    JSON.stringify(settingsCheck));
 
   // 等几秒收集 layout logs
   await popupPage.waitForTimeout(2000);

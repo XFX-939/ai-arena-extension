@@ -148,7 +148,8 @@
         const status = statusOf(p);
         const isNew = newPids.includes(p.id);
         // v4.8.7: 优先用卡牌版 heroLogo；旧 svg 作为兜底
-        const heroSrc = meta.heroLogo || meta.logo;
+        // v4.8.14: heroLogo 走 ArenaLogoStyle.heroPath() 动态切换风格（classic/anime）
+        const heroSrc = (window.ArenaLogoStyle?.heroPath(p.service)) || meta.heroLogo || meta.logo;
         return `
           <div class="hero-slot filled status-${status || 'idle'}${isNew ? ' just-added' : ''}" data-pid="${escapeHtml(p.id)}" data-slot="${i}" title="${escapeHtml(p.name || meta.name)} · ${statusTextOf(p)}">
             <div class="hero-slot-bg"></div>
@@ -285,6 +286,8 @@
     if (e.detail?.tab === "members") refresh();
   });
   document.addEventListener("state:updated", refresh);
+  // v4.8.15: logo 风格切换 → re-render 卡槽（用最新风格的 webp 路径）
+  document.addEventListener("logo-style-changed", () => render());
 
   // 监听 background 推送参与者状态变化（state-machine._broadcastStateUpdate）
   // v4.3.11: 同时监听 chatStreamUpdate 让成员状态跟主区气泡完全同步
