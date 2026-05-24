@@ -67,7 +67,7 @@ try {
   // 2) 读 manifest version_name 验证版本同步（直接读源文件）
   const manifest = JSON.parse(fs.readFileSync(path.join(EXT_PATH, "manifest.json"), "utf8"));
   console.log(`[smoke] manifest version: ${manifest.version}, version_name: ${manifest.version_name}`);
-  check("manifest version_name = 4.7.3-beta", manifest.version_name === "4.7.3-beta", `actual: ${manifest.version_name}`);
+  check("manifest version_name = 4.8.0-beta", manifest.version_name === "4.8.0-beta", `actual: ${manifest.version_name}`);
 
   // 3) 打开 sidepanel.html（作为普通 tab），验证 DOM
   const sidepanelPage = await context.newPage();
@@ -75,10 +75,10 @@ try {
   await sidepanelPage.waitForLoadState("domcontentloaded");
 
   const versionBadge = await sidepanelPage.locator(".version").textContent();
-  check("sidepanel version badge", versionBadge === "v4.7.3-beta", `actual: "${versionBadge}"`);
+  check("sidepanel version badge", versionBadge === "v4.8.0-beta", `actual: "${versionBadge}"`);
 
   const footerVersion = await sidepanelPage.locator(".footer").textContent();
-  check("sidepanel footer version", footerVersion?.includes("v4.7.3-beta"), `actual: "${footerVersion?.slice(0, 100)}"`);
+  check("sidepanel footer version", footerVersion?.includes("v4.8.0-beta"), `actual: "${footerVersion?.slice(0, 100)}"`);
 
   const openChatBtn = await sidepanelPage.locator("#btn-open-chat").count();
   check('sidepanel has "🪟 群聊" button', openChatBtn === 1);
@@ -96,7 +96,7 @@ try {
   await popupPage.waitForLoadState("domcontentloaded");
 
   const popupVersion = await popupPage.locator(".chat-version").textContent();
-  check("popup chat-version = v4.7.3-beta", popupVersion === "v4.7.3-beta", `actual: "${popupVersion}"`);
+  check("popup chat-version = v4.8.0-beta", popupVersion === "v4.8.0-beta", `actual: "${popupVersion}"`);
 
   // 图标资产验证（v4.0.11）
   const assetsOk = await popupPage.evaluate(async (extId) => {
@@ -524,6 +524,73 @@ try {
   check("v4.7.2: background exportSession 返回 markdown",
     exportFixed.ok && exportFixed.hasMarkdown && exportFixed.markdownStart.includes("AI Arena"),
     JSON.stringify(exportFixed));
+
+  // ========== v4.8.0: UI 重设计 ==========
+  console.log("\n[smoke] === v4.8.0 UI 重设计 ===");
+
+  // ① 王者风 3 卡槽（成员 Tab）
+  await popupPage.click('.rp-tab[data-tab="members"]');
+  await popupPage.waitForTimeout(300);
+  const heroSlots = await popupPage.evaluate(() => {
+    const slots = [...document.querySelectorAll(".hero-slot")];
+    return {
+      slotCount: slots.length,
+      emptyCount: slots.filter(s => s.classList.contains("empty")).length,
+      hasGrid: !!document.querySelector(".hero-slots"),
+      hasOldCard: !!document.querySelector(".rp-member-card")   // 旧逐行卡片应已删
+    };
+  });
+  check("v4.8.0: 王者卡槽 — 3 个 .hero-slot + 无旧 .rp-member-card",
+    heroSlots.slotCount === 3 && heroSlots.hasGrid && !heroSlots.hasOldCard,
+    JSON.stringify(heroSlots));
+  check("v4.8.0: 初始空状态 — 3 个全是 .hero-slot.empty",
+    heroSlots.emptyCount === 3, JSON.stringify(heroSlots));
+
+  // ② 时光机时间轴 — sidebar 加圆点节点 + 时间轴线
+  const timeline = await popupPage.evaluate(() => {
+    const list = document.getElementById("sidebar-list");
+    const cs = list ? getComputedStyle(list) : null;
+    // 注入 fake log 触发 sidebar 渲染
+    const fakeLog = [
+      { role: "user", msgId: "u1", text: "5G TTI EP 可重构", ts: Date.now() - 3600000 },
+      { role: "ai", msgId: "u1", participantId: "claude", text: "理论上有空间", ts: Date.now() - 3590000 },
+      { role: "user", msgId: "u2", text: "阵列单元方向图边界", ts: Date.now() - 1800000 },
+    ];
+    window.ChatHistory?.renderAll(fakeLog);
+    // 检查节点 + 时间轴线
+    const item = document.querySelector("#sidebar-list .sidebar-item");
+    const itemCs = item ? getComputedStyle(item, "::before") : null;
+    return {
+      paddingLeft: cs?.paddingLeft,        // 应该是 22px（v4.8.0 加的）
+      itemDotShape: itemCs?.borderRadius,  // 应该是 50%（圆点）
+      itemDotPos: itemCs?.left,            // 应该是 -16px
+      itemCount: document.querySelectorAll("#sidebar-list .sidebar-item").length
+    };
+  });
+  check("v4.8.0: 时光机 — sidebar-list padding-left 22px（给时间轴留位）",
+    timeline.paddingLeft === "22px", JSON.stringify(timeline));
+  check("v4.8.0: 时光机 — sidebar-item::before 是圆点（border-radius 50%）",
+    timeline.itemDotShape === "50%", JSON.stringify(timeline));
+
+  // ③ 极简任务 picker — 删了 ⚙️ icon 和"任务"label
+  const pickerSimple = await popupPage.evaluate(() => {
+    const btn = document.getElementById("task-picker-btn");
+    return {
+      hasOldIcon: !!btn?.querySelector(".icon"),       // 旧的 ⚙️
+      hasOldLabel: !!btn?.querySelector(".picker-label"),  // 旧的"任务"字
+      hasPickedPill: !!btn?.querySelector(".picked"),
+      hasCaret: !!btn?.querySelector(".caret"),
+      btnText: btn?.textContent?.trim() || ""
+    };
+  });
+  check("v4.8.0: 极简 picker — 删了 ⚙️ icon",
+    !pickerSimple.hasOldIcon, JSON.stringify(pickerSimple));
+  check("v4.8.0: 极简 picker — 删了 .picker-label '任务'字",
+    !pickerSimple.hasOldLabel, JSON.stringify(pickerSimple));
+  check("v4.8.0: 极简 picker — 保留 picked pill + caret",
+    pickerSimple.hasPickedPill && pickerSimple.hasCaret, JSON.stringify(pickerSimple));
+  check("v4.8.0: 极简 picker — 不再含'任务'两字",
+    !pickerSimple.btnText.includes("任务"), JSON.stringify(pickerSimple));
 
   // 6) 任务模式 hover 子菜单验证（DOM 存在性）
   const debateSubItems = await popupPage.locator('.menu-item.has-sub:has(span:text("辩论")) .sub-menu .menu-item').count();

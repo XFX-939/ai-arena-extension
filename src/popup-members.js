@@ -131,25 +131,35 @@
     const joinedIds = new Set(joined.map(p => p.service));
     const remaining = ALL_SERVICES.filter(s => !joinedIds.has(s.id));
 
-    root.innerHTML = `
-      <div class="rp-section-title">已加入 <span class="rp-count">${joined.length}/3</span></div>
-      ${joined.length ? joined.map(p => {
+    // v4.8.0: 王者风 3 卡槽 — 替代逐行卡片列表
+    // 槽位顺序固定（slot 0/1/2），按 joined 数组顺序填，空位显示 +
+    const MAX_SLOTS = 3;
+    const slotsHtml = Array.from({ length: MAX_SLOTS }, (_, i) => {
+      const p = joined[i];
+      if (p) {
         const meta = SERVICE_MAP[p.service] || { name: p.service, logo: null };
+        const status = statusOf(p);
         return `
-        <div class="rp-member-card" data-pid="${escapeHtml(p.id)}">
-          ${meta.logo
-            ? `<img class="rp-member-logo" src="${meta.logo}" alt="${escapeHtml(meta.name)}">`
-            : `<span class="rp-member-logo-fb">${escapeHtml((meta.name || "?")[0])}</span>`}
-          <div class="rp-member-info">
-            <div class="rp-member-name">${escapeHtml(p.name || meta.name)}</div>
-            <div class="rp-member-meta">
-              <span class="rp-status-dot ${statusOf(p)}"></span>
-              <span class="rp-member-status-txt">${statusTextOf(p)}</span>
-            </div>
-          </div>
-          <span class="rp-more" data-pid="${escapeHtml(p.id)}" title="操作">⋯</span>
-        </div>`;
-      }).join("") : `<div class="rp-empty">尚未添加参与者<br><span style="opacity:.6">点击下方按钮选择</span></div>`}
+          <div class="hero-slot filled status-${status || 'idle'}" data-pid="${escapeHtml(p.id)}" data-slot="${i}" title="${escapeHtml(p.name || meta.name)} · ${statusTextOf(p)}">
+            <div class="hero-slot-bg"></div>
+            <div class="hero-slot-glow"></div>
+            ${meta.logo
+              ? `<img class="hero-slot-logo" src="${meta.logo}" alt="${escapeHtml(meta.name)}">`
+              : `<span class="hero-slot-fb">${escapeHtml((meta.name || "?")[0])}</span>`}
+            <div class="hero-slot-name">${escapeHtml(meta.name)}</div>
+            <div class="hero-slot-status"><span class="rp-status-dot ${status}"></span></div>
+            <span class="hero-slot-check">✓</span>
+            <button class="hero-slot-more" data-pid="${escapeHtml(p.id)}" title="操作">⋯</button>
+          </div>`;
+      }
+      return `<div class="hero-slot empty" data-slot="${i}" title="空位 — 在下方选择 AI 添加"><div class="hero-slot-plus">＋</div><div class="hero-slot-empty-lbl">空位</div></div>`;
+    }).join("");
+
+    root.innerHTML = `
+      <div class="rp-section-title">已加入 <span class="rp-count">${joined.length}/${MAX_SLOTS}</span></div>
+      <div class="hero-slots">
+        ${slotsHtml}
+      </div>
 
       <div class="rp-section-title" style="margin-top:14px">添加</div>
       <div class="rp-add-grid">
@@ -168,8 +178,12 @@
     root.querySelectorAll(".rp-add-btn").forEach(b => {
       b.addEventListener("click", () => addParticipant(b.dataset.service));
     });
-    root.querySelectorAll(".rp-more").forEach(el => {
-      el.addEventListener("click", (e) => openActionMenu(e, el.dataset.pid));
+    // v4.8.0: 卡槽里的更多操作按钮 (.hero-slot-more 取代 .rp-more)
+    root.querySelectorAll(".hero-slot-more").forEach(el => {
+      el.addEventListener("click", (e) => {
+        e.stopPropagation();
+        openActionMenu(e, el.dataset.pid);
+      });
     });
     // v4.3.15: 排行榜折叠按钮
     root.querySelector("#rp-lb-toggle")?.addEventListener("click", toggleLeaderboard);
