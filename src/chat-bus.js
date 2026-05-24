@@ -76,13 +76,14 @@ const ChatBus = (() => {
   // 仍未完成，理论可无限跑。到达上限按当前文本强制 isDone:true 完成。
   const MAX_POLL_TICKS = 200;
 
-  // v4.6.9 F19: 兜底 watcher 机制 — polling 判完成后单 slot 监听最新一轮 60s
+  // v4.6.9 F19 / v4.6.10 调优: 兜底 watcher 机制 — polling 判完成后单 slot 监听最新一轮
   // 防 F18 streaming selector 失效 / AI 无 indicator / 完成后异步追加等场景
   // 发现 text 比 finalText 更长 → 用同 msgId 推 popup updateAIBubble 直接追加更新气泡
-  const watchers = new Map();  // service → { intervalId, msgId, lastText, stableCount, startTs }
+  // v4.6.10: 去掉 "15s 文本稳定 + non-streaming 提前停" 条件 — 用户反馈不需要省 CPU，
+  // 让 watcher 跑满 60s 确保覆盖审核延迟 / 工具调用结果回传等晚到追加场景
+  const watchers = new Map();  // service → { intervalId, msgId, lastText, startTs }
   const WATCH_INTERVAL_MS = 3000;
-  const WATCH_MAX_DURATION_MS = 60000;  // 60s 总兜底
-  const WATCH_STABLE_TICKS = 5;  // 15s 文本不变 + non-streaming → 停止
+  const WATCH_MAX_DURATION_MS = 60000;  // 60s 总兜底（唯一停止条件，除非 tab 失效）
   const WATCH_MAX_SLOTS = 1;  // 只保留最新一轮防累积
 
   // v4.6.7 F17: 不再依赖 popupWindowId 做 silent return — MV3 SW 30s 空闲被回收时
@@ -379,11 +380,10 @@ const ChatBus = (() => {
     const state = {
       msgId,
       lastText: finalText || "",
-      stableCount: 0,
       startTs: Date.now(),
     };
     state.intervalId = setInterval(async () => {
-      // 60s 总兜底
+      // 60s 总兜底（唯一停止条件 — v4.6.10 去掉了 15s 稳定提前停）
       if (Date.now() - state.startTs > WATCH_MAX_DURATION_MS) {
         clearInterval(state.intervalId);
         watchers.delete(service);
@@ -392,11 +392,9 @@ const ChatBus = (() => {
       try {
         const r = await chrome.tabs.sendMessage(tabId, { action: "readResponse" });
         const text = (r?.text || "").trim();
-        const isStreaming = !!r?.isStreaming;
         // 文本比上次长且非残留 → 追加更新（用同 msgId 让 popup updateAIBubble 直接覆盖气泡）
         if (text && text.length > state.lastText.length && text !== state.lastText) {
           state.lastText = text;
-          state.stableCount = 0;
           sendToPopup({
             type: "chatStreamUpdate", role: "ai", msgId: state.msgId,
             participantId: service, text, isDone: true,
@@ -407,14 +405,8 @@ const ChatBus = (() => {
             role: "ai", msgId: state.msgId, participantId: service,
             text, ts: Date.now(), watcherUpdate: true,
           });
-        } else {
-          state.stableCount++;
-          // 文本稳定 5 tick (15s) + 非 streaming → 停止 watch
-          if (state.stableCount >= WATCH_STABLE_TICKS && !isStreaming) {
-            clearInterval(state.intervalId);
-            watchers.delete(service);
-          }
         }
+        // v4.6.10: 文本不变也不停 watcher，继续跑满 60s 覆盖晚到追加
       } catch (_) {
         // tab 失效 / content script 失联 → 停 watcher
         clearInterval(state.intervalId);
