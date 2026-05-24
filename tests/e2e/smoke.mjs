@@ -67,7 +67,7 @@ try {
   // 2) 读 manifest version_name 验证版本同步（直接读源文件）
   const manifest = JSON.parse(fs.readFileSync(path.join(EXT_PATH, "manifest.json"), "utf8"));
   console.log(`[smoke] manifest version: ${manifest.version}, version_name: ${manifest.version_name}`);
-  check("manifest version_name = 4.6.1-beta", manifest.version_name === "4.6.1-beta", `actual: ${manifest.version_name}`);
+  check("manifest version_name = 4.6.4-beta", manifest.version_name === "4.6.4-beta", `actual: ${manifest.version_name}`);
 
   // 3) 打开 sidepanel.html（作为普通 tab），验证 DOM
   const sidepanelPage = await context.newPage();
@@ -75,10 +75,10 @@ try {
   await sidepanelPage.waitForLoadState("domcontentloaded");
 
   const versionBadge = await sidepanelPage.locator(".version").textContent();
-  check("sidepanel version badge", versionBadge === "v4.6.1-beta", `actual: "${versionBadge}"`);
+  check("sidepanel version badge", versionBadge === "v4.6.4-beta", `actual: "${versionBadge}"`);
 
   const footerVersion = await sidepanelPage.locator(".footer").textContent();
-  check("sidepanel footer version", footerVersion?.includes("v4.6.1-beta"), `actual: "${footerVersion?.slice(0, 100)}"`);
+  check("sidepanel footer version", footerVersion?.includes("v4.6.4-beta"), `actual: "${footerVersion?.slice(0, 100)}"`);
 
   const openChatBtn = await sidepanelPage.locator("#btn-open-chat").count();
   check('sidepanel has "🪟 群聊" button', openChatBtn === 1);
@@ -96,7 +96,7 @@ try {
   await popupPage.waitForLoadState("domcontentloaded");
 
   const popupVersion = await popupPage.locator(".chat-version").textContent();
-  check("popup chat-version = v4.6.1-beta", popupVersion === "v4.6.1-beta", `actual: "${popupVersion}"`);
+  check("popup chat-version = v4.6.4-beta", popupVersion === "v4.6.4-beta", `actual: "${popupVersion}"`);
 
   // 图标资产验证（v4.0.11）
   const assetsOk = await popupPage.evaluate(async (extId) => {
@@ -386,24 +386,65 @@ try {
     pickerEmptyTest.pickerOpen === true && pickerEmptyTest.hasEmpty === true,
     JSON.stringify(pickerEmptyTest));
 
-  // 直接验证拼 prompt 逻辑（不依赖参与者）
-  const buildPromptTest = await popupPage.evaluate(() => {
-    const Store = window.ArenaTemplateStore;
-    const tpl = Store.resolveTemplate("role.clarifier");
-    const duty = Store.resolve("role.clarifier", "duty");
-    const format = Store.resolve("role.clarifier", "format");
-    const text = `@Claude 戴上「${tpl.name}」帽子：${duty}\n输出格式：${format}\n\n`;
+  // v4.6.2: 分工映射 + marker block — 验证 buildAssignmentBlock
+  const blockTest = await popupPage.evaluate(() => {
+    // 模拟分工：claude=clarifier, gemini=critic
+    window.ArenaRoleHats.assignHat("claude", "role.clarifier");
+    window.ArenaRoleHats.assignHat("gemini", "role.critic");
+    const block = window.ArenaRoleHats.buildAssignmentBlock();
     return {
-      hasName: text.includes("问题澄清员"),
-      hasDuty: text.includes("拆解用户问题"),
-      hasFormat: text.includes("输出格式：问题拆解"),
-      hasMention: text.startsWith("@Claude ")
+      hasMarker: block.startsWith("## 本轮角色分工"),
+      hasClaude: block.includes("Claude → 「问题澄清员」"),
+      hasGemini: block.includes("Gemini → 「反方挑战者」"),
+      hasFormatLine: block.includes("输出格式：问题拆解"),
+      hasIdentityHint: block.includes("根据自己所在网页平台名"),
+      noOldFormat: !block.includes("@") && !block.includes("戴上「")
     };
   });
-  check("v4.6.0: 角色帽 prompt 拼接（mention + name + duty + format）",
-    buildPromptTest.hasName && buildPromptTest.hasDuty
-      && buildPromptTest.hasFormat && buildPromptTest.hasMention,
-    JSON.stringify(buildPromptTest));
+  check("v4.6.2: buildAssignmentBlock 含 marker + 每 AI 分工 + 自识别身份提示",
+    blockTest.hasMarker && blockTest.hasClaude && blockTest.hasGemini
+      && blockTest.hasFormatLine && blockTest.hasIdentityHint
+      && blockTest.noOldFormat,
+    JSON.stringify(blockTest));
+
+  // v4.6.2: assignHat 真把 block 写入 #chat-input
+  const inputAfterAssign = await popupPage.evaluate(() => {
+    return document.getElementById("chat-input").textContent;
+  });
+  check("v4.6.2: assignHat 把分工 block 写入 #chat-input",
+    inputAfterAssign.includes("## 本轮角色分工")
+      && inputAfterAssign.includes("Claude → 「问题澄清员」")
+      && inputAfterAssign.includes("Gemini → 「反方挑战者」"),
+    inputAfterAssign.slice(0, 200));
+
+  // v4.6.2: 再 assign 一次（gemini 换帽子）→ marker block 应被替换，不是追加
+  const reassignTest = await popupPage.evaluate(() => {
+    window.ArenaRoleHats.assignHat("gemini", "role.judge");  // gemini 换戴裁判
+    const input = document.getElementById("chat-input").textContent;
+    return {
+      markerCount: (input.match(/## 本轮角色分工/g) || []).length,
+      hasJudge: input.includes("Gemini → 「综合裁判」"),
+      noOldCritic: !input.includes("Gemini → 「反方挑战者」")
+    };
+  });
+  check("v4.6.2: 重复 assign 替换 block（marker 只出现 1 次）",
+    reassignTest.markerCount === 1
+      && reassignTest.hasJudge
+      && reassignTest.noOldCritic,
+    JSON.stringify(reassignTest));
+
+  // v4.6.2: clearAll → marker block 被移除
+  const clearAllTest = await popupPage.evaluate(() => {
+    window.ArenaRoleHats.clearAll();
+    const input = document.getElementById("chat-input").textContent;
+    return {
+      empty: window.ArenaRoleHats.getAssignments(),
+      hasMarker: input.includes("## 本轮角色分工")
+    };
+  });
+  check("v4.6.2: clearAll 移除分工 block",
+    Object.keys(clearAllTest.empty).length === 0 && !clearAllTest.hasMarker,
+    JSON.stringify(clearAllTest));
 
   // 编辑角色帽（修改 duty 后单击成员栏帽子能拿到新值）
   const overrideTest = await popupPage.evaluate(async () => {
