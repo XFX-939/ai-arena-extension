@@ -1606,6 +1606,47 @@ body { letter-spacing: -0.01em; }
   width: 11px; height: 11px; border-radius: 50%;
   flex-shrink: 0;
 }
+/* v4.8.15: 风格选择 — 卡牌 logo 风格 2-选 1 cards（含预览图 + 名字 + 描述） */
+.rp-style-grid {
+  display: grid; grid-template-columns: 1fr 1fr;
+  gap: 8px; margin-bottom: 12px;
+}
+.rp-style-item {
+  background: var(--bg); border: 1px solid var(--border);
+  border-radius: 8px; padding: 8px;
+  display: flex; align-items: center; gap: 10px;
+  cursor: pointer; color: var(--ink);
+  transition: border-color 0.15s, background 0.15s;
+}
+.rp-style-item:hover { border-color: var(--accent); }
+.rp-style-item.active {
+  border-color: var(--accent);
+  background: rgba(10,132,255,0.08);
+}
+.rp-style-preview {
+  width: 40px; height: 56px;
+  border-radius: 6px;
+  object-fit: cover;
+  object-position: center 18%;
+  flex-shrink: 0;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+}
+.rp-style-meta {
+  display: flex; flex-direction: column; gap: 2px;
+  min-width: 0;
+}
+.rp-style-name {
+  font-size: 12px; font-weight: 600;
+  color: var(--ink);
+}
+.rp-style-item.active .rp-style-name { color: var(--accent); }
+.rp-style-desc {
+  font-size: 10px; color: var(--ink-soft);
+  line-height: 1.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 /* v4.7.2: 老版 .rp-log-box 硬编码深色背景已删除（dead code 自 v4.6.9 状态日志抽出设置 Tab）。
    新版定义在 line 52-115，用 var(--card) / var(--bg)，自动跟主题变。 */
 .rp-kbd-list {

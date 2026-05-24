@@ -42,22 +42,12 @@
   };
   // v4.8.7: Q 版英雄卡牌（webp，~17KB/张），主对话气泡头像优先用；
   // BRAND_SVG 仍保留作为 fallback（新增 AI 还没卡牌时降级）
-  const HERO_LOGO = {
-    huawei:   "icons/heroes/huawei.webp",
-    claude:   "icons/heroes/claude.webp",
-    gemini:   "icons/heroes/gemini.webp",
-    chatgpt:  "icons/heroes/chatgpt.webp",
-    deepseek: "icons/heroes/deepseek.webp",
-    doubao:   "icons/heroes/doubao.webp",
-    qwen:     "icons/heroes/qwen.webp",
-    kimi:     "icons/heroes/kimi.webp",
-    yuanbao:  "icons/heroes/yuanbao.webp",
-    grok:     "icons/heroes/grok.webp",
-  };
+  // v4.8.15: 路径走 ArenaLogoStyle.heroPath() 动态切换风格（classic/anime）
   function brandLogoHtml(id) {
-    const src = HERO_LOGO[id] || BRAND_SVG[id];
+    const heroSrc = window.ArenaLogoStyle?.heroPath(id);
+    const src = heroSrc || BRAND_SVG[id];
     if (!src) return `<span class="msg-avatar-fallback ${id || ""}">${AVATAR_INITIAL[id] || "?"}</span>`;
-    return `<img src="${src}" alt="${id}" class="brand-logo">`;
+    return `<img src="${src}" alt="${id}" class="brand-logo" data-svc="${id}">`;
   }
   const NAME = {
     claude: "Claude", gemini: "Gemini", chatgpt: "ChatGPT",
@@ -460,6 +450,16 @@
       else appendAIBubble(m.msgId, m.participantId, m.text, false);
     }
   }
+
+  // v4.8.15: 切换 logo 风格时，在线更新已渲染气泡的头像 src（不重排消息）
+  document.addEventListener("logo-style-changed", () => {
+    const imgs = document.querySelectorAll(".msg-avatar img.brand-logo[data-svc]");
+    imgs.forEach(img => {
+      const svc = img.dataset.svc;
+      const next = window.ArenaLogoStyle?.heroPath(svc);
+      if (next && next !== img.getAttribute("src")) img.setAttribute("src", next);
+    });
+  });
 
   // ── 启动 ──
   chrome.runtime.sendMessage({ type: "chatRestoreLog" }, (resp) => {

@@ -16,6 +16,22 @@
   function render() {
     const root = document.getElementById("rp-panel-settings");
     if (!root) return;
+    // v4.8.15: 风格区块 — 卡牌 logo 在「经典英雄」「二次元少女」两套美术之间切换
+    const logoStyle = window.ArenaLogoStyle?.current || "classic";
+    const styles = window.ArenaLogoStyle?.listStyles() || [];
+    const stylesHtml = styles.map(s => {
+      const preview = window.ArenaLogoStyle?.previewPath(s.id) || "";
+      const active = s.id === logoStyle;
+      return `
+        <div class="rp-style-item ${active ? "active" : ""}" data-style="${s.id}" title="${s.desc}">
+          <img class="rp-style-preview" src="${preview}" alt="${s.name}">
+          <div class="rp-style-meta">
+            <div class="rp-style-name">${s.name}${active ? " ✓" : ""}</div>
+            <div class="rp-style-desc">${s.desc}</div>
+          </div>
+        </div>`;
+    }).join("");
+
     root.innerHTML = `
       <div class="rp-section-title">主题</div>
       <div class="rp-theme-grid">
@@ -26,6 +42,9 @@
           </div>
         `).join("")}
       </div>
+
+      <div class="rp-section-title">风格</div>
+      <div class="rp-style-grid">${stylesHtml}</div>
 
       <div class="rp-section-title">快捷键</div>
       <div class="rp-kbd-list">
@@ -38,6 +57,12 @@
 
     root.querySelectorAll(".rp-theme-item").forEach(el => {
       el.addEventListener("click", () => setTheme(el.dataset.theme));
+    });
+    root.querySelectorAll(".rp-style-item").forEach(el => {
+      el.addEventListener("click", () => {
+        window.ArenaLogoStyle?.setCurrent(el.dataset.style);
+        render();   // 立即重绘 active 标记
+      });
     });
   }
 
@@ -67,6 +92,8 @@
   document.addEventListener("rp:activated", (e) => {
     if (e.detail?.tab === "settings") refresh();
   });
+  // v4.8.15: logo 风格跨实例切换 → 重绘以更新 ✓ 标记
+  document.addEventListener("logo-style-changed", () => render());
 
   document.addEventListener("theme:cycle", () => {
     const ids = THEMES.map(t => t.id);
