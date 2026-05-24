@@ -7,3 +7,4 @@ dist/
 *.zip
 .DS_Store
 Thumbs.db
+tests/e2e/.userdata/
