@@ -67,7 +67,7 @@ try {
   // 2) 读 manifest version_name 验证版本同步（直接读源文件）
   const manifest = JSON.parse(fs.readFileSync(path.join(EXT_PATH, "manifest.json"), "utf8"));
   console.log(`[smoke] manifest version: ${manifest.version}, version_name: ${manifest.version_name}`);
-  check("manifest version_name = 4.8.30-beta", manifest.version_name === "4.8.30-beta", `actual: ${manifest.version_name}`);
+  check("manifest version_name = 4.8.31-beta", manifest.version_name === "4.8.31-beta", `actual: ${manifest.version_name}`);
 
   // 3) 打开 sidepanel.html（作为普通 tab），验证 DOM
   const sidepanelPage = await context.newPage();
@@ -75,10 +75,10 @@ try {
   await sidepanelPage.waitForLoadState("domcontentloaded");
 
   const versionBadge = await sidepanelPage.locator(".version").textContent();
-  check("sidepanel version badge", versionBadge === "v4.8.30-beta", `actual: "${versionBadge}"`);
+  check("sidepanel version badge", versionBadge === "v4.8.31-beta", `actual: "${versionBadge}"`);
 
   const footerVersion = await sidepanelPage.locator(".footer").textContent();
-  check("sidepanel footer version", footerVersion?.includes("v4.8.30-beta"), `actual: "${footerVersion?.slice(0, 100)}"`);
+  check("sidepanel footer version", footerVersion?.includes("v4.8.31-beta"), `actual: "${footerVersion?.slice(0, 100)}"`);
 
   const openChatBtn = await sidepanelPage.locator("#btn-open-chat").count();
   check('sidepanel has "🪟 群聊" button', openChatBtn === 1);
@@ -96,7 +96,7 @@ try {
   await popupPage.waitForLoadState("domcontentloaded");
 
   const popupVersion = await popupPage.locator(".chat-version").textContent();
-  check("popup chat-version = v4.8.30-beta", popupVersion === "v4.8.30-beta", `actual: "${popupVersion}"`);
+  check("popup chat-version = v4.8.31-beta", popupVersion === "v4.8.31-beta", `actual: "${popupVersion}"`);
 
   // 图标资产验证（v4.0.11）
   const assetsOk = await popupPage.evaluate(async (extId) => {
@@ -2103,7 +2103,7 @@ try {
     heightCheck.mainPadding1214 && heightCheck.defaultHeight86,
     JSON.stringify(heightCheck));
 
-  // ② mini-roster DOM + JS + CSS 完整
+  // ② mini-roster DOM + JS + CSS 完整（v4.8.31: 改用 brand svg + removeParticipant，删 miniSkipped）
   const rosterCheck = await popupPage.evaluate(() => {
     return Promise.all([
       fetch(chrome.runtime.getURL("popup.html")).then(r => r.text()),
@@ -2112,40 +2112,56 @@ try {
     ]).then(([html, js, css]) => ({
       htmlHasRoster: html.includes('id="mini-roster"'),
       jsHasRender: js.includes("function render"),
-      jsHasSkipToggle: js.includes("miniSkipped.has(svc)") && js.includes("miniSkipped.add(svc)"),
-      jsSendsMessage: js.includes('type: "setMiniSkip"'),
+      jsUsesBrandSvg: js.includes("icons/brands/claude.svg"),       // v4.8.31: 朴素 brand svg
+      jsClickRemoves: js.includes('type: "removeParticipant"'),     // v4.8.31: 点击 = 移除
+      jsNoMiniSkipped: !js.includes("miniSkipped"),                 // v4.8.31: 已删除
       cssHidesInFull: /^\.mini-roster\s*\{\s*display:\s*none/m.test(css),
       cssShowsInMini: /body\[data-mode="mini"\]\s+\.mini-roster\s*\{[^}]*display:\s*flex/.test(css),
-      cssHasSkipFilter: /\.mini-ai\.skipped\s+\.mini-ai-logo\s*\{[^}]*grayscale/.test(css),
       cssHasStatusDot: /\.mini-ai-dot\.busy[^}]*animation/.test(css),
     }));
   });
-  check("v4.8.30 ②: mini-roster DOM + render + skip toggle + setMiniSkip 消息 + CSS（full隐藏/mini显示/灰度/状态点）",
+  check("v4.8.31 ②: mini-roster brand svg + 点击 removeParticipant + 删 miniSkipped 整套",
     rosterCheck.htmlHasRoster && rosterCheck.jsHasRender
-      && rosterCheck.jsHasSkipToggle && rosterCheck.jsSendsMessage
+      && rosterCheck.jsUsesBrandSvg && rosterCheck.jsClickRemoves
+      && rosterCheck.jsNoMiniSkipped
       && rosterCheck.cssHidesInFull && rosterCheck.cssShowsInMini
-      && rosterCheck.cssHasSkipFilter && rosterCheck.cssHasStatusDot,
+      && rosterCheck.cssHasStatusDot,
     JSON.stringify(rosterCheck));
 
-  // ③ background + chat-bus setMiniSkippedServices 实现 + broadcast 过滤
-  const skipBackendCheck = await popupPage.evaluate(() => {
+  // ③ v4.8.31: background 删 setMiniSkip + chat-bus 删 _miniSkippedServices + broadcast 不再 filter
+  const cleanupCheck = await popupPage.evaluate(() => {
     return Promise.all([
       fetch(chrome.runtime.getURL("background.js")).then(r => r.text()),
       fetch(chrome.runtime.getURL("chat-bus.js")).then(r => r.text()),
     ]).then(([bg, bus]) => ({
-      bgHasCase: bg.includes('case "setMiniSkip"'),
-      bgCallsBus: bg.includes("ChatBus.setMiniSkippedServices"),
-      busHasFn: bus.includes("function setMiniSkippedServices"),
-      busHasSet: bus.includes("_miniSkippedServices = new Set()"),
-      busBroadcastFilters: bus.includes("_miniSkippedServices.has(p.service)"),
-      busExposes: bus.includes("setMiniSkippedServices,  // v4.8.30"),
+      bgNoSetMiniSkipCase: !/case "setMiniSkip":[^/]*ChatBus\.setMiniSkippedServices/.test(bg),
+      busNoBroadcastFilter: !bus.includes("_miniSkippedServices.has(p.service)"),
+      busNoExpose: !/setMiniSkippedServices,\s*\/\/\s*v4\.8\.30/.test(bus),
     }));
   });
-  check("v4.8.30 ③: background 路由 setMiniSkip + chat-bus _miniSkippedServices Set + broadcast 过滤",
-    skipBackendCheck.bgHasCase && skipBackendCheck.bgCallsBus
-      && skipBackendCheck.busHasFn && skipBackendCheck.busHasSet
-      && skipBackendCheck.busBroadcastFilters && skipBackendCheck.busExposes,
-    JSON.stringify(skipBackendCheck));
+  check("v4.8.31 ③: background 路由 / chat-bus broadcast 过滤 / exposed 全清理",
+    cleanupCheck.bgNoSetMiniSkipCase
+      && cleanupCheck.busNoBroadcastFilter
+      && cleanupCheck.busNoExpose,
+    JSON.stringify(cleanupCheck));
+
+  // ④ v4.8.31: always-on-top 监听器（mini 模式失焦后拉前）
+  const aotCheck = await popupPage.evaluate(() => {
+    return fetch(chrome.runtime.getURL("chat-bus.js"))
+      .then(r => r.text())
+      .then(src => ({
+        hasFocusListener: src.includes("chrome.windows.onFocusChanged.addListener"),
+        checksMiniMode: src.includes('popupMode !== "mini"'),
+        respectsMinimized: src.includes('w.state === "minimized"'),
+        hasDebounce: src.includes("_refocusTimer"),
+        callsUpdate: src.includes('focused: true'),
+      }));
+  });
+  check("v4.8.31 ④: always-on-top — onFocusChanged 监听 + mini 模式判断 + 尊重 minimized + 防抖",
+    aotCheck.hasFocusListener && aotCheck.checksMiniMode
+      && aotCheck.respectsMinimized && aotCheck.hasDebounce
+      && aotCheck.callsUpdate,
+    JSON.stringify(aotCheck));
 
   // ④ mention-menu mini 下也向下弹 + popup.js 调 notifyMiniExpand
   const mentionCheck = await popupPage.evaluate(() => {
