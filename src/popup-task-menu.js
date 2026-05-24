@@ -85,6 +85,12 @@
     current: () => ({ ...current }),
     async dispatch(text, targets) {
       const c = current;
+      // v4.7.0: emit 任务类型事件给 popup-stats.js 埋点（任务分布饼图）
+      try {
+        document.dispatchEvent(new CustomEvent("task:dispatched", {
+          detail: { task: c.task, style: c.style, kind: c.kind }
+        }));
+      } catch (_) {}
       if (c.task === "ask") {
         return new Promise((res) => {
           chrome.runtime.sendMessage(
