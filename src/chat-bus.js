@@ -83,7 +83,7 @@ const ChatBus = (() => {
   // 让 watcher 跑满 60s 确保覆盖审核延迟 / 工具调用结果回传等晚到追加场景
   const watchers = new Map();  // service → { intervalId, msgId, lastText, startTs }
   const WATCH_INTERVAL_MS = 3000;
-  const WATCH_MAX_DURATION_MS = 60000;  // 60s 总兜底（唯一停止条件，除非 tab 失效）
+  const WATCH_MAX_DURATION_MS = 120000;  // 120s 总兜底（v4.6.11 从 60s 拉到 120s 覆盖更多审核延迟场景）
   const WATCH_MAX_SLOTS = 1;  // 只保留最新一轮防累积
 
   // v4.6.7 F17: 不再依赖 popupWindowId 做 silent return — MV3 SW 30s 空闲被回收时
