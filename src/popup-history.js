@@ -73,6 +73,11 @@
     let cur = null;
     for (const m of allLog) {
       if (m.role === "user") {
+        // v4.8.2: 跳过 F20/F21 的 pending 占位（background.js 推的"· 正在发起..."文本）
+        //         真实辩论/总结 user msg 随后会到达，时间轴只显示一条
+        if (typeof m.text === "string" && /·\s*正在发起\.\.\.$/.test(m.text)) {
+          continue;
+        }
         cur = { user: m, replies: [] };
         turns.push(cur);
       } else if (m.role === "ai") {
