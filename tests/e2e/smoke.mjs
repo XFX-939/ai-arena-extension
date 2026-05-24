@@ -67,7 +67,7 @@ try {
   // 2) 读 manifest version_name 验证版本同步（直接读源文件）
   const manifest = JSON.parse(fs.readFileSync(path.join(EXT_PATH, "manifest.json"), "utf8"));
   console.log(`[smoke] manifest version: ${manifest.version}, version_name: ${manifest.version_name}`);
-  check("manifest version_name = 4.8.26-beta", manifest.version_name === "4.8.26-beta", `actual: ${manifest.version_name}`);
+  check("manifest version_name = 4.8.27-beta", manifest.version_name === "4.8.27-beta", `actual: ${manifest.version_name}`);
 
   // 3) 打开 sidepanel.html（作为普通 tab），验证 DOM
   const sidepanelPage = await context.newPage();
@@ -75,10 +75,10 @@ try {
   await sidepanelPage.waitForLoadState("domcontentloaded");
 
   const versionBadge = await sidepanelPage.locator(".version").textContent();
-  check("sidepanel version badge", versionBadge === "v4.8.26-beta", `actual: "${versionBadge}"`);
+  check("sidepanel version badge", versionBadge === "v4.8.27-beta", `actual: "${versionBadge}"`);
 
   const footerVersion = await sidepanelPage.locator(".footer").textContent();
-  check("sidepanel footer version", footerVersion?.includes("v4.8.26-beta"), `actual: "${footerVersion?.slice(0, 100)}"`);
+  check("sidepanel footer version", footerVersion?.includes("v4.8.27-beta"), `actual: "${footerVersion?.slice(0, 100)}"`);
 
   const openChatBtn = await sidepanelPage.locator("#btn-open-chat").count();
   check('sidepanel has "🪟 群聊" button', openChatBtn === 1);
@@ -96,7 +96,7 @@ try {
   await popupPage.waitForLoadState("domcontentloaded");
 
   const popupVersion = await popupPage.locator(".chat-version").textContent();
-  check("popup chat-version = v4.8.26-beta", popupVersion === "v4.8.26-beta", `actual: "${popupVersion}"`);
+  check("popup chat-version = v4.8.27-beta", popupVersion === "v4.8.27-beta", `actual: "${popupVersion}"`);
 
   // 图标资产验证（v4.0.11）
   const assetsOk = await popupPage.evaluate(async (extId) => {
@@ -1982,6 +1982,50 @@ try {
   });
   check("v4.8.26 ②: 静态测试已覆盖；实际行为需 reload 扩展在 DeepSeek 网页验证",
     !!mdOutput, JSON.stringify(mdOutput));
+
+  // ========== v4.8.27: mini 模式单行布局 ==========
+  console.log("\n[smoke] === v4.8.27 mini 单行 ===");
+
+  // ① mini 模式 chat-main 改 row flex；header/input-bar 横排；roster 也 display:none
+  const miniLayoutCheck = await popupPage.evaluate(async () => {
+    document.body.setAttribute("data-mode", "mini");
+    await new Promise(r => setTimeout(r, 100));
+    const main = document.querySelector(".chat-main");
+    const header = document.querySelector(".chat-header");
+    const roster = document.querySelector(".chat-roster");
+    const inputBar = document.querySelector(".chat-input-bar");
+    const messages = document.querySelector(".chat-messages");
+    const mainCs = main ? getComputedStyle(main) : null;
+    const rosterCs = roster ? getComputedStyle(roster) : null;
+    const messagesCs = messages ? getComputedStyle(messages) : null;
+    const result = {
+      mainDirection: mainCs?.flexDirection,
+      rosterHidden: rosterCs?.display === "none",
+      messagesHidden: messagesCs?.display === "none",
+      inputBarFlex: inputBar ? getComputedStyle(inputBar).flexGrow : null,
+    };
+    document.body.setAttribute("data-mode", "full");   // 还原避免污染后续测试
+    return result;
+  });
+  check("v4.8.27 ①: mini 模式 chat-main flex-direction:row + roster/messages 隐藏 + input-bar flex:1",
+    miniLayoutCheck.mainDirection === "row"
+      && miniLayoutCheck.rosterHidden
+      && miniLayoutCheck.messagesHidden
+      && miniLayoutCheck.inputBarFlex === "1",
+    JSON.stringify(miniLayoutCheck));
+
+  // ② defaultMiniBounds height 78 + stale 检测 > 150
+  const busCheck = await popupPage.evaluate(() => {
+    return fetch(chrome.runtime.getURL("chat-bus.js"))
+      .then(r => r.text())
+      .then(src => ({
+        height78: src.includes("const height = 78"),
+        staleCheck: src.includes("popupMiniBounds.height > 150"),
+      }));
+  });
+  check("v4.8.27 ②: defaultMiniBounds 高度 78 + 旧 bounds height>150 视为脏数据回退默认",
+    busCheck.height78 && busCheck.staleCheck,
+    JSON.stringify(busCheck));
 
 
   // 等几秒收集 layout logs

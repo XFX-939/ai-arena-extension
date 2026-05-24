@@ -86,7 +86,8 @@ const ChatBus = (() => {
         display = displays.find(d => d.isPrimary) || displays[0];
       }
       const width = Math.min(900, Math.round(display.workArea.width * 0.7));
-      const height = 60;
+      // v4.8.27: 60→78（标题栏 ~30 + chat-main padding 16 + 一行控件 30 + 余量 2）
+      const height = 78;
       return {
         left: display.workArea.left + Math.round((display.workArea.width - width) / 2),
         top: display.workArea.top,
@@ -117,7 +118,10 @@ const ChatBus = (() => {
     // 切到目标 bounds
     let target;
     if (next === "mini") {
-      target = popupMiniBounds || await defaultMiniBounds();
+      // v4.8.27: 旧版 mini 默认高度 60，但实际经常被 Chrome 撑到 200+ 用户也未必拉低；
+      //          新版 row flex 一行 78px 足够，若持久化的 height > 150 认为是脏数据，回退默认
+      const stale = popupMiniBounds && popupMiniBounds.height > 150;
+      target = (!stale && popupMiniBounds) || await defaultMiniBounds();
     } else {
       target = popupBounds || await defaultBounds();
     }
