@@ -3200,11 +3200,13 @@ body { letter-spacing: -0.01em; }
 .btn-mini-mode:active { transform: translateY(0) scale(0.98); }
 /* btn-mini-pulse / btn-mini-aura 已删（v4.8.24 静态化）*/
 
-/* mini 模式 — 隐藏不需要的区域 */
+/* mini 模式 — 全隐藏的区域 */
 body[data-mode="mini"] .chat-sidebar,
 body[data-mode="mini"] .chat-rightpanel,
 body[data-mode="mini"] .chat-messages,
-body[data-mode="mini"] .empty-state {
+body[data-mode="mini"] .empty-state,
+body[data-mode="mini"] .chat-roster,        /* v4.8.27: 单行模式下 roster 也藏掉 */
+body[data-mode="mini"] .arena-badge {        /* 辩论轮次徽章也藏 */
   display: none !important;
 }
 body[data-mode="mini"] .chat-title,
@@ -3214,49 +3216,55 @@ body[data-mode="mini"] .chat-actions #btn-hard-reset {
   display: none !important;
 }
 
-/* mini 模式 — chat-header 缩为 mini-bar 触发按钮容器 */
-body[data-mode="mini"] .chat-header {
-  padding: 6px 10px;
-  min-height: 0;
-  height: auto;
-  justify-content: flex-end;
-  border-bottom: none;
-  background: transparent;
-}
-body[data-mode="mini"] .chat-app {
-  height: 100vh;
-}
+/* v4.8.27: mini 模式核心 — chat-main 改 row flex，header/input-bar 全部并排成一行 */
+body[data-mode="mini"] .chat-app { height: auto; min-height: 0; }
 body[data-mode="mini"] .chat-main {
   width: 100%;
-  height: 100vh;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-}
-
-/* mini 模式 — roster 紧贴 input bar 内联 */
-body[data-mode="mini"] .chat-roster {
-  padding: 2px 12px 0;
-  background: transparent;
-  border-top: none;
-  border-bottom: none;
+  height: auto;
   min-height: 0;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  padding: 8px 12px;
+  background: transparent;
 }
-body[data-mode="mini"] .roster-label,
-body[data-mode="mini"] .roster-upload-hint,
-body[data-mode="mini"] .roster-count {
-  display: none !important;
+body[data-mode="mini"] .chat-header {
+  flex-shrink: 0;
+  padding: 0;
+  min-height: 0;
+  height: auto;
+  border: none;
+  background: transparent;
+  backdrop-filter: none;
+  /* 让 .chat-actions 自然 flex 自己 — 默认就是 inline-flex */
 }
-body[data-mode="mini"] .roster-items {
-  gap: 4px;
+body[data-mode="mini"] .chat-actions {
+  gap: 0;
+  padding: 0;
 }
-body[data-mode="mini"] .chat-input-bar {
-  padding: 4px 8px 6px;
-  border-top: none;
-}
-
-/* mini 模式 — 按钮文字切换由 JS 控制 textContent */
 body[data-mode="mini"] .btn-mini-mode {
-  background: #34c759; /* 展开按钮换绿色，更突出"返回常态" */
   margin-right: 0;
+  /* 展开按钮换青绿，跟 input-bar 配色协调（不再橙红抢眼）*/
+  background: linear-gradient(135deg, #5eead4, #a78bfa);
+  color: #0a1024;
+  box-shadow: 0 0 0 1px rgba(94,234,212,0.35), 0 2px 8px rgba(94,234,212,0.25);
+}
+body[data-mode="mini"] .btn-mini-mode:hover {
+  box-shadow: 0 0 0 1px rgba(94,234,212,0.55), 0 6px 18px rgba(94,234,212,0.45);
+}
+/* input-bar 占满剩余宽度，去 padding/border */
+body[data-mode="mini"] .chat-input-bar {
+  flex: 1;
+  padding: 0;
+  border-top: none;
+  background: transparent;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;          /* 让 .chat-input-wrap flex 收缩生效 */
+}
+body[data-mode="mini"] .chat-input-wrap {
+  min-width: 0;
 }
