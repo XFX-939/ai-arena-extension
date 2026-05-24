@@ -2487,3 +2487,250 @@ body { letter-spacing: -0.01em; }
   color: var(--ink-soft);
   line-height: 1.7;
 }
+
+/* ========================================================================
+ * v4.8.0 · UI 重设计
+ *   ① 王者风 3 卡槽（成员 Tab）
+ *   ② 时光机时间轴目录（左侧 sidebar）
+ *   ③ 极简任务 picker（删 logo + "任务"二字）
+ * ====================================================================== */
+
+/* ============ ① 王者风 3 卡槽 ============ */
+.hero-slots {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  padding: 4px 0 10px;
+}
+.hero-slot {
+  aspect-ratio: 0.85;
+  position: relative;
+  border-radius: 10px;
+  cursor: pointer;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 6px;
+  transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+  background: linear-gradient(135deg, rgba(20,20,30,0.96), rgba(15,20,40,0.96));
+  border: 1.5px solid rgba(255,215,0,0.22);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.05),
+    0 1px 3px rgba(0,0,0,0.2);
+}
+@media (prefers-color-scheme: light) {
+  .hero-slot {
+    background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+  }
+}
+.hero-slot.empty { border-style: dashed; opacity: 0.7; }
+.hero-slot.empty:hover { opacity: 1; transform: translateY(-2px); border-color: rgba(255,215,0,0.55); }
+
+.hero-slot.filled {
+  border-color: #5eead4;
+  box-shadow:
+    0 0 14px rgba(94,234,212,0.35),
+    inset 0 0 14px rgba(94,234,212,0.10),
+    0 1px 3px rgba(0,0,0,0.25);
+  animation: hero-slot-fill-in 0.45s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+@keyframes hero-slot-fill-in {
+  0% { transform: scale(0.6) rotate(-8deg); opacity: 0; }
+  60% { transform: scale(1.08) rotate(2deg); opacity: 1; }
+  100% { transform: scale(1) rotate(0); opacity: 1; }
+}
+.hero-slot.filled:hover { transform: translateY(-2px) scale(1.02); }
+
+/* 流光特效（顶角斜光） */
+.hero-slot.filled .hero-slot-glow {
+  position: absolute;
+  top: -50%; left: -50%;
+  width: 200%; height: 200%;
+  background: linear-gradient(115deg,
+    transparent 30%,
+    rgba(94,234,212,0.18) 40%,
+    rgba(167,139,250,0.18) 50%,
+    transparent 60%);
+  pointer-events: none;
+  animation: hero-slot-shimmer 2.6s ease-in-out infinite;
+  z-index: 1;
+}
+@keyframes hero-slot-shimmer {
+  0%, 100% { transform: translate(-30%, -30%); opacity: 0.5; }
+  50% { transform: translate(30%, 30%); opacity: 1; }
+}
+
+/* 状态变体 — 输出中、就绪、错误 */
+.hero-slot.status-busy { border-color: #ff9f0a; }
+.hero-slot.status-busy .hero-slot-glow {
+  background: linear-gradient(115deg, transparent 30%, rgba(255,159,10,0.25) 50%, transparent 60%);
+}
+.hero-slot.status-ready { border-color: #34c759; }
+.hero-slot.status-error { border-color: #ff3b30; }
+.hero-slot.status-error .hero-slot-glow {
+  background: linear-gradient(115deg, transparent 30%, rgba(255,59,48,0.25) 50%, transparent 60%);
+}
+
+.hero-slot-logo {
+  width: 36px; height: 36px;
+  border-radius: 8px;
+  background: rgba(255,255,255,0.96);
+  padding: 4px;
+  z-index: 2;
+  position: relative;
+}
+.hero-slot-fb {
+  width: 36px; height: 36px;
+  border-radius: 8px;
+  background: rgba(255,255,255,0.92);
+  color: #1a1a2e;
+  display: flex; align-items: center; justify-content: center;
+  font-weight: 700;
+  font-size: 16px;
+  z-index: 2;
+  position: relative;
+}
+.hero-slot-name {
+  margin-top: 6px;
+  font-size: 10.5px;
+  color: #e0e8ff;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  z-index: 2;
+  position: relative;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.4);
+}
+.hero-slot-status {
+  position: absolute;
+  bottom: 4px; left: 50%;
+  transform: translateX(-50%);
+  z-index: 3;
+}
+.hero-slot-status .rp-status-dot {
+  width: 5px; height: 5px;
+  display: inline-block;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.4);
+}
+.hero-slot-status .rp-status-dot.ready { background: #34c759; box-shadow: 0 0 4px #34c759; }
+.hero-slot-status .rp-status-dot.busy  { background: #ff9f0a; box-shadow: 0 0 4px #ff9f0a; animation: hero-dot-blink 1.2s ease-in-out infinite; }
+.hero-slot-status .rp-status-dot.error { background: #ff3b30; box-shadow: 0 0 4px #ff3b30; }
+@keyframes hero-dot-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
+.hero-slot-check {
+  position: absolute;
+  top: -6px; right: -6px;
+  width: 18px; height: 18px;
+  background: linear-gradient(135deg, #5eead4, #a78bfa);
+  color: #0a1024;
+  border-radius: 50%;
+  font-size: 11px;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid #16213e;
+  z-index: 4;
+  box-shadow: 0 1px 3px rgba(94,234,212,0.5);
+}
+.hero-slot-more {
+  position: absolute;
+  top: 4px; left: 4px;
+  width: 18px; height: 18px;
+  border: none;
+  background: rgba(0,0,0,0.3);
+  color: rgba(255,255,255,0.7);
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  display: flex; align-items: center; justify-content: center;
+  z-index: 4;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+.hero-slot:hover .hero-slot-more { opacity: 1; }
+.hero-slot-more:hover { background: rgba(255,255,255,0.2); color: #fff; }
+
+.hero-slot-plus {
+  font-size: 26px;
+  color: rgba(255,215,0,0.5);
+  font-weight: 200;
+  line-height: 1;
+}
+.hero-slot.empty:hover .hero-slot-plus { color: rgba(255,215,0,0.85); transform: rotate(90deg); transition: all 0.3s; }
+.hero-slot-empty-lbl {
+  font-size: 10px;
+  color: rgba(255,255,255,0.35);
+  margin-top: 6px;
+}
+
+/* ============ ② 时光机时间轴目录 ============ */
+.sidebar-list {
+  position: relative;
+  padding-left: 22px !important;   /* 给时间轴留位 */
+}
+.sidebar-list::before {
+  content: "";
+  position: absolute;
+  left: 14px;
+  top: 12px;
+  bottom: 12px;
+  width: 1.5px;
+  background: linear-gradient(180deg,
+    var(--accent) 0%,
+    rgba(127,127,127,0.35) 60%,
+    rgba(127,127,127,0.1) 100%);
+  border-radius: 1px;
+  pointer-events: none;
+}
+/* 隐藏旧的 3px 矩形装饰，让圆点 take over */
+.sidebar-item::before {
+  /* 圆点节点 — 在时间轴线上 */
+  content: "" !important;
+  left: -16px !important;
+  top: 14px !important;
+  bottom: auto !important;
+  width: 10px !important;
+  height: 10px !important;
+  border-radius: 50% !important;
+  background: var(--bg) !important;
+  border: 2px solid var(--ink-soft) !important;
+  box-shadow: 0 0 0 2px var(--card) !important;
+  transition: all 0.2s !important;
+  opacity: 1 !important;
+}
+.sidebar-item:hover::before {
+  border-color: var(--accent) !important;
+  box-shadow: 0 0 0 2px var(--card), 0 0 8px var(--accent) !important;
+  background: var(--accent) !important;
+}
+.sidebar-item.active::before {
+  background: var(--accent) !important;
+  border-color: var(--accent) !important;
+  box-shadow: 0 0 0 2px var(--card), 0 0 10px var(--accent) !important;
+}
+/* 时间戳更突出 */
+.sidebar-item-time {
+  color: var(--accent) !important;
+  font-weight: 700 !important;
+  font-feature-settings: "tnum" 1;
+}
+/* hover 时整条向右轻推 */
+.sidebar-item:hover {
+  transform: translateX(2px) !important;
+  background: linear-gradient(90deg, rgba(10,132,255,0.06), transparent 70%) !important;
+}
+
+/* ============ ③ 极简任务 picker（CSS 微调让 pill 居中） ============ */
+.task-picker {
+  gap: 6px !important;
+}
+.task-picker .picked {
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
