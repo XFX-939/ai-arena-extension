@@ -391,23 +391,24 @@ function staticCheck() {
       pattern: /不再手动 setWebLifecycleState\("frozen"\)/,
       desc: "F27-bugfix2 detach 不调 frozen（防 AI 网页黑屏）",
     },
+    // F28 持久 attach 已被 F31 回退（Chrome 全局通知条遮挡 mini popup）— 不再 check 旧逻辑
     {
-      id: "F28-persistent-attach-add",
+      id: "F31-no-persistent-attach",
       file: "src/background.js",
-      pattern: /v4\.8\.13 F28[\s\S]*?attachAndWake\(tabId\)/,
-      desc: "F28 addParticipant 持久 attach CDP（黄条不再频繁弹出）",
+      pattern: /F31:\s*取消 F28 的持久 attach/,
+      desc: "F31 取消 F28 的 addParticipant 持久 attach",
     },
     {
-      id: "F28-persistent-detach-remove",
-      file: "src/background.js",
-      pattern: /F28: 移除参与者前 detach[\s\S]*?CDPExtractor\.detach/,
-      desc: "F28 removeParticipant 配对 detach",
-    },
-    {
-      id: "F28-poll-no-op",
+      id: "F31-mini-skip-attach",
       file: "src/chat-bus.js",
-      pattern: /function releaseCDPFor\([^)]*\)\s*\{\s*\/\*\s*no-op \(F28\)/,
-      desc: "F28 polling 路径不再触发 attach/detach（防黄条闪烁）",
+      pattern: /F31:\s*mini 模式下完全跳过 attach/,
+      desc: "F31 mini 模式下 tryAttachCDPForPolling 直接 return（防通知条遮挡）",
+    },
+    {
+      id: "F31-detach-on-enter-mini",
+      file: "src/chat-bus.js",
+      pattern: /F31:\s*切到 mini 模式时立即 detach 所有 attach/,
+      desc: "F31 进入 mini 时 detachAll 清干净通知条",
     },
     {
       id: "F28-no-force-focus-summary",

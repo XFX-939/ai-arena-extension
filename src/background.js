@@ -398,18 +398,10 @@ async function addParticipant(service) {
   // v4.3.0：立即把 popup 拉回前端（不等 arrange）
   try { await ChatBus.focusPopup(); } catch (_) {}
 
-  // v4.8.13 F28: 添加参与者后一次性 attach CDP，黄条只在这里出现一次，之后整个会话保持
-  // 用户反馈："AI 群聊现在上方经常弹出这个窗口" — 老逻辑每次 polling 都 attach/detach 让黄条频繁弹出
-  // 改为会话级 attach：addParticipant 一次 attach，removeParticipant detach，期间 polling 不再动 CDP
-  // 延迟 1.5s 让 AI 网页加载完再 attach（页面 loading 时 attach 可能失败）
-  setTimeout(async () => {
-    try {
-      if (self.CDPExtractor && tabId) {
-        const r = await self.CDPExtractor.attachAndWake(tabId);
-        console.log(`[F28] persistent CDP attach service=${service} tab=${tabId} ok=${r?.ok} code=${r?.code}`);
-      }
-    } catch (e) { console.warn(`[F28] persistent attach fail:`, e?.message); }
-  }, 1500);
+  // v4.8.17 F31: 取消 F28 的持久 attach
+  // 根因：chrome.debugger 全局通知条会显示在所有窗口顶部（含群聊 popup），mini 模式下
+  // 60px 群聊 popup 整个被通知条遮挡 — Chrome 安全机制无法关闭。
+  // 改回 F27 按需 attach（polling 时临时 attach，完成 detach），见 chat-bus.js
 
   return { ok: true, participants: StateMachine.getFullState().participants };
 }
@@ -417,7 +409,7 @@ async function addParticipant(service) {
 async function removeParticipant(id) {
   const p = StateMachine.getParticipant(id);
   if (!p) return { ok: false };
-  // v4.8.13 F28: 移除参与者前 detach 该 tab 的 CDP — 持久 attach 配对的释放点
+  // v4.8.17 F31: 兜底 detach（如果 polling 还在 attach 中，移除前清干净）
   if (p.tabId && self.CDPExtractor) {
     try { await self.CDPExtractor.detach(p.tabId); } catch (_) {}
   }

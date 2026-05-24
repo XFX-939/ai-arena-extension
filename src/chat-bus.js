@@ -132,6 +132,10 @@ const ChatBus = (() => {
     }
     popupMode = next;
     await chrome.storage.local.set({ [STORAGE_KEYS.mode]: popupMode });
+    // v4.8.17 F31: 切到 mini 模式时立即 detach 所有 attach，让 chrome 顶部通知条消失
+    if (next === "mini" && self.CDPExtractor) {
+      try { await self.CDPExtractor.detachAll(); } catch (_) {}
+    }
     return { ok: true, mode: popupMode, bounds: target };
   }
 
@@ -295,12 +299,33 @@ const ChatBus = (() => {
     return { ok: true, msgId };
   }
 
-  // v4.8.13 F28: polling 不再 attach/detach CDP — attach 改在 addParticipant 持久挂住
-  // 老逻辑每次 polling 启动 attach、完成 detach 让黄条频繁弹出 / 消失
-  // 现在 CDP attach 由 background.js addParticipant 触发，移除 AI 时才 detach
-  // 这两个函数保留 no-op 以兼容旧代码路径，不再做实际工作
-  function releaseCDPFor(_state, _tabId) { /* no-op (F28) */ }
-  async function tryAttachCDPForPolling(_state, _tabId) { /* no-op (F28) */ }
+  // v4.8.17 F31: 回退到 F27 按需 attach 模式（删 F28 持久 attach）
+  // 原因：chrome.debugger 全局通知条遮挡 mini 模式 popup（60px 高被吃光）
+  // 现在 polling 启动时 attach，完成时 detach；mini 模式下完全跳过 attach
+  function releaseCDPFor(state, tabId) {
+    if (state && state.cdpAttached) {
+      state.cdpAttached = false;
+      if (self.CDPExtractor && tabId) {
+        self.CDPExtractor.detach(tabId).catch(() => {});
+      }
+    }
+  }
+
+  async function tryAttachCDPForPolling(state, tabId) {
+    if (!self.CDPExtractor) return;
+    // v4.8.17 F31: mini 模式下完全跳过 attach
+    // 用户在 mini 模式下主要看 AI window 直接输出，群聊只是占位提示和发问入口
+    // mini 模式群聊 popup 仅 60px，被 chrome.debugger 通知条遮挡 → 完全不 attach
+    if (popupMode === "mini") return;
+    try {
+      const inBg = await self.CDPExtractor.isTabInBackground(tabId);
+      if (!inBg) return;
+      const r = await self.CDPExtractor.attachAndWake(tabId);
+      if (r?.ok) {
+        state.cdpAttached = true;
+      }
+    } catch (_) {}
+  }
 
   async function injectAndPoll(participant, msgId, text) {
     const { tabId, service } = participant;
