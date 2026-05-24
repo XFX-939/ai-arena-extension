@@ -288,6 +288,24 @@ function staticCheck() {
       pattern: /F22:\s*异步检测登录态/,
       desc: "F22 addParticipant 后触发检测",
     },
+    {
+      id: "F24-reuse-readOne",
+      file: "src/chat-bus.js",
+      pattern: /复用 background\.readOneResponse/,
+      desc: "F24 reextractOne 复用 v3 同款 readOneResponse sanity check",
+    },
+    {
+      id: "F24-retry",
+      file: "src/chat-bus.js",
+      pattern: /MAX_RETRIES\s*=\s*5/,
+      desc: "F24 5 次重试",
+    },
+    {
+      id: "F24-loading",
+      file: "src/chat-bus.js",
+      pattern: /正在重新提取…/,
+      desc: "F24 立刻推 loading 占位",
+    },
   ];
   console.log("═".repeat(70));
   console.log("静态白盒：13 项源码 patch 存在性检查");
@@ -652,6 +670,70 @@ try {
     record("F20-fix", "regression", f20, "500ms 内未收到 pending 占位 — 仍是老的等 inject 完成才出气泡");
   } else {
     record("F20-fix", "partial", f20, `pending 收到但 msgId 复用失败 — 会变成两条 user 消息`);
+  }
+
+  // ════════════════════════════════════════════════════════
+  // F24-fix: reextractOne 5 次重试 — 前 3 次空 + 第 4 次有内容 → 应成功
+  // 模拟现代 SPA AI 网页 DOM 异步渲染：单次读经常空，重试后成功
+  // ════════════════════════════════════════════════════════
+  console.log("\n=== F24-fix: reextractOne 鲁棒化（5 次重试 + 复用 readOneResponse sanity）===");
+  const f24 = await sw.evaluate(async () => {
+    return new Promise(async (resolve) => {
+      StateMachine.hardReset();
+      StateMachine.participants = [{
+        id: "pF24", service: "ai_f24", tabId: 53001,
+        name: "F24", response: null, responsePreview: null,
+      }];
+      // 不设 lastSentByPid / lastAcceptedByPid → sanity check 不会触发
+
+      // mock：前 3 次返回空 text（模拟 DOM 慢），第 4 次起返回有效文本
+      let readCallCount = 0;
+      const origTabsSend = chrome.tabs.sendMessage;
+      chrome.tabs.sendMessage = async (tid, msg) => {
+        if (msg.action === "readResponse") {
+          readCallCount++;
+          if (readCallCount <= 3) {
+            return { text: "", isStreaming: false, hasRichContent: false, richTypes: [] };
+          }
+          return { text: "这是 AI 真实回答 — 重试 4 次后才抓到", isStreaming: false, hasRichContent: false, richTypes: [] };
+        }
+        return { status: "sent" };
+      };
+
+      // 捕获 popup 推送
+      const pushed = [];
+      const origRuntime = chrome.runtime.sendMessage;
+      chrome.runtime.sendMessage = (m) => {
+        if (m?.type === "chatStreamUpdate" && m?.participantId === "ai_f24") {
+          pushed.push({ text: m.text, isDone: m.isDone, ts: Date.now() });
+        }
+        return Promise.resolve();
+      };
+
+      const t0 = Date.now();
+      const result = await ChatBus.reextractOne("pF24");
+
+      chrome.tabs.sendMessage = origTabsSend;
+      chrome.runtime.sendMessage = origRuntime;
+
+      const loadingPushed = pushed.find(p => p.text.includes("正在重新提取"));
+      const successPushed = pushed.find(p => p.isDone && p.text.includes("AI 真实回答"));
+      resolve({
+        result_ok: result?.ok,
+        result_text: result?.text,
+        readCallCount,
+        elapsed_ms: Date.now() - t0,
+        loading_pushed: !!loadingPushed,
+        success_pushed: !!successPushed,
+      });
+    });
+  });
+  if (f24.result_ok && f24.loading_pushed && f24.success_pushed && f24.readCallCount >= 4) {
+    record("F24-fix", "fixed", f24,
+      `loading 占位立刻推送 → 重试 ${f24.readCallCount} 次（前 3 次空）→ 第 4 次抓到内容 → 成功推送（耗时 ${f24.elapsed_ms}ms）`);
+  } else {
+    record("F24-fix", "regression", f24,
+      `result_ok=${f24.result_ok} loading=${f24.loading_pushed} success=${f24.success_pushed} reads=${f24.readCallCount}`);
   }
 
   // ════════════════════════════════════════════════════════

@@ -452,6 +452,11 @@ const ChatBus = (() => {
     return { ok: true };
   }
 
+  // v4.8.4 F24: 手动重新提取鲁棒化 — 复用 background.readOneResponse 的 5 道 sanity 保险
+  // （v3.0 同款逻辑：超时保护 / 用户消息回显拒绝 / 上轮残留拒绝 / 平台错误识别 / 空文本告警）
+  // + 5 次重试覆盖现代 SPA AI 网页 DOM 异步渲染（v3.0 当年单次足够，现在不够）
+  // + 立刻推 loading 占位 (msgId 复用) 给用户瞬时反馈
+  // + 失败时推明确错误气泡（不再静默推空气泡覆盖原内容）
   async function reextractOne(participantId) {
     // v4.3.13: participantId 既可能是 service 名（来自气泡 dataset），也可能是
     // participant.id（来自成员卡 ⋯ 菜单），两种都要支持
@@ -459,33 +464,64 @@ const ChatBus = (() => {
     const p = list.find(x => x.id === participantId)
            || list.find(x => x.service === participantId);
     if (!p || !p.tabId) return { ok: false, error: "未找到参与者" };
-    try {
-      const r = await chrome.tabs.sendMessage(p.tabId, { action: "readResponse" });
-      const text = (r?.text || "").trim();
-      const msgId = `manual_${Date.now()}`;
-      // v4.3.13 关键修复：用户主动重新提取，强制覆盖 StateMachine.participants[i].response
-      // 否则辩论流程查 p.response 时仍是旧值（或上轮被清后的 null），导致"回答不足"
-      if (text && typeof StateMachine.setParticipantResponse === "function") {
-        try { StateMachine.setParticipantResponse(p.id, text); }
-        catch (e) { console.warn("[chat-bus] setParticipantResponse:", e?.message); }
+
+    const msgId = `manual_${Date.now()}`;
+    // 立刻推 loading 占位（用同 msgId，成功 / 失败时覆盖更新）
+    sendToPopup({
+      type: "chatStreamUpdate", role: "ai", msgId,
+      participantId: p.service, text: "🔄 正在重新提取…", isDone: false,
+    });
+
+    const MAX_RETRIES = 5;
+    const RETRY_DELAY_MS = 1000;
+    let lastError = "未读到内容";
+    let succeeded = null;
+
+    for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+      try {
+        // 复用 background.readOneResponse — v3.0 同款 sanity check + setParticipantResponse
+        const r = (typeof readOneResponse === "function")
+          ? await readOneResponse(p.id)
+          : { ok: false, error: "readOneResponse 不可用" };
+        if (r?.ok && r?.text) { succeeded = r; break; }
+        if (r?.error) lastError = r.error;
+      } catch (e) {
+        lastError = e?.message || lastError;
       }
+      if (attempt < MAX_RETRIES - 1) {
+        await new Promise(res => setTimeout(res, RETRY_DELAY_MS));
+      }
+    }
+
+    if (succeeded) {
+      // 成功后再读一次 chrome.tabs.sendMessage 拿富文本字段（readOneResponse 只返回 text）
+      let richMeta = { hasRichContent: false, richTypes: [] };
+      try {
+        const r2 = await chrome.tabs.sendMessage(p.tabId, { action: "readResponse" });
+        richMeta = { hasRichContent: !!r2?.hasRichContent, richTypes: r2?.richTypes || [] };
+      } catch (_) {}
       sendToPopup({
         type: "chatStreamUpdate", role: "ai", msgId,
-        participantId: p.service,
-        text, isDone: true,
-        hasRichContent: !!r?.hasRichContent, richTypes: r?.richTypes || [],
+        participantId: p.service, text: succeeded.text, isDone: true,
+        ...richMeta,
       });
       pushLog({
         role: "ai", msgId, participantId: p.service,
-        text, ts: Date.now(),
-        hasRichContent: !!r?.hasRichContent, richTypes: r?.richTypes || [],
+        text: succeeded.text, ts: Date.now(),
+        ...richMeta,
       });
-      // 广播 stateUpdate 让 popup-members 也能看到状态从 busy → ready 切换
       try { StateMachine._broadcastStateUpdate?.(); } catch (_) {}
-      return { ok: true, text };
-    } catch (e) {
-      return { ok: false, error: e.message };
+      return { ok: true, text: succeeded.text };
     }
+
+    // 5 次都失败 → 推明确错误气泡告诉用户具体原因（不再静默推空气泡）
+    sendToPopup({
+      type: "chatStreamUpdate", role: "ai", msgId,
+      participantId: p.service,
+      text: `⚠ 重新提取失败：${lastError}\n\n请确认 ${p.name} 页面已出现 AI 回答，必要时刷新页面后再试。`,
+      isDone: true,
+    });
+    return { ok: false, error: lastError };
   }
 
   // v4.3.0：把 popup 窗口拉回前端（添加 AI 窗口/排列窗口后调用，防止 popup 失焦）
