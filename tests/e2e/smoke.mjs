@@ -67,7 +67,7 @@ try {
   // 2) 读 manifest version_name 验证版本同步（直接读源文件）
   const manifest = JSON.parse(fs.readFileSync(path.join(EXT_PATH, "manifest.json"), "utf8"));
   console.log(`[smoke] manifest version: ${manifest.version}, version_name: ${manifest.version_name}`);
-  check("manifest version_name = 4.8.1-beta", manifest.version_name === "4.8.1-beta", `actual: ${manifest.version_name}`);
+  check("manifest version_name = 4.8.6-beta", manifest.version_name === "4.8.6-beta", `actual: ${manifest.version_name}`);
 
   // 3) 打开 sidepanel.html（作为普通 tab），验证 DOM
   const sidepanelPage = await context.newPage();
@@ -75,10 +75,10 @@ try {
   await sidepanelPage.waitForLoadState("domcontentloaded");
 
   const versionBadge = await sidepanelPage.locator(".version").textContent();
-  check("sidepanel version badge", versionBadge === "v4.8.1-beta", `actual: "${versionBadge}"`);
+  check("sidepanel version badge", versionBadge === "v4.8.6-beta", `actual: "${versionBadge}"`);
 
   const footerVersion = await sidepanelPage.locator(".footer").textContent();
-  check("sidepanel footer version", footerVersion?.includes("v4.8.1-beta"), `actual: "${footerVersion?.slice(0, 100)}"`);
+  check("sidepanel footer version", footerVersion?.includes("v4.8.6-beta"), `actual: "${footerVersion?.slice(0, 100)}"`);
 
   const openChatBtn = await sidepanelPage.locator("#btn-open-chat").count();
   check('sidepanel has "🪟 群聊" button', openChatBtn === 1);
@@ -96,7 +96,7 @@ try {
   await popupPage.waitForLoadState("domcontentloaded");
 
   const popupVersion = await popupPage.locator(".chat-version").textContent();
-  check("popup chat-version = v4.8.1-beta", popupVersion === "v4.8.1-beta", `actual: "${popupVersion}"`);
+  check("popup chat-version = v4.8.6-beta", popupVersion === "v4.8.6-beta", `actual: "${popupVersion}"`);
 
   // 图标资产验证（v4.0.11）
   const assetsOk = await popupPage.evaluate(async (extId) => {
@@ -571,6 +571,34 @@ try {
     timeline.paddingLeft === "22px", JSON.stringify(timeline));
   check("v4.8.0: 时光机 — sidebar-item::before 是圆点（border-radius 50%）",
     timeline.itemDotShape === "50%", JSON.stringify(timeline));
+
+  // v4.8.2: 跳过 F20/F21 pending 占位（避免时间轴重复条目）
+  const pendingFilter = await popupPage.evaluate(() => {
+    const now = Date.now();
+    const log = [
+      { role: "user", msgId: "u1", text: "先有鸡还是先有蛋", ts: now - 5000 },
+      { role: "ai", msgId: "u1", participantId: "claude", text: "答案", ts: now - 4500 },
+      // F20 pending 占位
+      { role: "user", msgId: "p1", text: "⚔️ 第1轮辩论·自由辩论 · 正在发起...", ts: now - 4000 },
+      // 真实辩论 msg
+      { role: "user", msgId: "u2", text: "⚔️ 第1轮辩论·自由辩论", ts: now - 3000 },
+      { role: "ai", msgId: "u2", participantId: "gemini", text: "Gemini 反驳", ts: now - 2500 },
+      // F21 总结 pending
+      { role: "user", msgId: "p2", text: "📋 裁判总结·Claude · 正在发起...", ts: now - 2000 },
+      { role: "user", msgId: "u3", text: "📋 裁判总结·Claude", ts: now - 1000 },
+    ];
+    window.ChatHistory?.renderAll(log);
+    const turns = document.querySelectorAll("#sidebar-list .sidebar-turn");
+    const texts = [...turns].map(t => t.querySelector(".sidebar-item-text")?.textContent || "");
+    return {
+      turnCount: turns.length,
+      texts,
+      hasPending: texts.some(t => t.includes("正在发起"))
+    };
+  });
+  check("v4.8.2: sidebar 跳过 pending 占位（3 turns 不含'正在发起'）",
+    pendingFilter.turnCount === 3 && !pendingFilter.hasPending,
+    JSON.stringify(pendingFilter));
 
   // ③ 极简任务 picker — 删了 ⚙️ icon 和"任务"label
   const pickerSimple = await popupPage.evaluate(() => {
