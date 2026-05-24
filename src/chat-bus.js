@@ -71,6 +71,10 @@ const ChatBus = (() => {
   const pollers = new Map();
   const POLL_INTERVAL_MS = 1500;
   const STREAM_DONE_THRESHOLD = 3;  // 连续 N 次相同视为完成
+  // v4.5.5 F5: 全局 polling tick 上限，~5 分钟兜底防 imagesPending 抖动让 stableKey 永不稳定
+  // 实测场景：mock readResponse 返回 text 不变但 imagesPending 0/1 抖动 → polling 跑 12s
+  // 仍未完成，理论可无限跑。到达上限按当前文本强制 isDone:true 完成。
+  const MAX_POLL_TICKS = 200;
 
   async function sendToPopup(payload) {
     if (popupWindowId == null) return;
@@ -101,6 +105,30 @@ const ChatBus = (() => {
 
     if (!targetList.length) {
       return { ok: false, error: "无可用参与者" };
+    }
+
+    // v4.5.4 F3: 同步 StateMachine — 否则 originalQuestion/p.response/lastSent/flowState 全是旧值，
+    // popup "同时提问" 后立刻发起辩论会基于上一题的上下文，导致"回答不足"或上下文混乱
+    try {
+      if (StateMachine.debateSession) {
+        StateMachine.debateSession.originalQuestion = text;
+        StateMachine.debateSession.rounds = [];
+        StateMachine.debateSession.summaryText = "";
+      }
+      targetList.forEach(p => {
+        p.response = null;
+        p.responsePreview = null;
+        if (typeof StateMachine.setLastSent === "function") {
+          StateMachine.setLastSent(p.id, text);
+        }
+      });
+      if (typeof StateMachine.setFlowState === "function" && typeof FlowState !== "undefined") {
+        StateMachine.setFlowState(FlowState.BROADCASTING);
+      }
+      StateMachine.save?.();
+      StateMachine._broadcastStateUpdate?.();
+    } catch (e) {
+      console.warn("[chat-bus] broadcast SM sync fail:", e?.message);
     }
 
     const msgId = newMsgId();
@@ -140,7 +168,11 @@ const ChatBus = (() => {
       });
       // 启动该 participant 的 polling（不 inject）
       if (pollers.has(p.service)) clearInterval(pollers.get(p.service).intervalId);
-      const state = { lastText: "", sameCount: 0, msgId };
+      // v4.5.6 F11: 记录上一轮已采纳回答 → pollOnce 拒绝残留
+      const state = {
+        lastText: "", sameCount: 0, msgId,
+        prevAccepted: StateMachine.lastAcceptedByPid?.[p.id] || "",
+      };
       state.intervalId = setInterval(() => pollOnce(p, state), POLL_INTERVAL_MS);
       pollers.set(p.service, state);
     }
@@ -161,7 +193,11 @@ const ChatBus = (() => {
     }
     // 启动 polling
     if (pollers.has(service)) clearInterval(pollers.get(service).intervalId);
-    const state = { lastText: "", sameCount: 0, msgId };
+    // v4.5.6 F11: 记录上一轮已采纳回答 → pollOnce 拒绝残留
+    const state = {
+      lastText: "", sameCount: 0, msgId,
+      prevAccepted: StateMachine.lastAcceptedByPid?.[participant.id] || "",
+    };
     state.intervalId = setInterval(() => pollOnce(participant, state), POLL_INTERVAL_MS);
     pollers.set(service, state);
   }
@@ -169,6 +205,24 @@ const ChatBus = (() => {
   async function pollOnce(participant, state) {
     const { tabId, service } = participant;
     try {
+      // v4.5.5 F5: 全局 tick 上限兜底
+      state.totalTicks = (state.totalTicks || 0) + 1;
+      if (state.totalTicks >= MAX_POLL_TICKS) {
+        clearInterval(state.intervalId);
+        pollers.delete(service);
+        const finalText = state.lastText || "⚠ 超时 5 分钟未完成，已按当前内容强制结束";
+        pushLog({
+          role: "ai", msgId: state.msgId, participantId: service,
+          text: finalText, ts: Date.now(), forcedTimeout: true,
+        });
+        sendToPopup({
+          type: "chatStreamUpdate", role: "ai", msgId: state.msgId,
+          participantId: service, text: finalText, isDone: true,
+          forcedTimeout: true,
+        });
+        return;
+      }
+
       const r = await chrome.tabs.sendMessage(tabId, { action: "readResponse" });
       const text = (r?.text || "").trim();
       const hasRich = !!r?.hasRichContent;
@@ -200,6 +254,23 @@ const ChatBus = (() => {
         state.emptyCount = 0;
       }
 
+      // v4.5.6 F11: 拒绝读到上一轮残留 — Kimi/Gemini 等 DOM 更新慢的平台，新对话发出后
+      // 旧 assistant 气泡仍是 last DOM，前几 tick readResponse 抓到上一轮文本；老逻辑会
+      // 连续 3 次相同→判完成→把残留推给 popup（截图证据：Kimi 第二轮气泡和第一轮一字不差）
+      const prevAccepted = state.prevAccepted || "";
+      const head100 = s => (s || "").trim().slice(0, 100);
+      const isResidue = text && prevAccepted && (
+        text === prevAccepted ||
+        (head100(text).length >= 50 && head100(text) === head100(prevAccepted))
+      );
+      if (isResidue) {
+        // 视为"新回答还没出现"，重置稳定计数但不算 empty（不超时）；
+        // 也不 sendToPopup，避免气泡闪现旧内容
+        state.lastStableKey = null;
+        state.sameCount = 0;
+        return;
+      }
+
       // v4.3.3: stableKey 把 imagesPending 计入稳定性判定
       // → 文本停止变化但图还在加载时，stableKey 仍会变 → 不算 stable
       const imagesPending = r?.imagesPending || 0;
@@ -226,7 +297,7 @@ const ChatBus = (() => {
           try {
             const ps = StateMachine.pendingSummary;
             if (ps && ps.judgeId === participant.id && text && typeof finalizeDebateSummary === "function") {
-              StateMachine.pendingSummary = null;
+              StateMachine.setPendingSummary?.(null) ?? (StateMachine.pendingSummary = null);
               finalizeDebateSummary(text, ps).catch(e => console.warn("[chat-bus] finalize summary fail:", e?.message));
             }
           } catch (e) { console.warn("[chat-bus] pendingSummary check fail:", e?.message); }

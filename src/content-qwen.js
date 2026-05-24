@@ -36,6 +36,8 @@ function getHeuristicElement(action, options = {}) {
     return null;
   }
   if (action === "response") {
+    // v4.5.4 F1: 无用户消息 DOM → 不在对话页，放弃 heuristic 防误抓装饰元素
+    if (typeof hasUserMessageInDom === "function" && !hasUserMessageInDom()) return options.all ? [] : null;
     const blocks = document.querySelectorAll('div, article, section');
     for (let i = blocks.length - 1; i >= 0; i--) {
       const text = blocks[i].innerText?.trim();

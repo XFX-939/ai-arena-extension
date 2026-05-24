@@ -10,6 +10,29 @@
     }[c]));
   }
 
+  // v4.5.4 F2: 拒绝 AI 把 prompt 内的 schema 占位符回显当真总结
+  // 触发场景：AI 网页 DOM 经常把刚注入的 prompt 一起包进"AI 回答"区域，
+  // 而我们的 prompt 含 schema 示例 JSON（"辩论的核心命题..."），切片解析后
+  // 看起来是合法 JSON 但全是模板占位符 → 用户拿到全是 placeholder 的假报告
+  const TEMPLATE_PLACEHOLDER_HINTS = [
+    "核心命题（精炼",
+    "整场辩论得出的一句话核心结论",
+    "最值得带走",
+    "整场最精彩的一句引用",
+    "150 字以内",
+    "30-80 字",
+  ];
+
+  function looksLikeTemplatePlaceholder(parsed) {
+    if (!parsed || typeof parsed !== "object") return false;
+    const blob = [
+      parsed.topic,
+      parsed.core_conclusion,
+      Array.isArray(parsed.consensus) ? parsed.consensus.join("|") : parsed.consensus,
+    ].filter(s => typeof s === "string").join("|");
+    return TEMPLATE_PLACEHOLDER_HINTS.some(h => blob.includes(h));
+  }
+
   function parseDebateSummaryJson(text) {
     // 容错解析：AI 可能加 ```json 围栏 / 前后文字 / 不完整 JSON
     if (!text || typeof text !== "string") return null;
@@ -21,8 +44,9 @@
     const end = t.lastIndexOf("}");
     if (start < 0 || end < 0 || end <= start) return null;
     const candidate = t.slice(start, end + 1);
+    let parsed = null;
     try {
-      return JSON.parse(candidate);
+      parsed = JSON.parse(candidate);
     } catch (e) {
       // 失败：尝试修复常见 JSON 错误（尾随逗号、单引号）
       try {
@@ -30,9 +54,11 @@
           .replace(/,(\s*[}\]])/g, "$1")  // 尾随逗号
           .replace(/[‘’]/g, "'") // 中文单引号
           .replace(/[“”]/g, '"'); // 中文双引号
-        return JSON.parse(fixed);
+        parsed = JSON.parse(fixed);
       } catch { return null; }
     }
+    if (looksLikeTemplatePlaceholder(parsed)) return null;
+    return parsed;
   }
 
   function renderDebateSummaryHtml(data, meta) {
@@ -57,11 +83,15 @@
       ? `<ol class="${cls}">${items.map(i => `<li>${escapeHtml(i)}</li>`).join("")}</ol>`
       : `<div class="empty-section">（无）</div>`;
 
+    // v4.5.5 F7: AI 输出 supports/opposes/voices 时偶尔不按 schema 给数组而给对象，
+    // .map 直接 throw 导致整个 HTML 渲染失败。统一用 arr() 把"形似单条"的输入转成数组
+    const arr = v => Array.isArray(v) ? v : (v ? [v] : []);
+
     const argsHtml = args.map(a => {
-      const sup = (a.supports || []).map(s =>
+      const sup = arr(a.supports).map(s =>
         `<div class="arg-side s"><em>${escapeHtml(s.ai)}（支持）：</em>${escapeHtml(s.text)}</div>`
       ).join("");
-      const opp = (a.opposes || []).map(s =>
+      const opp = arr(a.opposes).map(s =>
         `<div class="arg-side o"><em>${escapeHtml(s.ai)}（反对/不同视角）：</em>${escapeHtml(s.text)}</div>`
       ).join("");
       return `<div class="arg">
@@ -75,7 +105,7 @@
     ).join("");
 
     const roundsHtml = rounds.map(r => {
-      const voices = (r.voices || []).map(v =>
+      const voices = arr(r.voices).map(v =>
         `<div class="round-v"><em>${escapeHtml(v.ai)}</em>${escapeHtml(v.text)}</div>`
       ).join("");
       return `<div class="round">

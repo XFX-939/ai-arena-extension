@@ -200,6 +200,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           } catch (_) {}
           StateMachine.hardReset();
           try { ChatBus.clearLog(); } catch (_) {}
+          // v4.5.4 F8: 主动广播 hardReset 让 popup-members 清空 streamStatus，
+          // 否则重置后立即添加同 service 新 AI，其状态会显示上一次的 ready/error 鬼影
+          chrome.runtime.sendMessage({ type: "hardReset" }).catch(() => {});
           notifyStatus("已彻底重置（AI 标签页 + 群聊 + 辩论上下文）");
           sendResponse({ ok: true });
           break;
@@ -484,6 +487,14 @@ async function handleDebateRound(style = "free", guidance = "", concise = false)
   StateMachine.setFlowState(FlowState.BROADCASTING);
   notifyStatus(`第${roundNum}轮：以「${DEBATE_STYLES[style]?.name || style}」风格交叉发送...`);
 
+  // v4.5.5 F4: 进入新一轮前先清所有参与者 response，防止上一轮某个 AI 晚到的回答
+  // 污染下一轮 — race 场景：A/B 5-8s 完成 → 用户启动第 1 轮 → C 15s 晚到，C 的旧轮
+  // 初始回答会塞进 p.response，下一轮 buildDebatePrompt 拿到混乱上下文
+  StateMachine.participants.forEach(p => {
+    p.response = null;
+    p.responsePreview = null;
+  });
+
   const sendResults = {};
   await Promise.all(Object.keys(responses).map(async (id) => {
     const p = StateMachine.getParticipant(id);
@@ -575,7 +586,8 @@ async function handleSummary(judgeId, customInstruction = "", format = "html") {
 
   StateMachine.setFlowState(FlowState.SUMMARY);
   // v4.4.0: 仅 html 模式设置 pendingSummary（text 模式走老路径，气泡显示散文即可）
-  StateMachine.pendingSummary = useJsonHtml ? {
+  // v4.5.5 F6: 用 setPendingSummary 触发 save，SW 重启时可恢复
+  StateMachine.setPendingSummary(useJsonHtml ? {
     judgeId: judge.id,
     judgeName: judge.name,
     judgeService: judge.service,
@@ -584,7 +596,7 @@ async function handleSummary(judgeId, customInstruction = "", format = "html") {
     rounds: StateMachine.debateSession.rounds.length || 0,
     participants: StateMachine.participants.map(p => p.name),
     ts: Date.now(),
-  } : null;
+  } : null);
   notifyStatus(`正在由 ${judge.name} 总结...`);
   try {
     StateMachine.setLastSent(judge.id, prompt);
@@ -592,7 +604,7 @@ async function handleSummary(judgeId, customInstruction = "", format = "html") {
     if (result?.status === "error") {
       const error = result.error || "注入失败";
       notifyStatus(`总结失败: ${error}`);
-      StateMachine.pendingSummary = null;
+      StateMachine.setPendingSummary(null);
       return { ok: false, error };
     }
     const tab = await chrome.tabs.get(judge.tabId);
@@ -616,8 +628,23 @@ async function finalizeDebateSummary(rawText, pending) {
   try {
     const data = self.DebateSummaryTemplate?.parse(rawText);
     if (!data) {
+      // v4.5.4 F9: parse 失败 → 降级为普通气泡显示原文，不让用户面对"按了没反应"
       console.warn("[summary] JSON 解析失败，原文回退展示");
+      try {
+        chrome.runtime.sendMessage({
+          type: "chatStreamUpdate", role: "ai",
+          msgId: `summary_fallback_${pending?.ts || Date.now()}`,
+          participantId: pending?.judgeService || "summary",
+          text: `⚠ 裁判总结 JSON 解析失败，以下为原文：\n\n${rawText || "(空)"}`,
+          isDone: true,
+        }).catch(() => {});
+      } catch (_) {}
       notifyStatus("总结 JSON 解析失败，已显示原文");
+      try {
+        if (StateMachine.flowState === FlowState.SUMMARY) {
+          StateMachine.setFlowState(FlowState.IDLE);
+        }
+      } catch (_) {}
       return { ok: false, error: "parse_failed" };
     }
     const date = new Date(pending.ts).toISOString().slice(0, 10);

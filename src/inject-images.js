@@ -347,3 +347,16 @@ function extractTextWithFences(el) {
     return el.innerText || el.textContent || "";
   }
 }
+
+// v4.5.4 F1: 共享给各 content-*.js 的 heuristic 前置检查
+// 没有任何用户消息 DOM 时，"找文档里最大文本块" heuristic 会把主页装饰文（如 Kimi 的
+// ![activity image](kimi-img.moonshot.cn/...) banner）误抓成 AI 回答 → 污染辩论上下文
+function hasUserMessageInDom() {
+  // 覆盖各 AI 平台的常见 user message 标记
+  return !!document.querySelector(
+    '[class*="user-message"], [class*="human-message"], [class*="HumanMessage"], '
+    + '[data-message-author-role="user"], [data-testid*="user-message"], '
+    + '[data-author-role="user"], [class*="user-bubble"], [class*="userMessage"], '
+    + 'user-query, message-user, [data-role="user"]'
+  );
+}

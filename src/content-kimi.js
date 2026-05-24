@@ -34,6 +34,9 @@ function getHeuristicElement(action, options = {}) {
     return null;
   }
   if (action === "response") {
+    // v4.5.4 F1: 当前页没有用户消息 DOM → 不可能是对话页面（多半是登录页/首页/空会话），
+    // 直接放弃 heuristic，避免抓到主页装饰文本（实测 408 字符 ![activity image]...）当 AI 回答
+    if (!hasUserMessageInDom()) return options.all ? [] : null;
     const blocks = document.querySelectorAll('div, article, section');
     for (let i = blocks.length - 1; i >= 0; i--) {
       const text = blocks[i].innerText?.trim();
@@ -186,6 +189,8 @@ async function readLatestResponse() {
     if (t) return t;
   }
   // 3) heuristic — 阈值降到 20 字适应短问候
+  // v4.5.4 F1: 无用户消息 DOM → 当前是登录/首页/空会话页，主页 banner 装饰文本会被误当 AI 回答
+  if (typeof hasUserMessageInDom === "function" && !hasUserMessageInDom()) return "";
   const all = document.querySelectorAll("div, article, section");
   for (let i = all.length - 1; i >= 0; i--) {
     const el = all[i];

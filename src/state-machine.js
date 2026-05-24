@@ -26,7 +26,10 @@ const StateMachine = {
 
   // ── 初始化（从 storage 恢复） ──
   async init() {
-    const data = await chrome.storage.local.get(["sm_flowState", "sm_participants", "sm_nextId", "sm_debateSession", "sm_markerRound", "sm_lastSentByPid", "sm_lastAcceptedByPid"]);
+    // v4.5.5 F6: sm_pendingSummary 加入持久化列表 — SW 30s 空闲被回收重启时，
+    // pendingSummary（"等待裁判 AI 输出 → 触发 finalize"标记）会丢，用户感知就是
+    // 点了"裁判总结"按钮但永远不出 HTML 报告
+    const data = await chrome.storage.local.get(["sm_flowState", "sm_participants", "sm_nextId", "sm_debateSession", "sm_markerRound", "sm_lastSentByPid", "sm_lastAcceptedByPid", "sm_pendingSummary"]);
     if (data.sm_flowState) this.flowState = data.sm_flowState;
     if (data.sm_participants) this.participants = data.sm_participants;
     if (data.sm_nextId) this.nextId = data.sm_nextId;
@@ -34,6 +37,7 @@ const StateMachine = {
     if (data.sm_markerRound) this.markerRound = data.sm_markerRound;
     if (data.sm_lastSentByPid) this.lastSentByPid = data.sm_lastSentByPid;
     if (data.sm_lastAcceptedByPid) this.lastAcceptedByPid = data.sm_lastAcceptedByPid;
+    if (data.sm_pendingSummary) this.pendingSummary = data.sm_pendingSummary;
   },
 
   save() {
@@ -44,7 +48,8 @@ const StateMachine = {
       sm_debateSession: this.debateSession,
       sm_markerRound: this.markerRound,
       sm_lastSentByPid: this.lastSentByPid,
-      sm_lastAcceptedByPid: this.lastAcceptedByPid
+      sm_lastAcceptedByPid: this.lastAcceptedByPid,
+      sm_pendingSummary: this.pendingSummary,  // v4.5.5 F6
     });
   },
 
@@ -71,7 +76,11 @@ const StateMachine = {
   },
 
   getParticipant(id) {
-    return this.participants.find(p => p.id === id);
+    // v4.5.5 F10: id 类型 normalize 防御性匹配 — 当前 popup 路径都传字符串无误，
+    // 未来扩展（新 popup-* 文件或外部调用）传 Number 会被严格 === 拒绝，导致"找不到参与者"
+    if (id == null) return undefined;
+    const target = String(id);
+    return this.participants.find(p => String(p.id) === target);
   },
 
   getParticipantByTabId(tabId) {
@@ -116,6 +125,13 @@ const StateMachine = {
 
   setLastSent(pid, text) {
     this.lastSentByPid[pid] = text || "";
+    this.save();
+  },
+
+  // v4.5.5 F6: 显式 setter 保证 pendingSummary 改动一定 save，
+  // SW 重启时才能从 storage 恢复
+  setPendingSummary(payload) {
+    this.pendingSummary = payload || null;
     this.save();
   },
 
