@@ -76,6 +76,15 @@ const ChatBus = (() => {
   // 仍未完成，理论可无限跑。到达上限按当前文本强制 isDone:true 完成。
   const MAX_POLL_TICKS = 200;
 
+  // v4.6.9 F19: 兜底 watcher 机制 — polling 判完成后单 slot 监听最新一轮 60s
+  // 防 F18 streaming selector 失效 / AI 无 indicator / 完成后异步追加等场景
+  // 发现 text 比 finalText 更长 → 用同 msgId 推 popup updateAIBubble 直接追加更新气泡
+  const watchers = new Map();  // service → { intervalId, msgId, lastText, stableCount, startTs }
+  const WATCH_INTERVAL_MS = 3000;
+  const WATCH_MAX_DURATION_MS = 60000;  // 60s 总兜底
+  const WATCH_STABLE_TICKS = 5;  // 15s 文本不变 + non-streaming → 停止
+  const WATCH_MAX_SLOTS = 1;  // 只保留最新一轮防累积
+
   // v4.6.7 F17: 不再依赖 popupWindowId 做 silent return — MV3 SW 30s 空闲被回收时
   // ChatBus IIFE 销毁、popupWindowId 重建为 null，但 popup 窗口仍开着；
   // 老逻辑 `if (popupWindowId == null) return` 让 SW 重启后所有 chatStreamUpdate
@@ -313,6 +322,10 @@ const ChatBus = (() => {
               finalizeDebateSummary(text, ps).catch(e => console.warn("[chat-bus] finalize summary fail:", e?.message));
             }
           } catch (e) { console.warn("[chat-bus] pendingSummary check fail:", e?.message); }
+          // v4.6.9 F19: 启动兜底 watcher 监听 60s，发现 text 追加用同 msgId 覆盖气泡
+          // 防 F18 streaming selector 失效 / 完成后异步追加场景
+          try { startWatch(participant, state.msgId, text); }
+          catch (e) { console.warn("[chat-bus] startWatch fail:", e?.message); }
         }
       } else {
         state.lastStableKey = stableKey;
@@ -345,6 +358,70 @@ const ChatBus = (() => {
       try { clearInterval(state.intervalId); } catch (_) {}
     }
     pollers.clear();
+    // v4.6.9 F19: 一并清 watchers 防失效 tabId 调用
+    for (const [, state] of watchers) {
+      try { clearInterval(state.intervalId); } catch (_) {}
+    }
+    watchers.clear();
+  }
+
+  // v4.6.9 F19: polling 判完成后启动兜底 watcher
+  // 单 slot 限制：启动新 watch 时清掉旧 service 的 watcher 防累积
+  function startWatch(participant, msgId, finalText) {
+    const { service, tabId } = participant;
+    // 单 slot：清掉所有现有 watchers
+    if (watchers.size >= WATCH_MAX_SLOTS) {
+      for (const [, st] of watchers) {
+        try { clearInterval(st.intervalId); } catch (_) {}
+      }
+      watchers.clear();
+    }
+    const state = {
+      msgId,
+      lastText: finalText || "",
+      stableCount: 0,
+      startTs: Date.now(),
+    };
+    state.intervalId = setInterval(async () => {
+      // 60s 总兜底
+      if (Date.now() - state.startTs > WATCH_MAX_DURATION_MS) {
+        clearInterval(state.intervalId);
+        watchers.delete(service);
+        return;
+      }
+      try {
+        const r = await chrome.tabs.sendMessage(tabId, { action: "readResponse" });
+        const text = (r?.text || "").trim();
+        const isStreaming = !!r?.isStreaming;
+        // 文本比上次长且非残留 → 追加更新（用同 msgId 让 popup updateAIBubble 直接覆盖气泡）
+        if (text && text.length > state.lastText.length && text !== state.lastText) {
+          state.lastText = text;
+          state.stableCount = 0;
+          sendToPopup({
+            type: "chatStreamUpdate", role: "ai", msgId: state.msgId,
+            participantId: service, text, isDone: true,
+            hasRichContent: !!r?.hasRichContent, richTypes: r?.richTypes || [],
+            watcherUpdate: true,
+          });
+          pushLog({
+            role: "ai", msgId: state.msgId, participantId: service,
+            text, ts: Date.now(), watcherUpdate: true,
+          });
+        } else {
+          state.stableCount++;
+          // 文本稳定 5 tick (15s) + 非 streaming → 停止 watch
+          if (state.stableCount >= WATCH_STABLE_TICKS && !isStreaming) {
+            clearInterval(state.intervalId);
+            watchers.delete(service);
+          }
+        }
+      } catch (_) {
+        // tab 失效 / content script 失联 → 停 watcher
+        clearInterval(state.intervalId);
+        watchers.delete(service);
+      }
+    }, WATCH_INTERVAL_MS);
+    watchers.set(service, state);
   }
   async function jumpToOrigin(participantId) {
     const p = (StateMachine.participants || []).find(x => x.service === participantId);

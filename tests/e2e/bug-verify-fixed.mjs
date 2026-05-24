@@ -222,6 +222,30 @@ function staticCheck() {
       pattern: /v4\.6\.8 F18.*isStreaming/s,
       desc: "F18 content-chatgpt.js readResponse 返回 isStreaming",
     },
+    {
+      id: "F19-watchers",
+      file: "src/chat-bus.js",
+      pattern: /const watchers = new Map\(\)/,
+      desc: "F19 watchers Map 兜底监听",
+    },
+    {
+      id: "F19-startWatch",
+      file: "src/chat-bus.js",
+      pattern: /function startWatch\(participant/,
+      desc: "F19 startWatch 函数",
+    },
+    {
+      id: "F19-trigger",
+      file: "src/chat-bus.js",
+      pattern: /F19.*启动兜底 watcher/s,
+      desc: "F19 pollOnce 完成后启动 watcher",
+    },
+    {
+      id: "F19-cleanup",
+      file: "src/chat-bus.js",
+      pattern: /F19.*一并清 watchers/s,
+      desc: "F19 clearAllPollers 一并清 watchers",
+    },
   ];
   console.log("═".repeat(70));
   console.log("静态白盒：13 项源码 patch 存在性检查");
@@ -511,6 +535,74 @@ try {
   } else {
     record("F13-fix", "regression", f13,
       `pendingSummary=${JSON.stringify(f13.pendingSummary_afterReset)} disconnectCount=${f13.disconnectMessageCount}`);
+  }
+
+  // ════════════════════════════════════════════════════════
+  // F19-fix: 兜底 watcher — polling 完成后仍监听 60s 自动追加
+  // 模拟 F18 漏网场景：streaming selector 失效 (isStreaming=false) → polling 早判完成
+  // 完成后 AI 继续异步追加更长内容 → watcher 应捕获并用同 msgId 推 popup 更新
+  // ════════════════════════════════════════════════════════
+  console.log("\n=== F19-fix: 兜底 watcher 捕获完成后追加 ===");
+  const f19 = await sw.evaluate(async () => {
+    return new Promise(async (resolve) => {
+      StateMachine.hardReset();
+      StateMachine.participants = [{ id: "pF19", service: "ai_f19", tabId: 71001, name: "F19", response: null, responsePreview: null }];
+
+      // 时间基准 mock：前 8 秒返回短文本（确保 polling 4 tick 全在短文本期间完成）
+      // polling 完成需要 4 tick × 1.5s = 6s，留 2s 余量防 chromium 调度抖动
+      // 8 秒后切换为长文本（此时 polling 已完成且 clearInterval，仅 watcher 在跑）
+      const start = Date.now();
+      const origTabsSend = chrome.tabs.sendMessage;
+      chrome.tabs.sendMessage = async (tid, msg) => {
+        if (msg.action === "readResponse") {
+          const elapsed = Date.now() - start;
+          if (elapsed < 8000) {
+            return { text: "短回答", hasRichContent: false, richTypes: [], imagesPending: 0, isStreaming: false };
+          }
+          return { text: "短回答\n\n后续追加的更长内容 - 这是 AI 完成后异步追加的部分", hasRichContent: false, richTypes: [], imagesPending: 0, isStreaming: false };
+        }
+        return { status: "sent" };
+      };
+
+      // 捕获 watcherUpdate 消息
+      let watcherUpdates = [];
+      let doneMessages = [];
+      const origRuntime = chrome.runtime.sendMessage;
+      chrome.runtime.sendMessage = (m) => {
+        if (m?.type === "chatStreamUpdate" && m?.participantId === "ai_f19" && m?.isDone) {
+          if (m?.watcherUpdate) watcherUpdates.push(m.text);
+          else doneMessages.push(m.text);
+        }
+        return Promise.resolve();
+      };
+
+      ChatBus.notifyRoundStart("test F19", ["ai_f19"]);
+
+      // 等 16 秒：polling 6s 完成（短文本）+ watcher startTs≈6s + watcher tick 1 t≈9s 捕获切换后长文本
+      setTimeout(() => {
+        chrome.tabs.sendMessage = origTabsSend;
+        chrome.runtime.sendMessage = origRuntime;
+        resolve({
+          elapsed_ms: Date.now() - start,
+          doneMessageCount: doneMessages.length,
+          firstDoneText: doneMessages[0] || null,
+          watcherUpdateCount: watcherUpdates.length,
+          firstWatcherText: watcherUpdates[0] || null,
+          // 期望：polling 完成推一次 "短回答"，watcher 至少捕获一次追加
+          passed: doneMessages.length >= 1
+                  && doneMessages[0] === "短回答"
+                  && watcherUpdates.length >= 1
+                  && watcherUpdates[0]?.includes("后续追加"),
+        });
+      }, 16000);
+    });
+  });
+  if (f19.passed) {
+    record("F19-fix", "fixed", f19,
+      `polling 完成推送 "短回答" → watcher 捕获追加 → 推送完整版本 (${f19.watcherUpdateCount} 次更新)`);
+  } else {
+    record("F19-fix", "regression", f19,
+      `watcher 未启动或未捕获追加：done=${f19.doneMessageCount} watcher=${f19.watcherUpdateCount}`);
   }
 
   // ════════════════════════════════════════════════════════
