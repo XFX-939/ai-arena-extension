@@ -580,11 +580,19 @@ async function sendToOneParticipant(participantId) {
 // ── 向指定服务单独发送任意 prompt（PPT 制作 / 气泡 🔄 重发） ──
 // v4.8.5 F25: 鲁棒化 — 3 次重试 + 立刻 popup loading 占位 + 成功后启动 polling
 //   让 popup 同步新 AI 回答（之前 inject 完不启动 polling，popup 永远看不到结果）
+// v4.8.7 F26: text 缺省时从 StateMachine.lastSentByPid 取完整 prompt
+//   修复辩论/总结场景重发 bug — popup user 气泡显示的是 "⚔️ 第N轮辩论..." 短文本
+//   不是完整 prompt，气泡 🔄 重发取 popup 显示文本会丢完整内容
 async function sendPromptToService(service, text) {
-  const prompt = (text || "").trim();
-  if (!prompt) return { ok: false, error: "prompt 为空" };
   const p = StateMachine.participants.find(x => x.service === service);
   if (!p?.tabId) return { ok: false, error: `未找到已打开的 ${SERVICES[service]?.name || service} 参与者` };
+
+  // v4.8.7 F26: 缺省 text 时 fallback 到 lastSentByPid 取最近发出的完整 prompt
+  let prompt = (text || "").trim();
+  if (!prompt) {
+    prompt = (StateMachine.lastSentByPid?.[p.id] || "").trim();
+  }
+  if (!prompt) return { ok: false, error: "无可重发的 prompt（未找到上次发送内容）" };
 
   // v4.8.5 F25: 立刻推 popup loading 占位（pendingMsgId 复用模式，类似 F20/F21）
   const pendingMsgId = `m${Date.now()}_resend_${p.id}`;

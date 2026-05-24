@@ -330,6 +330,18 @@ function staticCheck() {
       pattern: /ChatBus\.notifyRoundStart\(displayText,\s*\[p\.service\],\s*pendingMsgId\)/,
       desc: "F25 inject 成功后启动 polling 让 popup 同步新回答",
     },
+    {
+      id: "F26-fallback",
+      file: "src/background.js",
+      pattern: /F26.*lastSentByPid.*取最近发出的完整 prompt/s,
+      desc: "F26 sendPromptToService text 缺省 fallback lastSentByPid",
+    },
+    {
+      id: "F26-popup",
+      file: "src/popup-bubble-actions.js",
+      pattern: /F26.*lastSentByPid/s,
+      desc: "F26 popup-bubble-actions 不再传 text",
+    },
   ];
   console.log("═".repeat(70));
   console.log("静态白盒：13 项源码 patch 存在性检查");
@@ -694,6 +706,64 @@ try {
     record("F20-fix", "regression", f20, "500ms 内未收到 pending 占位 — 仍是老的等 inject 完成才出气泡");
   } else {
     record("F20-fix", "partial", f20, `pending 收到但 msgId 复用失败 — 会变成两条 user 消息`);
+  }
+
+  // ════════════════════════════════════════════════════════
+  // F26-fix: text 缺省时从 lastSentByPid 取完整 prompt（不是 popup 短显示文本）
+  // 模拟辩论场景：lastSentByPid 存了 1500 字辩论 prompt，popup user 气泡只显示"⚔️ 第1轮辩论·自由"
+  // ════════════════════════════════════════════════════════
+  console.log("\n=== F26-fix: 重发 fallback 到 lastSentByPid 取完整 prompt ===");
+  const f26 = await sw.evaluate(async () => {
+    return new Promise(async (resolve) => {
+      StateMachine.hardReset();
+      StateMachine.participants = [{
+        id: "pF26", service: "ai_f26", tabId: 33001,
+        name: "F26", response: null, responsePreview: null,
+      }];
+      // 模拟辩论场景：lastSentByPid 存了一段完整辩论 prompt（500 字以上模拟）
+      const FULL_PROMPT = "## 第 1 轮辩论指令\n\n" +
+        "请围绕以下原始问题展开辩论：\n\n【量子计算何时能商用】\n\n" +
+        "上轮其他 AI 的回答：\n- Claude: 5-10 年内...\n- Gemini: 2030 年前...\n\n" +
+        "请以自由辩论风格反驳/补充，输出 800 字以内...";
+      StateMachine.setLastSent("pF26", FULL_PROMPT);
+
+      // mock inject 直接 success
+      let receivedPrompt = null;
+      const origTabsSend = chrome.tabs.sendMessage;
+      chrome.tabs.sendMessage = async (tid, msg) => {
+        if (msg.action === "ping") return { ready: true };
+        if (msg.action === "inject") {
+          receivedPrompt = msg.text;
+          return { status: "sent" };
+        }
+        if (msg.action === "readResponse") {
+          return { text: "", isStreaming: false, hasRichContent: false, richTypes: [] };
+        }
+        return { status: "sent" };
+      };
+      const origRuntime = chrome.runtime.sendMessage;
+      chrome.runtime.sendMessage = () => Promise.resolve();
+
+      // 关键：调 sendPromptToService 不传 text，验证 fallback 取完整 prompt
+      const result = await sendPromptToService("ai_f26");
+
+      chrome.tabs.sendMessage = origTabsSend;
+      chrome.runtime.sendMessage = origRuntime;
+
+      resolve({
+        result_ok: result?.ok,
+        receivedPrompt_len: receivedPrompt?.length || 0,
+        receivedPrompt_isFull: receivedPrompt === FULL_PROMPT,
+        fullPrompt_len: FULL_PROMPT.length,
+      });
+    });
+  });
+  if (f26.result_ok && f26.receivedPrompt_isFull) {
+    record("F26-fix", "fixed", f26,
+      `text 缺省 → fallback 到 lastSentByPid → inject 收到完整 ${f26.fullPrompt_len} 字 prompt（不是短显示文本）`);
+  } else {
+    record("F26-fix", "regression", f26,
+      `result_ok=${f26.result_ok} 收到 ${f26.receivedPrompt_len} 字 vs 完整 ${f26.fullPrompt_len} 字`);
   }
 
   // ════════════════════════════════════════════════════════

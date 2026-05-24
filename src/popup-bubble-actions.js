@@ -89,16 +89,14 @@
         btn.textContent = orig;
       });
     } else if (act === "resend") {
-      // 重发：找最近一条用户消息文本，sendPromptToService 给当前 AI
+      // v4.8.7 F26: 不再用 popup user 气泡显示文本（辩论/总结只是短显示文本）
+      // 改为不传 text → background.sendPromptToService 自动从 lastSentByPid 取完整 prompt
       if (!participantId) return;
-      const userRow = [...document.querySelectorAll(".msg.me")].pop();
-      const userText = userRow?.querySelector(".msg-bubble")?.innerText?.trim();
-      if (!userText) { alert("找不到要重发的用户消息"); return; }
       btn.disabled = true;
       const orig = btn.textContent;
       btn.textContent = "⏳";
       chrome.runtime.sendMessage(
-        { type: "sendPromptToService", service: participantId, text: userText },
+        { type: "sendPromptToService", service: participantId },
         () => { btn.disabled = false; btn.textContent = orig; }
       );
     } else if (act === "skip") {
