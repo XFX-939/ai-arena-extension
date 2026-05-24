@@ -2801,3 +2801,94 @@ body { letter-spacing: -0.01em; }
   font-weight: 600;
   letter-spacing: 0.01em;
 }
+
+/* ============================================================
+   v4.8.15 F30: 简洁模式（Mini Bar）
+   ============================================================
+   触发按钮：橙色高亮 pill，放在 chat-header .chat-actions 区
+   折叠态：body[data-mode="mini"]
+   - 隐藏顶栏 logo / 消息区 / sidebar / 右栏
+   - chat-actions 的按钮组（除 mini-mode 按钮）也隐藏
+   - 仅保留 input bar + roster（roster 头像可点击决定下轮发言）
+   - .btn-mini-mode 文字由 JS 切成 "⇱ 展开"
+============================================================ */
+.btn-mini-mode {
+  background: #ff9f0a;
+  color: #fff;
+  border: none;
+  height: 32px;
+  padding: 0 14px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  letter-spacing: -0.01em;
+  display: inline-flex;
+  align-items: center;
+  white-space: nowrap;
+  transition: filter 0.15s ease, transform 0.1s ease;
+  margin-right: 8px;
+}
+.btn-mini-mode:hover { filter: brightness(1.1); }
+.btn-mini-mode:active { transform: translateY(1px); }
+
+/* mini 模式 — 隐藏不需要的区域 */
+body[data-mode="mini"] .chat-sidebar,
+body[data-mode="mini"] .chat-rightpanel,
+body[data-mode="mini"] .chat-messages,
+body[data-mode="mini"] .empty-state {
+  display: none !important;
+}
+body[data-mode="mini"] .chat-title,
+body[data-mode="mini"] .chat-actions .hdr-mode-toggle,
+body[data-mode="mini"] .chat-actions #btn-clear,
+body[data-mode="mini"] .chat-actions #btn-hard-reset {
+  display: none !important;
+}
+
+/* mini 模式 — chat-header 缩为 mini-bar 触发按钮容器 */
+body[data-mode="mini"] .chat-header {
+  padding: 6px 10px;
+  min-height: 0;
+  height: auto;
+  justify-content: flex-end;
+  border-bottom: none;
+  background: transparent;
+}
+body[data-mode="mini"] .chat-app {
+  height: 100vh;
+}
+body[data-mode="mini"] .chat-main {
+  width: 100%;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+/* mini 模式 — roster 紧贴 input bar 内联 */
+body[data-mode="mini"] .chat-roster {
+  padding: 2px 12px 0;
+  background: transparent;
+  border-top: none;
+  border-bottom: none;
+  min-height: 0;
+}
+body[data-mode="mini"] .roster-label,
+body[data-mode="mini"] .roster-upload-hint,
+body[data-mode="mini"] .roster-count {
+  display: none !important;
+}
+body[data-mode="mini"] .roster-items {
+  gap: 4px;
+}
+body[data-mode="mini"] .chat-input-bar {
+  padding: 4px 8px 6px;
+  border-top: none;
+}
+
+/* mini 模式 — 按钮文字切换由 JS 控制 textContent */
+body[data-mode="mini"] .btn-mini-mode {
+  background: #34c759; /* 展开按钮换绿色，更突出"返回常态" */
+  margin-right: 0;
+}

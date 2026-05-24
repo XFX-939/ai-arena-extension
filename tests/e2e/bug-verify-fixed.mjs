@@ -421,6 +421,48 @@ function staticCheck() {
       pattern: /tryRepairTruncatedJson/,
       desc: "F29 截断 JSON 自动补齐未闭合括号",
     },
+    {
+      id: "F30-mini-btn",
+      file: "src/popup.html",
+      pattern: /id="btn-mini-mode"[\s\S]*?折叠到顶/,
+      desc: "F30 popup 加 折叠到顶 按钮",
+    },
+    {
+      id: "F30-mini-css",
+      file: "src/popup.css",
+      pattern: /body\[data-mode="mini"\][\s\S]*?\.chat-messages/,
+      desc: "F30 body[data-mode=mini] CSS 隐藏消息区",
+    },
+    {
+      id: "F30-mini-js",
+      file: "src/popup-mini-mode.js",
+      pattern: /miniModeToggle/,
+      desc: "F30 popup-mini-mode.js 发 miniModeToggle 消息",
+    },
+    {
+      id: "F30-mini-js-persist",
+      file: "src/popup-mini-mode.js",
+      pattern: /storage\.local\.set/,
+      desc: "F30 popup-mini-mode.js 持久化模式",
+    },
+    {
+      id: "F30-bus-toggle",
+      file: "src/chat-bus.js",
+      pattern: /async function toggleMiniMode[\s\S]*?chrome\.windows\.update/,
+      desc: "F30 chat-bus.js toggleMiniMode 调 chrome.windows.update",
+    },
+    {
+      id: "F30-bus-mini-bounds",
+      file: "src/chat-bus.js",
+      pattern: /popupMiniBounds[\s\S]*?miniBounds:\s*"chatPopupMiniBounds"/,
+      desc: "F30 mini bounds 独立记忆字段",
+    },
+    {
+      id: "F30-bg-route",
+      file: "src/background.js",
+      pattern: /case "miniModeToggle"/,
+      desc: "F30 background.js 路由 miniModeToggle 到 ChatBus",
+    },
   ];
   console.log("═".repeat(70));
   console.log("静态白盒：13 项源码 patch 存在性检查");
@@ -843,6 +885,78 @@ try {
   } else {
     record("F26-fix", "regression", f26,
       `result_ok=${f26.result_ok} 收到 ${f26.receivedPrompt_len} 字 vs 完整 ${f26.fullPrompt_len} 字`);
+  }
+
+  // ════════════════════════════════════════════════════════
+  // F30-fix: 群聊简洁模式（Mini Bar）
+  // 验证：toggleMiniMode 暴露 + popup 真打开后 toggle 状态切换 + bounds 双套独立
+  // ════════════════════════════════════════════════════════
+  console.log("\n=== F30-fix: 群聊简洁模式 ===");
+  const f30 = await sw.evaluate(async () => {
+    const out = {
+      apiExists: typeof ChatBus.toggleMiniMode === "function",
+      getModeExists: typeof ChatBus.getPopupMode === "function",
+      initialMode: null,
+      togglePopupNotOpen: null,
+      afterOpenMode: null,
+      toggleToMini: null,
+      modeAfterMini: null,
+      toggleToFull: null,
+      modeAfterFull: null,
+      storage_full: null, storage_mini: null, storage_mode: null,
+    };
+    if (!out.apiExists) return out;
+
+    out.initialMode = ChatBus.getPopupMode();
+
+    // popup 未开时 toggle 应优雅失败
+    const r1 = await ChatBus.toggleMiniMode("mini");
+    out.togglePopupNotOpen = r1;
+
+    // 真开 popup
+    const open = await ChatBus.openChatPopup();
+    if (!open?.ok) { out.openFail = open; return out; }
+    // 等 popup 加载
+    await new Promise(r => setTimeout(r, 500));
+    out.afterOpenMode = ChatBus.getPopupMode();
+
+    // 切到 mini
+    out.toggleToMini = await ChatBus.toggleMiniMode("mini");
+    out.modeAfterMini = ChatBus.getPopupMode();
+    await new Promise(r => setTimeout(r, 200));
+
+    // 切回 full
+    out.toggleToFull = await ChatBus.toggleMiniMode("full");
+    out.modeAfterFull = ChatBus.getPopupMode();
+    await new Promise(r => setTimeout(r, 200));
+
+    // 读 storage 验证双套 bounds 都存了
+    const data = await chrome.storage.local.get([
+      "chatPopupBounds", "chatPopupMiniBounds", "popupMode",
+    ]);
+    out.storage_full = data.chatPopupBounds;
+    out.storage_mini = data.chatPopupMiniBounds;
+    out.storage_mode = data.popupMode;
+
+    // 清理：关 popup
+    if (open.windowId) await chrome.windows.remove(open.windowId).catch(() => {});
+    return out;
+  });
+
+  const f30_ok = f30.apiExists && f30.getModeExists &&
+    f30.togglePopupNotOpen?.ok === false &&
+    f30.toggleToMini?.ok === true && f30.modeAfterMini === "mini" &&
+    f30.toggleToFull?.ok === true && f30.modeAfterFull === "full" &&
+    f30.storage_full && f30.storage_mini && f30.storage_mode === "full";
+
+  if (f30_ok) {
+    record("F30-mini", "fixed", f30,
+      `toggle 双向切换正常；mini 高 ${f30.toggleToMini?.bounds?.height}px ` +
+      `→ full 高 ${f30.toggleToFull?.bounds?.height}px；双套 bounds 独立持久化`);
+  } else {
+    record("F30-mini", "regression", f30,
+      `apiExists=${f30.apiExists} toMini=${f30.modeAfterMini} toFull=${f30.modeAfterFull} ` +
+      `storage_full=${!!f30.storage_full} storage_mini=${!!f30.storage_mini} mode=${f30.storage_mode}`);
   }
 
   // ════════════════════════════════════════════════════════

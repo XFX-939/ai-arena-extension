@@ -4,16 +4,30 @@
 const ChatBus = (() => {
   // ── 状态 ──
   let popupWindowId = null;        // 当前 popup window id，null 表示未开
-  let popupBounds = null;          // 用户拖动后记忆的位置/尺寸
+  let popupBounds = null;          // full 模式下的位置/尺寸（用户拖动后记忆）
+  let popupMiniBounds = null;      // v4.8.15 F30: mini 模式下的位置/尺寸（独立记忆）
+  let popupMode = "full";          // v4.8.15 F30: "full" | "mini"
   const chatLog = [];              // 最近 100 条消息
   const MAX_LOG = 100;
-  const STORAGE_KEYS = { log: "chatLog", bounds: "chatPopupBounds" };
+  const STORAGE_KEYS = {
+    log: "chatLog",
+    bounds: "chatPopupBounds",
+    miniBounds: "chatPopupMiniBounds",  // F30
+    mode: "popupMode",                  // F30
+  };
 
   // ── 初始化：读 storage ──
   async function init() {
-    const data = await chrome.storage.local.get([STORAGE_KEYS.log, STORAGE_KEYS.bounds]);
+    const data = await chrome.storage.local.get([
+      STORAGE_KEYS.log, STORAGE_KEYS.bounds,
+      STORAGE_KEYS.miniBounds, STORAGE_KEYS.mode,
+    ]);
     if (Array.isArray(data[STORAGE_KEYS.log])) chatLog.push(...data[STORAGE_KEYS.log].slice(-MAX_LOG));
     if (data[STORAGE_KEYS.bounds]) popupBounds = data[STORAGE_KEYS.bounds];
+    if (data[STORAGE_KEYS.miniBounds]) popupMiniBounds = data[STORAGE_KEYS.miniBounds];
+    if (data[STORAGE_KEYS.mode] === "mini" || data[STORAGE_KEYS.mode] === "full") {
+      popupMode = data[STORAGE_KEYS.mode];
+    }
   }
 
   // ── popup 生命周期 ──
@@ -53,16 +67,93 @@ const ChatBus = (() => {
     }
   }
 
+  // v4.8.15 F30: mini 模式默认 bounds — 顶部居中，900x60
+  async function defaultMiniBounds() {
+    try {
+      // 优先用 popup 当前所在屏，没有就主屏
+      let display = null;
+      if (popupWindowId != null) {
+        try {
+          const w = await chrome.windows.get(popupWindowId);
+          const displays = await chrome.system.display.getInfo();
+          display = displays.find(d =>
+            w.left >= d.workArea.left && w.left < d.workArea.left + d.workArea.width
+          ) || null;
+        } catch {}
+      }
+      if (!display) {
+        const displays = await chrome.system.display.getInfo();
+        display = displays.find(d => d.isPrimary) || displays[0];
+      }
+      const width = Math.min(900, Math.round(display.workArea.width * 0.7));
+      const height = 60;
+      return {
+        left: display.workArea.left + Math.round((display.workArea.width - width) / 2),
+        top: display.workArea.top,
+        width,
+        height,
+      };
+    } catch {
+      return { left: 200, top: 0, width: 900, height: 60 };
+    }
+  }
+
+  // v4.8.15 F30: mini 模式 toggle — 由 popup-mini-mode.js 通过 miniModeToggle 消息触发
+  async function toggleMiniMode(mode) {
+    const next = mode === "mini" ? "mini" : "full";
+    if (popupWindowId == null) return { ok: false, error: "popup not open" };
+    // 切换前先把当前模式的 bounds 记下来
+    try {
+      const w = await chrome.windows.get(popupWindowId);
+      const curBounds = { left: w.left, top: w.top, width: w.width, height: w.height };
+      if (popupMode === "full") {
+        popupBounds = curBounds;
+        await chrome.storage.local.set({ [STORAGE_KEYS.bounds]: popupBounds });
+      } else {
+        popupMiniBounds = curBounds;
+        await chrome.storage.local.set({ [STORAGE_KEYS.miniBounds]: popupMiniBounds });
+      }
+    } catch {}
+    // 切到目标 bounds
+    let target;
+    if (next === "mini") {
+      target = popupMiniBounds || await defaultMiniBounds();
+    } else {
+      target = popupBounds || await defaultBounds();
+    }
+    try {
+      await chrome.windows.update(popupWindowId, {
+        state: "normal", focused: true,
+        left: target.left, top: target.top,
+        width: target.width, height: target.height,
+      });
+    } catch (e) {
+      return { ok: false, error: e?.message || String(e) };
+    }
+    popupMode = next;
+    await chrome.storage.local.set({ [STORAGE_KEYS.mode]: popupMode });
+    return { ok: true, mode: popupMode, bounds: target };
+  }
+
+  function getPopupMode() { return popupMode; }
+
   function onWindowRemoved(windowId) {
     if (windowId === popupWindowId) popupWindowId = null;
   }
 
+  // v4.8.15 F30: rememberBounds 按当前 mode 存到对应字段（不污染另一套）
   async function rememberBounds(windowId) {
     if (windowId !== popupWindowId) return;
     try {
       const w = await chrome.windows.get(popupWindowId);
-      popupBounds = { left: w.left, top: w.top, width: w.width, height: w.height };
-      await chrome.storage.local.set({ [STORAGE_KEYS.bounds]: popupBounds });
+      const b = { left: w.left, top: w.top, width: w.width, height: w.height };
+      if (popupMode === "mini") {
+        popupMiniBounds = b;
+        await chrome.storage.local.set({ [STORAGE_KEYS.miniBounds]: popupMiniBounds });
+      } else {
+        popupBounds = b;
+        await chrome.storage.local.set({ [STORAGE_KEYS.bounds]: popupBounds });
+      }
     } catch {}
   }
 
@@ -593,6 +684,8 @@ const ChatBus = (() => {
     jumpToOrigin,
     reextractOne,
     skipParticipant,
+    toggleMiniMode,  // v4.8.15 F30
+    getPopupMode,    // v4.8.15 F30
   };
 })();
 

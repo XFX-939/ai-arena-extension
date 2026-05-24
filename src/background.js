@@ -163,6 +163,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           break;
         case "openChatPopup":
           sendResponse(await ChatBus.openChatPopup()); break;
+        case "miniModeToggle":
+          // v4.8.15 F30: popup-mini-mode.js 触发，resize popup window 到 mini/full
+          sendResponse(await ChatBus.toggleMiniMode(msg.mode)); break;
         case "popupReady":
           // v4.6.7 F17: popup DOMContentLoaded 主动告知 SW 自己的 windowId
           // SW 重启后 ChatBus.popupWindowId 是 null，靠这条消息恢复
