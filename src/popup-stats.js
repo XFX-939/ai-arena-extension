@@ -330,8 +330,34 @@
     if (!msg) return;
     if (msg.role === "user" && msg.msgId && !_seenUserMsgIds.has(msg.msgId)) {
       _seenUserMsgIds.add(msg.msgId);
-      sessionStats.conversations++;
-      lifetimeStats.conversations = (lifetimeStats.conversations || 0) + 1;
+      // v4.8.31 F39: 区分辩论轮 / 总结 / 普通提问
+      // chat-bus / background.js 推送的 user 气泡 text 有固定前缀：
+      //   "⚔️ 第N轮辩论·..." → 辩论轮（debate++）
+      //   "📋 裁判总结..." → summary++（不算 conversations）
+      //   其他 → 普通提问 conversations++
+      const text = String(msg.text || "");
+      const isDebate = /^⚔️/.test(text);
+      const isSummary = /^📋/.test(text);
+      if (isDebate) {
+        sessionStats.debates++;
+        lifetimeStats.debates = (lifetimeStats.debates || 0) + 1;
+        if (!sessionStats.taskCounts) sessionStats.taskCounts = { ask: 0, debate: 0, summary: 0, ppt: 0 };
+        sessionStats.taskCounts.debate = (sessionStats.taskCounts.debate || 0) + 1;
+        if (!lifetimeStats.taskCounts) lifetimeStats.taskCounts = { ask: 0, debate: 0, summary: 0, ppt: 0 };
+        lifetimeStats.taskCounts.debate = (lifetimeStats.taskCounts.debate || 0) + 1;
+      } else if (isSummary) {
+        if (!sessionStats.taskCounts) sessionStats.taskCounts = { ask: 0, debate: 0, summary: 0, ppt: 0 };
+        sessionStats.taskCounts.summary = (sessionStats.taskCounts.summary || 0) + 1;
+        if (!lifetimeStats.taskCounts) lifetimeStats.taskCounts = { ask: 0, debate: 0, summary: 0, ppt: 0 };
+        lifetimeStats.taskCounts.summary = (lifetimeStats.taskCounts.summary || 0) + 1;
+      } else {
+        sessionStats.conversations++;
+        lifetimeStats.conversations = (lifetimeStats.conversations || 0) + 1;
+        if (!sessionStats.taskCounts) sessionStats.taskCounts = { ask: 0, debate: 0, summary: 0, ppt: 0 };
+        sessionStats.taskCounts.ask = (sessionStats.taskCounts.ask || 0) + 1;
+        if (!lifetimeStats.taskCounts) lifetimeStats.taskCounts = { ask: 0, debate: 0, summary: 0, ppt: 0 };
+        lifetimeStats.taskCounts.ask = (lifetimeStats.taskCounts.ask || 0) + 1;
+      }
       // v4.6.8: 按日 + 按 weekday×hour 累积（提问时间维度，最能反映用户活跃）
       const now = new Date();
       const dk = todayKey(now);
