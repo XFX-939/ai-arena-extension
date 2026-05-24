@@ -20,16 +20,29 @@
     const root = document.getElementById("rp-panel-templates");
     if (!root) return;
 
-    const builtins = Store.listBuiltinTemplates();
+    // v4.5.2: 内置模板按 clickAction 拆 2 区
+    //   - 任务模板（clickAction="preview"，绑定到任务按钮）
+    //   - 场景预设（clickAction="insert"，单击插入输入框）
+    const allBuiltins = Store.listBuiltinTemplates();
+    const taskBuiltins = allBuiltins.filter(t => (t.clickAction || "preview") === "preview");
+    const scenarioBuiltins = allBuiltins.filter(t => t.clickAction === "insert");
     const users = Store.listUserTemplates().slice().sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
 
     root.innerHTML = `
       <div class="rp-section-title">
         <span>任务模板</span>
-        <span class="tpl-count" id="tpl-builtin-count">${builtins.length}</span>
+        <span class="tpl-count" id="tpl-builtin-count">${taskBuiltins.length}</span>
       </div>
       <div class="tpl-list" id="tpl-builtin-list">
-        ${builtins.map(renderBuiltinItem).join("")}
+        ${taskBuiltins.map(renderBuiltinItem).join("")}
+      </div>
+
+      <div class="rp-section-title" style="margin-top:14px">
+        <span>场景预设</span>
+        <span class="tpl-count" id="tpl-scenario-count">${scenarioBuiltins.length}</span>
+      </div>
+      <div class="tpl-list" id="tpl-scenario-list">
+        ${scenarioBuiltins.map(renderBuiltinItem).join("")}
       </div>
 
       <div class="rp-section-title" style="margin-top:14px">
@@ -85,20 +98,14 @@
 
   // ============== 绑定事件 ==============
   function bind(root) {
-    // 内置模板：单击行 = 展开预览；按钮 = edit/reset
+    // 内置任务模板：单击行 = 展开预览；按钮 = edit/reset
     root.querySelector("#tpl-builtin-list").addEventListener("click", (e) => {
-      const item = e.target.closest(".tpl-item");
-      if (!item) return;
-      const binding = item.dataset.binding;
-      const actBtn = e.target.closest("[data-act]");
-      if (actBtn) {
-        e.stopPropagation();
-        const act = actBtn.dataset.act;
-        if (act === "edit") openEditor({ kind: "builtin", binding });
-        else if (act === "reset") onResetBuiltin(binding);
-        return;
-      }
-      togglePreview(item, binding);
+      handleBuiltinClick(e, "preview");
+    });
+
+    // v4.5.2: 场景预设：单击行 = 插入输入框；按钮 = edit/reset
+    root.querySelector("#tpl-scenario-list").addEventListener("click", (e) => {
+      handleBuiltinClick(e, "insert");
     });
 
     // 用户模板：单击行 = 插入输入框；按钮 = edit/delete
@@ -121,6 +128,30 @@
 
     root.querySelector("#tpl-btn-add").addEventListener("click", () => openEditor({ kind: "user" }));
     root.querySelector("#tpl-btn-reset-all").addEventListener("click", onResetAll);
+  }
+
+  // 内置模板单击通用 handler
+  // defaultAction: "preview" = 展开预览（任务模板）；"insert" = 插入输入框（场景预设）
+  function handleBuiltinClick(e, defaultAction) {
+    const item = e.target.closest(".tpl-item");
+    if (!item) return;
+    const binding = item.dataset.binding;
+    const actBtn = e.target.closest("[data-act]");
+    if (actBtn) {
+      e.stopPropagation();
+      const act = actBtn.dataset.act;
+      if (act === "edit") openEditor({ kind: "builtin", binding });
+      else if (act === "reset") onResetBuiltin(binding);
+      return;
+    }
+    if (defaultAction === "insert") {
+      // 场景预设单击行 → 插入输入框（取第一个字段的当前值，含 override）
+      const tpl = Store.resolveTemplate(binding);
+      if (!tpl || !tpl.fields.length) return;
+      insertToInput(tpl.fields[0].value);
+    } else {
+      togglePreview(item, binding);
+    }
   }
 
   function togglePreview(item, binding) {

@@ -99,6 +99,7 @@
       emoji: b.emoji,
       name: b.name,
       category: b.category,
+      clickAction: b.clickAction || "preview", // v4.5.2: 默认 preview（任务模板），场景预设为 insert
       fields,
       anyModified: fields.some(x => x.modified)
     };

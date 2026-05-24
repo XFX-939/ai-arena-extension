@@ -67,7 +67,7 @@ try {
   // 2) 读 manifest version_name 验证版本同步（直接读源文件）
   const manifest = JSON.parse(fs.readFileSync(path.join(EXT_PATH, "manifest.json"), "utf8"));
   console.log(`[smoke] manifest version: ${manifest.version}, version_name: ${manifest.version_name}`);
-  check("manifest version_name = 4.5.1-beta", manifest.version_name === "4.5.1-beta", `actual: ${manifest.version_name}`);
+  check("manifest version_name = 4.5.2-beta", manifest.version_name === "4.5.2-beta", `actual: ${manifest.version_name}`);
 
   // 3) 打开 sidepanel.html（作为普通 tab），验证 DOM
   const sidepanelPage = await context.newPage();
@@ -75,10 +75,10 @@ try {
   await sidepanelPage.waitForLoadState("domcontentloaded");
 
   const versionBadge = await sidepanelPage.locator(".version").textContent();
-  check("sidepanel version badge", versionBadge === "v4.5.1-beta", `actual: "${versionBadge}"`);
+  check("sidepanel version badge", versionBadge === "v4.5.2-beta", `actual: "${versionBadge}"`);
 
   const footerVersion = await sidepanelPage.locator(".footer").textContent();
-  check("sidepanel footer version", footerVersion?.includes("v4.5.1-beta"), `actual: "${footerVersion?.slice(0, 100)}"`);
+  check("sidepanel footer version", footerVersion?.includes("v4.5.2-beta"), `actual: "${footerVersion?.slice(0, 100)}"`);
 
   const openChatBtn = await sidepanelPage.locator("#btn-open-chat").count();
   check('sidepanel has "🪟 群聊" button', openChatBtn === 1);
@@ -96,7 +96,7 @@ try {
   await popupPage.waitForLoadState("domcontentloaded");
 
   const popupVersion = await popupPage.locator(".chat-version").textContent();
-  check("popup chat-version = v4.5.1-beta", popupVersion === "v4.5.1-beta", `actual: "${popupVersion}"`);
+  check("popup chat-version = v4.5.2-beta", popupVersion === "v4.5.2-beta", `actual: "${popupVersion}"`);
 
   // 图标资产验证（v4.0.11）
   const assetsOk = await popupPage.evaluate(async (extId) => {
@@ -315,8 +315,8 @@ try {
   }));
   check("v4.5.0: ArenaTemplateStore 暴露", storeApi.hasStore === true);
   check("v4.5.0: ArenaBuiltinTemplates 暴露", storeApi.hasBuiltin === true);
-  check("v4.5.0: 4 个内置 binding (debate.collab/debate.free/ppt/summary)",
-    storeApi.builtinKeys.join(",") === "debate.collab,debate.free,ppt,summary",
+  check("v4.5.2: 7 个内置 binding (4 任务 + 3 场景预设)",
+    storeApi.builtinKeys.join(",") === "debate.collab,debate.free,ppt,scenario.code_review,scenario.idea,scenario.literature,summary",
     JSON.stringify(storeApi.builtinKeys));
   check("v4.5.0: Store 关键方法齐全",
     ["resolve", "saveOverride", "resetOverride", "resetAllOverrides", "addUserTemplate", "deleteUserTemplate"]
@@ -329,6 +329,46 @@ try {
 
   const builtinItemCount = await popupPage.locator("#tpl-builtin-list .tpl-item").count();
   check("v4.5.0: 模板 Tab 渲染 4 个内置任务模板", builtinItemCount === 4, `actual: ${builtinItemCount}`);
+
+  // v4.5.2: 场景预设区独立 + 3 个场景渲染
+  const scenarioItemCount = await popupPage.locator("#tpl-scenario-list .tpl-item").count();
+  check("v4.5.2: 场景预设区渲染 3 个场景", scenarioItemCount === 3, `actual: ${scenarioItemCount}`);
+  const scenarioBindings = await popupPage.evaluate(() =>
+    [...document.querySelectorAll("#tpl-scenario-list .tpl-item")].map(x => x.dataset.binding).sort()
+  );
+  check("v4.5.2: 场景 binding 为 literature/idea/code_review",
+    scenarioBindings.join(",") === "scenario.code_review,scenario.idea,scenario.literature",
+    JSON.stringify(scenarioBindings));
+
+  // v4.5.2: 单击场景预设 = 插入输入框（clickAction="insert"）
+  const scenarioInsertTest = await popupPage.evaluate(async () => {
+    const input = document.getElementById("chat-input");
+    input.textContent = "";
+    const row = document.querySelector('#tpl-scenario-list .tpl-item[data-binding="scenario.literature"] .tpl-row');
+    if (!row) return { err: "scenario row not found" };
+    row.click();
+    await new Promise(r => setTimeout(r, 150));
+    return { content: input.textContent.slice(0, 50) };
+  });
+  check("v4.5.2: 单击场景预设插入输入框（开场含'文献调研'）",
+    scenarioInsertTest.content && scenarioInsertTest.content.includes("文献调研"),
+    JSON.stringify(scenarioInsertTest));
+
+  // v4.5.2: 场景预设支持 override（编辑/重置）
+  const scenarioOverrideTest = await popupPage.evaluate(async () => {
+    await window.ArenaTemplateStore.saveOverride("scenario.idea", "main", "OVERRIDE_IDEA_SCENARIO");
+    await new Promise(r => setTimeout(r, 100));
+    const input = document.getElementById("chat-input");
+    input.textContent = "";
+    document.querySelector('#tpl-scenario-list .tpl-item[data-binding="scenario.idea"] .tpl-row').click();
+    await new Promise(r => setTimeout(r, 150));
+    const content = input.textContent;
+    await window.ArenaTemplateStore.resetOverride("scenario.idea");
+    return { content };
+  });
+  check("v4.5.2: 场景预设 override 后单击插入新值",
+    scenarioOverrideTest.content === "OVERRIDE_IDEA_SCENARIO",
+    JSON.stringify(scenarioOverrideTest));
 
   const userEmptyText = await popupPage.locator("#tpl-user-list .tpl-empty").textContent().catch(() => null);
   check("v4.5.0: 我的模板初始为空（空状态文案）",
