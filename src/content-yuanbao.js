@@ -128,6 +128,17 @@ async function robustInject(el, text) {
 
 async function injectAndSend(text) {
   try {
+    // v4.8.28 F36: 等上一条 streaming 完成才 inject（防第二次发问失败）
+    const waitStart = Date.now();
+    while (Date.now() - waitStart < 15000) {
+      const stop = document.querySelector(
+        'button[class*="stop"], button[aria-label*="Stop" i], button[aria-label*="停止" i], ' +
+        '[class*="generating"], [class*="loading"]:not([class*="placeholder"])'
+      );
+      if (!stop) break;
+      await sleep(300);
+    }
+
     const el = queryBySelectors("input");
     if (!el) return { site: SITE, status: "error", error: "未找到输入框" };
 

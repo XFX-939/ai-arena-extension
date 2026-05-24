@@ -161,15 +161,52 @@ async function injectAndSend(text) {
   }
 }
 
-async function waitForUsableInput(timeoutMs = 15000) {
+// v4.8.28 F36: Gemini 第二次发问失败根因 — waitForUsableInput 只检查输入框 visible，
+// 不检查 send button 是否 disabled。Gemini 第一次回答完成后 send button 仍处于
+// "Stop" 状态几百毫秒~几秒（内部保存对话/生成 chat-id），此时 inject Enter 被 Gemini
+// 静默丢弃。改为等待 send button enabled / 不存在 stop 按钮才算 ready
+async function waitForUsableInput(timeoutMs = 20000) {
   const started = Date.now();
+  let lastReason = "未找到输入框";
   while (Date.now() - started < timeoutMs) {
     if (isLoginBlocked()) return { ok: false, error: "需要登录" };
     const el = queryBySelectors("input");
-    if (el && isVisibleInput(el)) return { ok: true, el };
-    await sleep(300);
+    if (!el || !isVisibleInput(el)) {
+      lastReason = "输入框未渲染";
+      await sleep(300);
+      continue;
+    }
+    // 检查输入框本身没被 disabled
+    if (el.getAttribute("aria-disabled") === "true" || el.getAttribute("contenteditable") === "false") {
+      lastReason = "输入框 disabled / contenteditable=false";
+      await sleep(300);
+      continue;
+    }
+    // 关键：检查页面没有 streaming 信号（Stop 按钮 / Stop response aria-label）
+    // 注意 NOT 检查 send button disabled — 输入框为空时 send button 本来就 disabled 合理
+    const stopBtn = document.querySelector(
+      'button[aria-label*="Stop response" i], button[aria-label*="Stop generating" i], ' +
+      'button[aria-label*="停止" i], [class*="stop-generating" i]'
+    );
+    if (stopBtn) {
+      lastReason = "页面仍有 Stop 按钮 (上一条 streaming 中)";
+      await sleep(300);
+      continue;
+    }
+    // 检查 Gemini 内部 loading 指示器（model-response 内的 spinner / thinking-indicator）
+    const stillLoading = document.querySelector(
+      'model-response .loading-indicator, model-response .thinking-indicator, ' +
+      'model-response mat-spinner, model-response .animate-spin'
+    );
+    if (stillLoading) {
+      lastReason = "model-response loading/thinking 指示器仍在";
+      await sleep(300);
+      continue;
+    }
+    return { ok: true, el };
   }
-  return { ok: false, error: "未找到输入框" };
+  console.warn("[Gemini F36] waitForUsableInput 超时:", lastReason);
+  return { ok: false, error: `输入框未就绪: ${lastReason}` };
 }
 
 function isVisibleInput(el) {
