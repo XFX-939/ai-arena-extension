@@ -3,7 +3,8 @@
 // 从 sidepanel 缓存的屏幕尺寸；双屏时用于判断 AI 窗口应放到哪块屏幕。
 let lastKnownScreen = { width: 1920, height: 1080, left: 0, top: 0 };
 
-importScripts("selectors-config.js", "state-machine.js", "templates-builtin.js", "template-store.js", "debate-engine.js", "cdp-extractor.js", "chat-bus.js", "ppt-prompts.js", "debate-summary-template.js");
+// v4.8.19 F32: 已删 cdp-extractor.js — MAIN world content script 替代 chrome.debugger
+importScripts("selectors-config.js", "state-machine.js", "templates-builtin.js", "template-store.js", "debate-engine.js", "chat-bus.js", "ppt-prompts.js", "debate-summary-template.js");
 
 const SERVICES = {
   claude:   { url: "https://claude.ai/new",              name: "Claude" },
@@ -77,31 +78,14 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   }
 });
 
-// ── 强制后台标签页保持"可见"──
-// DNR 已剥离 CSP，chrome.scripting.executeScript 可以注入 MAIN world
-async function injectVisibilityOverride(tabId) {
-  try {
-    await chrome.scripting.executeScript({
-      target: { tabId },
-      world: "MAIN",
-      func: () => {
-        if (document._arenaVisibilityPatched) return;
-        document._arenaVisibilityPatched = true;
-        Object.defineProperty(document, 'visibilityState', { get: () => 'visible', configurable: true });
-        Object.defineProperty(document, 'hidden', { get: () => false, configurable: true });
-        document.addEventListener('visibilitychange', e => e.stopImmediatePropagation(), true);
-      }
-    });
-  } catch {}
-}
+// v4.8.19 F32: 旧 injectVisibilityOverride 已删除 — manifest content_scripts
+// bootstrap-main-world.js 在 document_start 即注入完整 visibility patch（更早、更全）
 
-// 页面导航后重新注入 + 自动重连
+// 页面导航后自动重连 content script
 chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
   if (changeInfo.status !== 'complete') return;
   const p = StateMachine.getParticipantByTabId(tabId);
   if (!p) return;
-
-  injectVisibilityOverride(tabId);
 
   setTimeout(async () => {
     try {
@@ -398,10 +382,9 @@ async function addParticipant(service) {
   // v4.3.0：立即把 popup 拉回前端（不等 arrange）
   try { await ChatBus.focusPopup(); } catch (_) {}
 
-  // v4.8.17 F31: 取消 F28 的持久 attach
-  // 根因：chrome.debugger 全局通知条会显示在所有窗口顶部（含群聊 popup），mini 模式下
-  // 60px 群聊 popup 整个被通知条遮挡 — Chrome 安全机制无法关闭。
-  // 改回 F27 按需 attach（polling 时临时 attach，完成 detach），见 chat-bus.js
+  // v4.8.19 F32: 已完全废弃 chrome.debugger 路线，改用 MAIN world content script
+  // bootstrap-main-world.js 在 document_start 注入完整 visibility patch
+  // 旧 F27/F28/F31 注释保留在 git history，不在此重复
 
   return { ok: true, participants: StateMachine.getFullState().participants };
 }
@@ -409,10 +392,7 @@ async function addParticipant(service) {
 async function removeParticipant(id) {
   const p = StateMachine.getParticipant(id);
   if (!p) return { ok: false };
-  // v4.8.17 F31: 兜底 detach（如果 polling 还在 attach 中，移除前清干净）
-  if (p.tabId && self.CDPExtractor) {
-    try { await self.CDPExtractor.detach(p.tabId); } catch (_) {}
-  }
+  // v4.8.19 F32: 不再有 CDP attach，无需 detach（保留 placeholder 防 git rebase 混乱）
   if (p.tabId) { _removingTabs.add(p.tabId); try { await chrome.tabs.remove(p.tabId); } catch {} }
   StateMachine.removeParticipant(id);
   notifyStatus(`已移除 ${p.name}`);
@@ -1247,7 +1227,7 @@ async function waitForContentScript(tabId, maxRetries = 12) {
   for (let i = 0; i < maxRetries; i++) {
     try {
       await chrome.tabs.sendMessage(tabId, { action: "ping" });
-      await injectVisibilityOverride(tabId);
+      // v4.8.19 F32: 不再调 injectVisibilityOverride（已删，manifest content_scripts 提前注入）
       return true;
     } catch (e) {
       if (e.message && (e.message.includes("No tab") || e.message.includes("removed"))) return false;

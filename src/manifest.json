@@ -17,8 +17,7 @@
     "contextMenus",
     "scripting",
     "declarativeNetRequest",
-    "downloads",
-    "debugger"
+    "downloads"
   ],
   "declarative_net_request": {
     "rule_resources": [
@@ -45,6 +44,25 @@
     "default_path": "sidepanel.html"
   },
   "content_scripts": [
+    {
+      "matches": [
+        "https://claude.ai/*",
+        "https://gemini.google.com/*",
+        "https://chatgpt.com/*",
+        "https://chat.deepseek.com/*",
+        "https://www.doubao.com/*",
+        "https://tongyi.aliyun.com/*",
+        "https://www.qianwen.com/*",
+        "https://kimi.moonshot.cn/*",
+        "https://www.kimi.com/*",
+        "https://yuanbao.tencent.com/*",
+        "https://grok.com/*"
+      ],
+      "js": ["bootstrap-main-world.js"],
+      "run_at": "document_start",
+      "world": "MAIN",
+      "all_frames": false
+    },
     {
       "matches": ["https://claude.ai/*"],
       "js": ["inject-images.js", "content-claude.js"],

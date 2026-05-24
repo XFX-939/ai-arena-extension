@@ -132,10 +132,7 @@ const ChatBus = (() => {
     }
     popupMode = next;
     await chrome.storage.local.set({ [STORAGE_KEYS.mode]: popupMode });
-    // v4.8.17 F31: 切到 mini 模式时立即 detach 所有 attach，让 chrome 顶部通知条消失
-    if (next === "mini" && self.CDPExtractor) {
-      try { await self.CDPExtractor.detachAll(); } catch (_) {}
-    }
+    // v4.8.19 F32: 已无 CDP attach，无需 detachAll
     return { ok: true, mode: popupMode, bounds: target };
   }
 
@@ -299,33 +296,12 @@ const ChatBus = (() => {
     return { ok: true, msgId };
   }
 
-  // v4.8.17 F31: 回退到 F27 按需 attach 模式（删 F28 持久 attach）
-  // 原因：chrome.debugger 全局通知条遮挡 mini 模式 popup（60px 高被吃光）
-  // 现在 polling 启动时 attach，完成时 detach；mini 模式下完全跳过 attach
-  function releaseCDPFor(state, tabId) {
-    if (state && state.cdpAttached) {
-      state.cdpAttached = false;
-      if (self.CDPExtractor && tabId) {
-        self.CDPExtractor.detach(tabId).catch(() => {});
-      }
-    }
-  }
-
-  async function tryAttachCDPForPolling(state, tabId) {
-    if (!self.CDPExtractor) return;
-    // v4.8.17 F31: mini 模式下完全跳过 attach
-    // 用户在 mini 模式下主要看 AI window 直接输出，群聊只是占位提示和发问入口
-    // mini 模式群聊 popup 仅 60px，被 chrome.debugger 通知条遮挡 → 完全不 attach
-    if (popupMode === "mini") return;
-    try {
-      const inBg = await self.CDPExtractor.isTabInBackground(tabId);
-      if (!inBg) return;
-      const r = await self.CDPExtractor.attachAndWake(tabId);
-      if (r?.ok) {
-        state.cdpAttached = true;
-      }
-    } catch (_) {}
-  }
+  // v4.8.19 F32: 完全废弃 chrome.debugger 路线
+  // bootstrap-main-world.js 在每个 AI tab 的 document_start 注入 visibility patch
+  // SPA 永远以为自己在前台，DOM 树持续更新，content script 读取无障碍
+  // 两个函数保留 no-op 以兼容 polling 里仍存在的调用位置
+  function releaseCDPFor(_state, _tabId) { /* no-op (F32) */ }
+  async function tryAttachCDPForPolling(_state, _tabId) { /* no-op (F32) */ }
 
   async function injectAndPoll(participant, msgId, text) {
     const { tabId, service } = participant;
@@ -513,10 +489,7 @@ const ChatBus = (() => {
       try { clearInterval(state.intervalId); } catch (_) {}
     }
     watchers.clear();
-    // v4.8.9 F27: 全部 CDP attach 一并 detach
-    if (self.CDPExtractor) {
-      self.CDPExtractor.detachAll().catch(() => {});
-    }
+    // v4.8.19 F32: 已无 CDP attach 需要 detach
   }
 
   // v4.6.9 F19: polling 判完成后启动兜底 watcher
