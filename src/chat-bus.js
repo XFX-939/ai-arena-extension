@@ -142,21 +142,44 @@ const ChatBus = (() => {
 
   function getPopupMode() { return popupMode; }
 
+  // v4.8.31: mini 模式下 always-on-top — 监听其他窗口获焦时把 popup 拉回前台
+  //   Chrome MV3 无原生 always-on-top API，只能用 windows.update({focused:true}) 模拟
+  //   tradeoff: 会"瞬间抢焦点 → 浮到前台 → 立刻被用户实际操作窗口夺回"
+  //   排除场景：用户主动 minimize popup → 尊重，不拉前
+  let _refocusTimer = null;
+  try {
+    chrome.windows.onFocusChanged.addListener(async (newWinId) => {
+      if (popupMode !== "mini") return;                              // 仅 mini 生效
+      if (popupWindowId == null) return;
+      if (newWinId === popupWindowId) return;                        // 自己获焦 → ignore
+      if (newWinId === chrome.windows.WINDOW_ID_NONE) return;        // 失焦但无新窗口（桌面）
+
+      // 检查 popup 状态：minimized → 用户主动收起，尊重；否则拉前
+      try {
+        const w = await chrome.windows.get(popupWindowId);
+        if (w.state === "minimized") return;
+      } catch { return; }
+
+      // 防抖 250ms — 避免快速切换窗口时频繁抢焦点
+      if (_refocusTimer) return;
+      _refocusTimer = setTimeout(async () => {
+        _refocusTimer = null;
+        try {
+          // 再次确认 popup 仍 normal（用户可能刚 minimize）
+          const w2 = await chrome.windows.get(popupWindowId);
+          if (w2.state === "minimized") return;
+          await chrome.windows.update(popupWindowId, { focused: true });
+        } catch {}
+      }, 250);
+    });
+  } catch (_) {}
+
   // v4.8.28: mini 模式下 task-menu 打开时临时把窗口高度撑到 ~320 让菜单可见，关 menu 时还原
   // 注意：临时撑大期间不写 storage（保持 popupMiniBounds 是用户最终选定的 height）
   let _miniMenuPrevHeight = null;
-  // v4.8.30: mini 模式下用户点击置灰的 AI service ids — broadcast 时过滤
-  const _miniSkippedServices = new Set();
-  function setMiniSkippedServices(arr) {
-    _miniSkippedServices.clear();
-    (arr || []).forEach(s => _miniSkippedServices.add(s));
-  }
-  // 启动时从 storage 加载
-  try {
-    chrome.storage.local.get(["miniSkippedServices"]).then(r => {
-      if (Array.isArray(r?.miniSkippedServices)) setMiniSkippedServices(r.miniSkippedServices);
-    }).catch(() => {});
-  } catch (_) {}
+  // v4.8.31: 删除 _miniSkippedServices 整套（v4.8.30 引入的 broadcast 过滤）
+  //   原因：用户反馈"灰掉后消息仍发送"—— popup 端 broadcast 通常显式列 targets，过滤被绕过
+  //   新方案：mini 头像点击 = removeParticipant（彻底退出 group），跟右栏 hero-slot ⋯→移除 共享逻辑
   async function miniMenuExpand(expand) {
     if (popupMode !== "mini" || popupWindowId == null) return { ok: false, error: "not in mini" };
     try {
@@ -253,14 +276,9 @@ const ChatBus = (() => {
 
     // 决定目标参与者
     const allParticipants = StateMachine.participants || [];
-    let targetList = targets?.length
+    const targetList = targets?.length
       ? allParticipants.filter(p => targets.includes(p.service))
       : allParticipants;
-
-    // v4.8.30: mini 模式下用户点击置灰的 AI 在 broadcast 时跳过；显式 @ 指定时不过滤
-    if (!targets?.length && _miniSkippedServices.size) {
-      targetList = targetList.filter(p => !_miniSkippedServices.has(p.service));
-    }
 
     if (!targetList.length) {
       return { ok: false, error: "无可用参与者" };
@@ -734,7 +752,7 @@ const ChatBus = (() => {
     toggleMiniMode,  // v4.8.15 F30
     getPopupMode,    // v4.8.15 F30
     miniMenuExpand,  // v4.8.28
-    setMiniSkippedServices,  // v4.8.30
+    // setMiniSkippedServices 在 v4.8.31 删除（mini 点击改 removeParticipant）
   };
 })();
 

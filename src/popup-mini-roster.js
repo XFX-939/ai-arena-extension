@@ -1,22 +1,34 @@
-// popup-mini-roster.js — v4.8.30
-// mini 模式下在 picker 和输入框之间横排参与者头像 + 状态色，点击切 skipped
-// 状态来自 chrome.runtime stateUpdate + chatStreamUpdate
+// popup-mini-roster.js — v4.8.31
+// mini 模式下在 picker 和输入框之间横排参与者头像 — 跟右栏 hero-slot 卡槽共享逻辑：
+//   · 用 brand svg 朴素图标（而非二次元 hero 卡牌）
+//   · 点击 = removeParticipant（等同于 hero-slot 的 ⋯ → 移除），AI 不再收到消息
+//   · 状态环显示 busy/ready/error
 (function () {
   const $bar = document.getElementById("mini-roster");
   if (!$bar) return;
 
-  let participants = [];                  // [{id, service, name, skipped}]
+  // 9 个 AI 的 brand svg 路径（朴素品牌图标，跟右栏添加按钮同款）
+  const BRAND_SVG = {
+    claude:   "icons/brands/claude.svg",
+    gemini:   "icons/brands/gemini.svg",
+    chatgpt:  "icons/brands/openai.svg",
+    deepseek: "icons/brands/deepseek.svg",
+    doubao:   "icons/brands/doubao.svg",
+    qwen:     "icons/brands/qwen.svg",
+    kimi:     "icons/brands/kimi.svg",
+    yuanbao:  "icons/brands/yuanbao.svg",
+    grok:     "icons/brands/grok.svg",
+  };
+
+  let participants = [];                  // [{id, service, name, ...}]
   const streamStatus = new Map();         // service → "busy"|"ready"|"error"|"skipped"
-  let miniSkipped = new Set();            // service ids — 用户在 mini 下点击置灰的 AI
-  const STORAGE_KEY = "miniSkippedServices";
 
   function escapeHtml(s) {
     return String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
   }
   function statusOf(p) {
-    if (miniSkipped.has(p.service)) return "skipped";
     const s = streamStatus.get(p.service);
-    if (p.skipped) return "skipped";
+    if (s === "skipped") return "skipped";
     if (s) return s;
     if (p.error) return "error";
     if (p.isStreaming) return "busy";
@@ -36,27 +48,24 @@
     $bar.classList.remove("empty");
     $bar.innerHTML = participants.map(p => {
       const st = statusOf(p);
-      const heroSrc = window.ArenaLogoStyle?.heroPath(p.service) || `icons/brands/${p.service}.svg`;
+      const src = BRAND_SVG[p.service] || `icons/brands/${p.service}.svg`;
       return `
-        <button class="mini-ai ${st === 'skipped' ? 'skipped' : ''} status-${st}"
+        <button class="mini-ai status-${st}"
                 data-pid="${escapeHtml(p.id)}"
                 data-service="${escapeHtml(p.service)}"
-                title="${escapeHtml(p.name)} · ${statusLabel(st)} · 点击 ${st === 'skipped' ? '取消跳过' : '跳过本轮'}">
-          <img class="mini-ai-logo" src="${heroSrc}" alt="${escapeHtml(p.name)}">
+                title="${escapeHtml(p.name)} · ${statusLabel(st)} · 点击移出群聊">
+          <img class="mini-ai-logo" src="${src}" alt="${escapeHtml(p.name)}">
           <span class="mini-ai-dot ${st}"></span>
         </button>`;
     }).join("");
 
+    // v4.8.31: 点击 = removeParticipant（跟右栏 hero-slot 卡槽 ⋯→移除 共享逻辑）
     $bar.querySelectorAll(".mini-ai").forEach(btn => {
       btn.addEventListener("click", () => {
-        const svc = btn.dataset.service;
-        if (miniSkipped.has(svc)) miniSkipped.delete(svc);
-        else miniSkipped.add(svc);
-        try {
-          chrome.storage.local.set({ [STORAGE_KEY]: [...miniSkipped] });
-          chrome.runtime.sendMessage({ type: "setMiniSkip", services: [...miniSkipped] }, () => void chrome.runtime.lastError);
-        } catch (_) {}
-        render();
+        const pid = btn.dataset.pid;
+        chrome.runtime.sendMessage({ type: "removeParticipant", id: pid }, () => {
+          void chrome.runtime.lastError;
+        });
       });
     });
   }
@@ -65,10 +74,6 @@
     try {
       const r = await new Promise(res => chrome.runtime.sendMessage({ type: "getState" }, resp => res(resp || {})));
       if (Array.isArray(r.participants)) participants = r.participants;
-    } catch (_) {}
-    try {
-      const r2 = await new Promise(res => chrome.storage.local.get([STORAGE_KEY], resp => res(resp || {})));
-      if (Array.isArray(r2[STORAGE_KEY])) miniSkipped = new Set(r2[STORAGE_KEY]);
     } catch (_) {}
     render();
   }
@@ -100,8 +105,6 @@
       }
     });
   } catch (_) {}
-
-  document.addEventListener("logo-style-changed", () => render());
 
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", refresh);
