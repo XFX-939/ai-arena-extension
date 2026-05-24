@@ -162,6 +162,42 @@ function staticCheck() {
       pattern: /window\.focus\(\)/,
       desc: "F15 popup addParticipant 调 window.focus() 保留用户手势",
     },
+    {
+      id: "F16-source",
+      file: "src/content-gemini.js",
+      pattern: /v4\.6\.7 F16.*thinking 阶段/s,
+      desc: "F16 Gemini thinking 阶段不走 fallback",
+    },
+    {
+      id: "F16-streaming-check",
+      file: "src/content-gemini.js",
+      pattern: /stillStreaming/,
+      desc: "F16 检测 streaming 状态",
+    },
+    {
+      id: "F17-sendToPopup",
+      file: "src/chat-bus.js",
+      pattern: /v4\.6\.7 F17.*不再依赖 popupWindowId 做 silent return/s,
+      desc: "F17 sendToPopup 始终 broadcast",
+    },
+    {
+      id: "F17-setter",
+      file: "src/chat-bus.js",
+      pattern: /function setPopupWindowId\(id\)/,
+      desc: "F17 setPopupWindowId 暴露",
+    },
+    {
+      id: "F17-bgWiring",
+      file: "src/background.js",
+      pattern: /case "popupReady"/,
+      desc: "F17 background.js 处理 popupReady",
+    },
+    {
+      id: "F17-popupReady",
+      file: "src/popup.js",
+      pattern: /type:\s*"popupReady",\s*windowId/,
+      desc: "F17 popup.js 启动主动通知 SW",
+    },
   ];
   console.log("═".repeat(70));
   console.log("静态白盒：13 项源码 patch 存在性检查");
@@ -451,6 +487,49 @@ try {
   } else {
     record("F13-fix", "regression", f13,
       `pendingSummary=${JSON.stringify(f13.pendingSummary_afterReset)} disconnectCount=${f13.disconnectMessageCount}`);
+  }
+
+  // ════════════════════════════════════════════════════════
+  // F17-fix: SW 重启后 sendToPopup 仍能 broadcast（不再 silent return）
+  // 用户报"popup 收不到消息"主因 — 模拟场景：popupWindowId 仍是 null（SW 刚重启）
+  // 调 broadcast 必须有 chrome.runtime.sendMessage 调用尝试，而不是 silent return
+  // ════════════════════════════════════════════════════════
+  console.log("\n=== F17-fix: SW 重启后 popup 仍收消息 ===");
+  const f17 = await sw.evaluate(async () => {
+    // 重置干净 + 模拟 SW 重启场景（popupWindowId 在 ChatBus 内部仍是 null，无法直接操作 IIFE）
+    // 通过反向验证：hook chrome.runtime.sendMessage 看 chatStreamUpdate 是否发出
+    StateMachine.hardReset();
+    StateMachine.participants = [
+      { id: "p1", service: "ai_a", tabId: 91001, name: "A", response: null, responsePreview: null },
+    ];
+
+    let chatStreamUpdateCount = 0;
+    const origRuntime = chrome.runtime.sendMessage;
+    chrome.runtime.sendMessage = (m) => {
+      if (m?.type === "chatStreamUpdate") chatStreamUpdateCount++;
+      return Promise.resolve();
+    };
+
+    const origTabsSend = chrome.tabs.sendMessage;
+    chrome.tabs.sendMessage = async () => ({ status: "sent", text: "" });
+
+    // 关键测试：broadcast 时 popupWindowId 在 ChatBus 内是 null（重启后默认值）
+    // 老逻辑 sendToPopup 会 silent return，新逻辑应该 broadcast 多次
+    await ChatBus.broadcast("test", ["ai_a"], []);
+
+    chrome.runtime.sendMessage = origRuntime;
+    chrome.tabs.sendMessage = origTabsSend;
+    return {
+      chatStreamUpdateCount,
+      passed: chatStreamUpdateCount >= 2,  // 至少 user 消息 + ai loading 气泡
+    };
+  });
+  if (f17.passed) {
+    record("F17-fix", "fixed", f17,
+      `broadcast 发出 ${f17.chatStreamUpdateCount} 次 chatStreamUpdate — 即便 popupWindowId=null 也不再 silent return`);
+  } else {
+    record("F17-fix", "regression", f17,
+      `仅发出 ${f17.chatStreamUpdateCount} 次 — sendToPopup 仍在 silent return`);
   }
 
   // ════════════════════════════════════════════════════════

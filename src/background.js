@@ -163,6 +163,12 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           break;
         case "openChatPopup":
           sendResponse(await ChatBus.openChatPopup()); break;
+        case "popupReady":
+          // v4.6.7 F17: popup DOMContentLoaded 主动告知 SW 自己的 windowId
+          // SW 重启后 ChatBus.popupWindowId 是 null，靠这条消息恢复
+          if (typeof msg.windowId === "number") ChatBus.setPopupWindowId(msg.windowId);
+          sendResponse({ ok: true });
+          break;
         case "chatBroadcast":
           sendResponse(await ChatBus.broadcast(msg.text, msg.targets || [], msg.images || [])); break;
         case "chatRestoreLog":

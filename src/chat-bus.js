@@ -76,12 +76,20 @@ const ChatBus = (() => {
   // 仍未完成，理论可无限跑。到达上限按当前文本强制 isDone:true 完成。
   const MAX_POLL_TICKS = 200;
 
+  // v4.6.7 F17: 不再依赖 popupWindowId 做 silent return — MV3 SW 30s 空闲被回收时
+  // ChatBus IIFE 销毁、popupWindowId 重建为 null，但 popup 窗口仍开着；
+  // 老逻辑 `if (popupWindowId == null) return` 让 SW 重启后所有 chatStreamUpdate
+  // 静默丢失 → popup 永远收不到消息。改为始终 broadcast，popup 开着自然收到。
   async function sendToPopup(payload) {
-    if (popupWindowId == null) return;
     try {
-      // popup 没有 tabId，只能广播到所有 runtime context
       await chrome.runtime.sendMessage(payload);
     } catch {}
+  }
+
+  // v4.6.7 F17: popup 启动时主动告知 SW 自己的 windowId
+  // 让 focusPopup / openChatPopup 等依赖 popupWindowId 的功能在 SW 重启后仍可用
+  function setPopupWindowId(id) {
+    if (typeof id === "number" && id > 0) popupWindowId = id;
   }
 
   function newMsgId() {
@@ -431,6 +439,7 @@ const ChatBus = (() => {
     getLog,
     clearLog,
     clearAllPollers,
+    setPopupWindowId,
     jumpToOrigin,
     reextractOne,
     skipParticipant,

@@ -1,5 +1,16 @@
 // AI Arena — popup 群聊渲染 + 输入处理
 (function () {
+  // v4.6.7 F17: popup 启动时主动告知 SW 自己的 windowId — MV3 SW 30s 空闲被回收时
+  // ChatBus.popupWindowId 重建为 null，需要 popup 主动重新注册才能让 focusPopup
+  // 等依赖 popupWindowId 的功能恢复（sendToPopup 已改为始终 broadcast 不依赖此 id）。
+  try {
+    chrome.windows.getCurrent().then(w => {
+      if (w?.id != null) {
+        chrome.runtime.sendMessage({ type: "popupReady", windowId: w.id }).catch(() => {});
+      }
+    }).catch(() => {});
+  } catch (_) {}
+
   const $messages = document.getElementById("chat-messages");
   const $empty = document.getElementById("empty-state");
   const $input = document.getElementById("chat-input");

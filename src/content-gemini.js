@@ -187,20 +187,42 @@ async function readLatestResponse() {
 
   // v4.6.3 F12: 优先锚定最新 model-response 容器再在其内查内容，防图片/canvas-only
   // 回答时 selector(".markdown") 跨轮匹配到前一轮 markdown 节点 → 返回上一轮残留文本。
-  // 4 级 fallback：markdown 子节点 → 整体 _extractEl → img 列表 → canvas 占位
+  // v4.6.7 F16: thinking 阶段的 "Defining the Task" 等过渡文本会稳定 3+ tick 触发
+  // polling 完成 → 推送噪音给 popup。修复：streaming 时不走 fallback；走 fallback 时
+  // clone + remove thinking 子节点防 thinking 文本污染。
+  const THINKING_SEL = 'thinking-tag, .thinking, [class*="thinking"], '
+    + '.loading-indicator, .animate-spin, mat-spinner, '
+    + '[class*="ProgressContainer"], [class*="thinking-indicator"]';
   const allModels = document.querySelectorAll("[data-content-type='model'], model-response");
   if (allModels.length > 0) {
     const last = allModels[allModels.length - 1];
-    // 1) latest model-response 内的 markdown 子节点
+    // v4.6.7 F16: 检测当前 model-response 是否仍在 streaming/thinking
+    const stillStreaming = !!(
+      last.querySelector(THINKING_SEL)
+      || document.querySelector('button[aria-label*="Stop"], model-response .loading-indicator')
+    );
+
+    // 1) latest model-response 内的 markdown 子节点（即便 streaming，部分文字已稳定也能抓）
     const md = last.querySelector(".model-response-text .markdown, .response-container .markdown, .markdown");
     if (md) {
       const t = _extractEl(md).trim();
       if (t) return t;
     }
-    // 2) 没 markdown 或空 → 提取整个 model-response（含 img、清理 button/toolbar 噪声）
-    const full = _extractEl(last).trim();
+    // 2) v4.6.7 F16: 没 markdown 且仍 streaming → 返回空让 polling 继续等
+    // 防 thinking 阶段 "Defining the Task" 等过渡内容稳定 3 tick 被判完成（实测截图证据）
+    if (stillStreaming) return "";
+
+    // 3) 没 markdown 且 streaming 已结束 → 整体抽取（image-only / canvas-only 等场景）
+    //    clone 后排除 thinking 子节点防过渡内容污染
+    const clone = last.cloneNode(true);
+    clone.querySelectorAll(THINKING_SEL).forEach(el => el.remove());
+    const full = (typeof extractTextWithFences === "function"
+      ? extractTextWithFences(clone)
+      : (clone.innerText || clone.textContent || "")
+    ).trim();
     if (full) return full;
-    // 3) 仍空 → 直接列出 img markdown（生成图回答常见情形）
+
+    // 4) 仍空 → 直接列出 img markdown（生成图回答常见情形）
     const imgs = last.querySelectorAll("img[src]");
     const realImgs = Array.from(imgs).filter(img => {
       const src = img.getAttribute("src") || "";
@@ -211,7 +233,7 @@ async function readLatestResponse() {
     if (realImgs.length) {
       return realImgs.map((img, i) => `![image-${i + 1}](${img.getAttribute("src")})`).join("\n\n");
     }
-    // 4) canvas-only（图正在画） → 返回占位让 polling 继续等
+    // 5) canvas-only（图正在画） → 返回占位让 polling 继续等
     if (last.querySelector("canvas")) return "[正在生成图片...]";
   }
 
