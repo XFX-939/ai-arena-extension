@@ -67,7 +67,7 @@ try {
   // 2) 读 manifest version_name 验证版本同步（直接读源文件）
   const manifest = JSON.parse(fs.readFileSync(path.join(EXT_PATH, "manifest.json"), "utf8"));
   console.log(`[smoke] manifest version: ${manifest.version}, version_name: ${manifest.version_name}`);
-  check("manifest version_name = 4.8.24-beta", manifest.version_name === "4.8.24-beta", `actual: ${manifest.version_name}`);
+  check("manifest version_name = 4.8.25-beta", manifest.version_name === "4.8.25-beta", `actual: ${manifest.version_name}`);
 
   // 3) 打开 sidepanel.html（作为普通 tab），验证 DOM
   const sidepanelPage = await context.newPage();
@@ -75,10 +75,10 @@ try {
   await sidepanelPage.waitForLoadState("domcontentloaded");
 
   const versionBadge = await sidepanelPage.locator(".version").textContent();
-  check("sidepanel version badge", versionBadge === "v4.8.24-beta", `actual: "${versionBadge}"`);
+  check("sidepanel version badge", versionBadge === "v4.8.25-beta", `actual: "${versionBadge}"`);
 
   const footerVersion = await sidepanelPage.locator(".footer").textContent();
-  check("sidepanel footer version", footerVersion?.includes("v4.8.24-beta"), `actual: "${footerVersion?.slice(0, 100)}"`);
+  check("sidepanel footer version", footerVersion?.includes("v4.8.25-beta"), `actual: "${footerVersion?.slice(0, 100)}"`);
 
   const openChatBtn = await sidepanelPage.locator("#btn-open-chat").count();
   check('sidepanel has "🪟 群聊" button', openChatBtn === 1);
@@ -96,7 +96,7 @@ try {
   await popupPage.waitForLoadState("domcontentloaded");
 
   const popupVersion = await popupPage.locator(".chat-version").textContent();
-  check("popup chat-version = v4.8.24-beta", popupVersion === "v4.8.24-beta", `actual: "${popupVersion}"`);
+  check("popup chat-version = v4.8.25-beta", popupVersion === "v4.8.25-beta", `actual: "${popupVersion}"`);
 
   // 图标资产验证（v4.0.11）
   const assetsOk = await popupPage.evaluate(async (extId) => {
@@ -1921,6 +1921,25 @@ try {
     sidebarCheck.rainbowLine && sidebarCheck.gradientDot
       && sidebarCheck.cardHover && sidebarCheck.neonNum,
     JSON.stringify(sidebarCheck));
+
+  // ========== v4.8.25: AI 卡片字号缩到 10.5 + 删 ellipsis（完整显示 Claude/Gemini/DeepSeek）==========
+  console.log("\n[smoke] === v4.8.25 AI 卡字号 ===");
+  const cardFontCheck = await popupPage.evaluate(() => {
+    return fetch(chrome.runtime.getURL("popup.css"))
+      .then(r => r.text())
+      .then(src => ({
+        nameSize105: /\.rp-add-name\s*\{[^}]*font-size:\s*10\.5px/.test(src),
+        btnSize105: /\.rp-add-btn\s*\{[^}]*font-size:\s*10\.5px/.test(src),
+        noEllipsis: !/\.rp-add-name\s*\{[^}]*text-overflow:\s*ellipsis/.test(src),
+        noOverflowHidden: !/\.rp-add-name\s*\{[^}]*overflow:\s*hidden/.test(src),
+        keepsNowrap: /\.rp-add-name\s*\{[^}]*white-space:\s*nowrap/.test(src),
+      }));
+  });
+  check("v4.8.25: .rp-add-name/.rp-add-btn 字号 10.5px + 删 ellipsis/overflow + 保留 nowrap",
+    cardFontCheck.nameSize105 && cardFontCheck.btnSize105
+      && cardFontCheck.noEllipsis && cardFontCheck.noOverflowHidden
+      && cardFontCheck.keepsNowrap,
+    JSON.stringify(cardFontCheck));
 
 
   // 等几秒收集 layout logs
