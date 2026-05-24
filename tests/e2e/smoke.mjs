@@ -67,7 +67,7 @@ try {
   // 2) 读 manifest version_name 验证版本同步（直接读源文件）
   const manifest = JSON.parse(fs.readFileSync(path.join(EXT_PATH, "manifest.json"), "utf8"));
   console.log(`[smoke] manifest version: ${manifest.version}, version_name: ${manifest.version_name}`);
-  check("manifest version_name = 4.8.18-beta", manifest.version_name === "4.8.18-beta", `actual: ${manifest.version_name}`);
+  check("manifest version_name = 4.8.19-beta", manifest.version_name === "4.8.19-beta", `actual: ${manifest.version_name}`);
 
   // 3) 打开 sidepanel.html（作为普通 tab），验证 DOM
   const sidepanelPage = await context.newPage();
@@ -75,10 +75,10 @@ try {
   await sidepanelPage.waitForLoadState("domcontentloaded");
 
   const versionBadge = await sidepanelPage.locator(".version").textContent();
-  check("sidepanel version badge", versionBadge === "v4.8.18-beta", `actual: "${versionBadge}"`);
+  check("sidepanel version badge", versionBadge === "v4.8.19-beta", `actual: "${versionBadge}"`);
 
   const footerVersion = await sidepanelPage.locator(".footer").textContent();
-  check("sidepanel footer version", footerVersion?.includes("v4.8.18-beta"), `actual: "${footerVersion?.slice(0, 100)}"`);
+  check("sidepanel footer version", footerVersion?.includes("v4.8.19-beta"), `actual: "${footerVersion?.slice(0, 100)}"`);
 
   const openChatBtn = await sidepanelPage.locator("#btn-open-chat").count();
   check('sidepanel has "🪟 群聊" button', openChatBtn === 1);
@@ -96,7 +96,7 @@ try {
   await popupPage.waitForLoadState("domcontentloaded");
 
   const popupVersion = await popupPage.locator(".chat-version").textContent();
-  check("popup chat-version = v4.8.18-beta", popupVersion === "v4.8.18-beta", `actual: "${popupVersion}"`);
+  check("popup chat-version = v4.8.19-beta", popupVersion === "v4.8.19-beta", `actual: "${popupVersion}"`);
 
   // 图标资产验证（v4.0.11）
   const assetsOk = await popupPage.evaluate(async (extId) => {
@@ -1322,7 +1322,7 @@ try {
       .then(src => ({
         msgAvatarNoPadding: /\.msg-avatar\s*\{[^}]*padding:\s*0/.test(src),
         msgAvatarTransparent: /\.msg-avatar\s*\{[^}]*background:\s*transparent/.test(src),
-        heroLogoCover: /\.hero-slot-logo\s*\{[^}]*object-fit:\s*cover/.test(src),
+        heroLogoCover: /\.hero-slot-logo\s*\{[^}]*object-fit:\s*(cover|contain)/.test(src),
         heroLogoFull:  /\.hero-slot-logo\s*\{[^}]*inset:\s*0/.test(src),
         msgBrandCover: /\.msg-avatar\s+\.brand-logo\s*\{[^}]*object-fit:\s*cover/.test(src)
       }));
@@ -1554,9 +1554,23 @@ try {
         match: /\.hero-slot\s*\{[^}]*aspect-ratio:\s*([\d.]+)/.exec(src)?.[1],
       }));
   });
-  check("v4.8.17: .hero-slot aspect-ratio 改到 ≤0.75（贴合卡牌 0.703，底部黄虚线不裁）",
-    aspectCheck.match && parseFloat(aspectCheck.match) <= 0.75 && parseFloat(aspectCheck.match) >= 0.65,
+  // v4.8.19: aspect 调到 0.78 + object-fit contain，兜底所有卡牌比例（0.666~0.881）
+  check("v4.8.19: .hero-slot aspect-ratio 在 [0.70, 0.85] 区间（兼容 contain 模式）",
+    aspectCheck.match && parseFloat(aspectCheck.match) <= 0.85 && parseFloat(aspectCheck.match) >= 0.70,
     JSON.stringify(aspectCheck));
+
+  // v4.8.19 新增: .hero-slot-logo object-fit 必须是 contain（保证底部黄虚线 + 边距完整露出）
+  const heroLogoFitCheck = await popupPage.evaluate(() => {
+    return fetch(chrome.runtime.getURL("popup.css"))
+      .then(r => r.text())
+      .then(src => {
+        const m = /\.hero-slot-logo\s*\{[^}]*object-fit:\s*(\w+)/.exec(src);
+        return { fit: m?.[1] };
+      });
+  });
+  check("v4.8.19: .hero-slot-logo object-fit: contain（cover 会从底部裁掉黄虚线 + 黑边）",
+    heroLogoFitCheck.fit === "contain",
+    JSON.stringify(heroLogoFitCheck));
 
   // ② 辩论总结卡片用裁判 logo + 名字
   const summaryCheck = await popupPage.evaluate(() => {
