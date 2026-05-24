@@ -67,7 +67,7 @@ try {
   // 2) 读 manifest version_name 验证版本同步（直接读源文件）
   const manifest = JSON.parse(fs.readFileSync(path.join(EXT_PATH, "manifest.json"), "utf8"));
   console.log(`[smoke] manifest version: ${manifest.version}, version_name: ${manifest.version_name}`);
-  check("manifest version_name = 4.6.6-beta", manifest.version_name === "4.6.6-beta", `actual: ${manifest.version_name}`);
+  check("manifest version_name = 4.6.8-beta", manifest.version_name === "4.6.8-beta", `actual: ${manifest.version_name}`);
 
   // 3) 打开 sidepanel.html（作为普通 tab），验证 DOM
   const sidepanelPage = await context.newPage();
@@ -75,10 +75,10 @@ try {
   await sidepanelPage.waitForLoadState("domcontentloaded");
 
   const versionBadge = await sidepanelPage.locator(".version").textContent();
-  check("sidepanel version badge", versionBadge === "v4.6.6-beta", `actual: "${versionBadge}"`);
+  check("sidepanel version badge", versionBadge === "v4.6.8-beta", `actual: "${versionBadge}"`);
 
   const footerVersion = await sidepanelPage.locator(".footer").textContent();
-  check("sidepanel footer version", footerVersion?.includes("v4.6.6-beta"), `actual: "${footerVersion?.slice(0, 100)}"`);
+  check("sidepanel footer version", footerVersion?.includes("v4.6.8-beta"), `actual: "${footerVersion?.slice(0, 100)}"`);
 
   const openChatBtn = await sidepanelPage.locator("#btn-open-chat").count();
   check('sidepanel has "🪟 群聊" button', openChatBtn === 1);
@@ -96,7 +96,7 @@ try {
   await popupPage.waitForLoadState("domcontentloaded");
 
   const popupVersion = await popupPage.locator(".chat-version").textContent();
-  check("popup chat-version = v4.6.6-beta", popupVersion === "v4.6.6-beta", `actual: "${popupVersion}"`);
+  check("popup chat-version = v4.6.8-beta", popupVersion === "v4.6.8-beta", `actual: "${popupVersion}"`);
 
   // 图标资产验证（v4.0.11）
   const assetsOk = await popupPage.evaluate(async (extId) => {
@@ -314,6 +314,78 @@ try {
   check("v4.6.6: 嵌套 \\frac{P_{\\text{signal}}}{...} 多 pass 展开",
     v466.nestedFrac.includes("Pₛᵢgₙₐₗ") && v466.nestedFrac.includes("/"),
     v466.nestedFrac);
+
+  // ========== v4.6.8: 统计 Tab 可视化（柱状图 / 趋势线 / 热力图） ==========
+  console.log("\n[smoke] === v4.6.8 统计可视化 ===");
+
+  // 切到 stats Tab
+  await popupPage.click('.rp-tab[data-tab="stats"]');
+  await popupPage.waitForTimeout(200);
+
+  // 注入测试数据：3 个 AI + 7 天 daily + 168 cell heatmap
+  await popupPage.evaluate(() => {
+    const today = new Date();
+    const daily = {};
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date(today);
+      d.setDate(d.getDate() - i);
+      const k = d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+      daily[k] = { conversations: 2 + i, chars: 3000 + i * 500, models: {} };
+    }
+    const heatmap = new Array(168).fill(0);
+    // 工作日 9-18 高活跃，周末低
+    for (let w = 1; w <= 5; w++) for (let h = 9; h <= 18; h++) heatmap[w * 24 + h] = Math.floor(Math.random() * 20 + 5);
+    window.ChatStats._injectFakeData({
+      conversations: 42,
+      debates: 8,
+      totalChars: 38000,
+      models: {
+        claude: { chars: 18000, rounds: 15 },
+        gemini: { chars: 12000, rounds: 12 },
+        chatgpt: { chars: 8000, rounds: 9 }
+      },
+      daily, heatmap
+    });
+  });
+  await popupPage.waitForTimeout(200);
+
+  // sub-tab 切到"模型" → 柱状图
+  await popupPage.click('.rp-substat-tab[data-sub="models"]');
+  await popupPage.waitForTimeout(200);
+  const barChart = await popupPage.evaluate(() => {
+    const rows = [...document.querySelectorAll(".rp-bar-row")];
+    return {
+      rowCount: rows.length,
+      hasFill: !!document.querySelector(".rp-bar-fill"),
+      firstName: rows[0]?.querySelector(".rp-bar-name")?.textContent,
+      firstWidth: rows[0]?.querySelector(".rp-bar-fill")?.style.width
+    };
+  });
+  check("v4.6.8: 模型 sub-tab 渲染柱状图 — 3 行 + fill 元素",
+    barChart.rowCount === 3 && barChart.hasFill, JSON.stringify(barChart));
+  check("v4.6.8: 柱状图按 Token 排序 — 第 1 名 Claude 100%",
+    barChart.firstName === "Claude" && /^100(\.0)?%$/.test(barChart.firstWidth),
+    JSON.stringify(barChart));
+
+  // sub-tab 切到"累计" → 趋势线 + 热力图
+  await popupPage.click('.rp-substat-tab[data-sub="lifetime"]');
+  await popupPage.waitForTimeout(200);
+  const lifetimeChart = await popupPage.evaluate(() => {
+    return {
+      hasTrendSvg: !!document.querySelector(".rp-chart-svg"),
+      trendLineExists: !!document.querySelector(".rp-chart-line"),
+      trendDotCount: document.querySelectorAll(".rp-chart-dot").length,
+      hasHeatSvg: !!document.querySelector(".rp-heat-svg"),
+      heatCellCount: document.querySelectorAll(".rp-heat-cell").length,
+      hasLegend: !!document.querySelector(".rp-heat-legend-sq")
+    };
+  });
+  check("v4.6.8: 累计 sub-tab — 7 天趋势 SVG + 折线 + 7 个数据点",
+    lifetimeChart.hasTrendSvg && lifetimeChart.trendLineExists && lifetimeChart.trendDotCount === 7,
+    JSON.stringify(lifetimeChart));
+  check("v4.6.8: 累计 sub-tab — 热力图 7×24=168 cells + 图例",
+    lifetimeChart.hasHeatSvg && lifetimeChart.heatCellCount === 168 && lifetimeChart.hasLegend,
+    JSON.stringify(lifetimeChart));
 
   // 6) 任务模式 hover 子菜单验证（DOM 存在性）
   const debateSubItems = await popupPage.locator('.menu-item.has-sub:has(span:text("辩论")) .sub-menu .menu-item').count();
