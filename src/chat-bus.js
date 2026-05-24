@@ -86,8 +86,8 @@ const ChatBus = (() => {
         display = displays.find(d => d.isPrimary) || displays[0];
       }
       const width = Math.min(900, Math.round(display.workArea.width * 0.7));
-      // v4.8.27: 60→78（标题栏 ~30 + chat-main padding 16 + 一行控件 30 + 余量 2）
-      const height = 78;
+      // v4.8.27: 60→78 / v4.8.30: 78→86（padding 16→24 + 控件底部不贴边 + AI logos）
+      const height = 86;
       return {
         left: display.workArea.left + Math.round((display.workArea.width - width) / 2),
         top: display.workArea.top,
@@ -145,6 +145,18 @@ const ChatBus = (() => {
   // v4.8.28: mini 模式下 task-menu 打开时临时把窗口高度撑到 ~320 让菜单可见，关 menu 时还原
   // 注意：临时撑大期间不写 storage（保持 popupMiniBounds 是用户最终选定的 height）
   let _miniMenuPrevHeight = null;
+  // v4.8.30: mini 模式下用户点击置灰的 AI service ids — broadcast 时过滤
+  const _miniSkippedServices = new Set();
+  function setMiniSkippedServices(arr) {
+    _miniSkippedServices.clear();
+    (arr || []).forEach(s => _miniSkippedServices.add(s));
+  }
+  // 启动时从 storage 加载
+  try {
+    chrome.storage.local.get(["miniSkippedServices"]).then(r => {
+      if (Array.isArray(r?.miniSkippedServices)) setMiniSkippedServices(r.miniSkippedServices);
+    }).catch(() => {});
+  } catch (_) {}
   async function miniMenuExpand(expand) {
     if (popupMode !== "mini" || popupWindowId == null) return { ok: false, error: "not in mini" };
     try {
@@ -241,9 +253,14 @@ const ChatBus = (() => {
 
     // 决定目标参与者
     const allParticipants = StateMachine.participants || [];
-    const targetList = targets?.length
+    let targetList = targets?.length
       ? allParticipants.filter(p => targets.includes(p.service))
       : allParticipants;
+
+    // v4.8.30: mini 模式下用户点击置灰的 AI 在 broadcast 时跳过；显式 @ 指定时不过滤
+    if (!targets?.length && _miniSkippedServices.size) {
+      targetList = targetList.filter(p => !_miniSkippedServices.has(p.service));
+    }
 
     if (!targetList.length) {
       return { ok: false, error: "无可用参与者" };
@@ -717,6 +734,7 @@ const ChatBus = (() => {
     toggleMiniMode,  // v4.8.15 F30
     getPopupMode,    // v4.8.15 F30
     miniMenuExpand,  // v4.8.28
+    setMiniSkippedServices,  // v4.8.30
   };
 })();
 

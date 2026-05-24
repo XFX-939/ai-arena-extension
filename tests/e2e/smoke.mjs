@@ -67,7 +67,7 @@ try {
   // 2) 读 manifest version_name 验证版本同步（直接读源文件）
   const manifest = JSON.parse(fs.readFileSync(path.join(EXT_PATH, "manifest.json"), "utf8"));
   console.log(`[smoke] manifest version: ${manifest.version}, version_name: ${manifest.version_name}`);
-  check("manifest version_name = 4.8.28-beta", manifest.version_name === "4.8.28-beta", `actual: ${manifest.version_name}`);
+  check("manifest version_name = 4.8.30-beta", manifest.version_name === "4.8.30-beta", `actual: ${manifest.version_name}`);
 
   // 3) 打开 sidepanel.html（作为普通 tab），验证 DOM
   const sidepanelPage = await context.newPage();
@@ -75,10 +75,10 @@ try {
   await sidepanelPage.waitForLoadState("domcontentloaded");
 
   const versionBadge = await sidepanelPage.locator(".version").textContent();
-  check("sidepanel version badge", versionBadge === "v4.8.28-beta", `actual: "${versionBadge}"`);
+  check("sidepanel version badge", versionBadge === "v4.8.30-beta", `actual: "${versionBadge}"`);
 
   const footerVersion = await sidepanelPage.locator(".footer").textContent();
-  check("sidepanel footer version", footerVersion?.includes("v4.8.28-beta"), `actual: "${footerVersion?.slice(0, 100)}"`);
+  check("sidepanel footer version", footerVersion?.includes("v4.8.30-beta"), `actual: "${footerVersion?.slice(0, 100)}"`);
 
   const openChatBtn = await sidepanelPage.locator("#btn-open-chat").count();
   check('sidepanel has "🪟 群聊" button', openChatBtn === 1);
@@ -96,7 +96,7 @@ try {
   await popupPage.waitForLoadState("domcontentloaded");
 
   const popupVersion = await popupPage.locator(".chat-version").textContent();
-  check("popup chat-version = v4.8.28-beta", popupVersion === "v4.8.28-beta", `actual: "${popupVersion}"`);
+  check("popup chat-version = v4.8.30-beta", popupVersion === "v4.8.30-beta", `actual: "${popupVersion}"`);
 
   // 图标资产验证（v4.0.11）
   const assetsOk = await popupPage.evaluate(async (extId) => {
@@ -2019,7 +2019,8 @@ try {
     return fetch(chrome.runtime.getURL("chat-bus.js"))
       .then(r => r.text())
       .then(src => ({
-        height78: src.includes("const height = 78"),
+        // v4.8.30: height 78 → 86（padding 加大）；放宽为"在 [60, 150) 范围内"
+        height78: /const height = (78|82|86)/.test(src),
         staleCheck: src.includes("popupMiniBounds.height > 150"),
       }));
   });
@@ -2085,6 +2086,80 @@ try {
       && bgCaseCheck.hasCase && bgCaseCheck.callsBus,
     JSON.stringify({ ...busExpandCheck, ...bgCaseCheck }));
 
+  // ========== v4.8.30: mini 高度 + AI logos + mention-menu 撑高 ==========
+  console.log("\n[smoke] === v4.8.30 mini polish ===");
+
+  // ① 高度增加：chat-main padding 12 14 + defaultMiniBounds 86
+  const heightCheck = await popupPage.evaluate(() => {
+    return Promise.all([
+      fetch(chrome.runtime.getURL("popup.css")).then(r => r.text()),
+      fetch(chrome.runtime.getURL("chat-bus.js")).then(r => r.text()),
+    ]).then(([css, js]) => ({
+      mainPadding1214: /body\[data-mode="mini"\] \.chat-main\s*\{[^}]*padding:\s*12px 14px/.test(css),
+      defaultHeight86: js.includes("const height = 86"),
+    }));
+  });
+  check("v4.8.30 ①: chat-main padding 12px 14px + defaultMiniBounds 86",
+    heightCheck.mainPadding1214 && heightCheck.defaultHeight86,
+    JSON.stringify(heightCheck));
+
+  // ② mini-roster DOM + JS + CSS 完整
+  const rosterCheck = await popupPage.evaluate(() => {
+    return Promise.all([
+      fetch(chrome.runtime.getURL("popup.html")).then(r => r.text()),
+      fetch(chrome.runtime.getURL("popup-mini-roster.js")).then(r => r.text()),
+      fetch(chrome.runtime.getURL("popup.css")).then(r => r.text()),
+    ]).then(([html, js, css]) => ({
+      htmlHasRoster: html.includes('id="mini-roster"'),
+      jsHasRender: js.includes("function render"),
+      jsHasSkipToggle: js.includes("miniSkipped.has(svc)") && js.includes("miniSkipped.add(svc)"),
+      jsSendsMessage: js.includes('type: "setMiniSkip"'),
+      cssHidesInFull: /^\.mini-roster\s*\{\s*display:\s*none/m.test(css),
+      cssShowsInMini: /body\[data-mode="mini"\]\s+\.mini-roster\s*\{[^}]*display:\s*flex/.test(css),
+      cssHasSkipFilter: /\.mini-ai\.skipped\s+\.mini-ai-logo\s*\{[^}]*grayscale/.test(css),
+      cssHasStatusDot: /\.mini-ai-dot\.busy[^}]*animation/.test(css),
+    }));
+  });
+  check("v4.8.30 ②: mini-roster DOM + render + skip toggle + setMiniSkip 消息 + CSS（full隐藏/mini显示/灰度/状态点）",
+    rosterCheck.htmlHasRoster && rosterCheck.jsHasRender
+      && rosterCheck.jsHasSkipToggle && rosterCheck.jsSendsMessage
+      && rosterCheck.cssHidesInFull && rosterCheck.cssShowsInMini
+      && rosterCheck.cssHasSkipFilter && rosterCheck.cssHasStatusDot,
+    JSON.stringify(rosterCheck));
+
+  // ③ background + chat-bus setMiniSkippedServices 实现 + broadcast 过滤
+  const skipBackendCheck = await popupPage.evaluate(() => {
+    return Promise.all([
+      fetch(chrome.runtime.getURL("background.js")).then(r => r.text()),
+      fetch(chrome.runtime.getURL("chat-bus.js")).then(r => r.text()),
+    ]).then(([bg, bus]) => ({
+      bgHasCase: bg.includes('case "setMiniSkip"'),
+      bgCallsBus: bg.includes("ChatBus.setMiniSkippedServices"),
+      busHasFn: bus.includes("function setMiniSkippedServices"),
+      busHasSet: bus.includes("_miniSkippedServices = new Set()"),
+      busBroadcastFilters: bus.includes("_miniSkippedServices.has(p.service)"),
+      busExposes: bus.includes("setMiniSkippedServices,  // v4.8.30"),
+    }));
+  });
+  check("v4.8.30 ③: background 路由 setMiniSkip + chat-bus _miniSkippedServices Set + broadcast 过滤",
+    skipBackendCheck.bgHasCase && skipBackendCheck.bgCallsBus
+      && skipBackendCheck.busHasFn && skipBackendCheck.busHasSet
+      && skipBackendCheck.busBroadcastFilters && skipBackendCheck.busExposes,
+    JSON.stringify(skipBackendCheck));
+
+  // ④ mention-menu mini 下也向下弹 + popup.js 调 notifyMiniExpand
+  const mentionCheck = await popupPage.evaluate(() => {
+    return Promise.all([
+      fetch(chrome.runtime.getURL("popup.css")).then(r => r.text()),
+      fetch(chrome.runtime.getURL("popup.js")).then(r => r.text()),
+    ]).then(([css, js]) => ({
+      mentionDown: /body\[data-mode="mini"\]\s+\.mention-menu\s*\{[^}]*top:\s*calc\(100%/.test(css),
+      jsCallsExpand: js.includes("notifyMiniExpand(true)") && js.includes("notifyMiniExpand(false)"),
+    }));
+  });
+  check("v4.8.30 ④: mention-menu mini 下向下弹 + popup.js show/hide 调 notifyMiniExpand",
+    mentionCheck.mentionDown && mentionCheck.jsCallsExpand,
+    JSON.stringify(mentionCheck));
 
   // 等几秒收集 layout logs
   await popupPage.waitForTimeout(2000);
