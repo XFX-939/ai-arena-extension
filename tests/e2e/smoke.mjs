@@ -67,7 +67,7 @@ try {
   // 2) 读 manifest version_name 验证版本同步（直接读源文件）
   const manifest = JSON.parse(fs.readFileSync(path.join(EXT_PATH, "manifest.json"), "utf8"));
   console.log(`[smoke] manifest version: ${manifest.version}, version_name: ${manifest.version_name}`);
-  check("manifest version_name = 4.8.10-beta", manifest.version_name === "4.8.10-beta", `actual: ${manifest.version_name}`);
+  check("manifest version_name = 4.8.11-beta", manifest.version_name === "4.8.11-beta", `actual: ${manifest.version_name}`);
 
   // 3) 打开 sidepanel.html（作为普通 tab），验证 DOM
   const sidepanelPage = await context.newPage();
@@ -75,10 +75,10 @@ try {
   await sidepanelPage.waitForLoadState("domcontentloaded");
 
   const versionBadge = await sidepanelPage.locator(".version").textContent();
-  check("sidepanel version badge", versionBadge === "v4.8.10-beta", `actual: "${versionBadge}"`);
+  check("sidepanel version badge", versionBadge === "v4.8.11-beta", `actual: "${versionBadge}"`);
 
   const footerVersion = await sidepanelPage.locator(".footer").textContent();
-  check("sidepanel footer version", footerVersion?.includes("v4.8.10-beta"), `actual: "${footerVersion?.slice(0, 100)}"`);
+  check("sidepanel footer version", footerVersion?.includes("v4.8.11-beta"), `actual: "${footerVersion?.slice(0, 100)}"`);
 
   const openChatBtn = await sidepanelPage.locator("#btn-open-chat").count();
   check('sidepanel has "🪟 群聊" button', openChatBtn === 1);
@@ -96,7 +96,7 @@ try {
   await popupPage.waitForLoadState("domcontentloaded");
 
   const popupVersion = await popupPage.locator(".chat-version").textContent();
-  check("popup chat-version = v4.8.10-beta", popupVersion === "v4.8.10-beta", `actual: "${popupVersion}"`);
+  check("popup chat-version = v4.8.11-beta", popupVersion === "v4.8.11-beta", `actual: "${popupVersion}"`);
 
   // 图标资产验证（v4.0.11）
   const assetsOk = await popupPage.evaluate(async (extId) => {
@@ -1364,6 +1364,55 @@ try {
   check("v4.8.10: .msg-avatar 删除黑色 box-shadow 外框（卡牌自带黄虚线边框）",
     avatarSize.boxShadow === "none",
     JSON.stringify(avatarSize));
+
+  // ========== v4.8.11: 群聊空状态换成 AI 小队海报 ==========
+  console.log("\n[smoke] === v4.8.11 空状态海报 ===");
+
+  // 重新打开 popup 获取 fresh empty-state（avatarSize 上一段已塞了 fake AI msg 把 empty 隐了）
+  const posterPage = await context.newPage();
+  await posterPage.goto(`chrome-extension://${extensionId}/popup.html`);
+  await posterPage.waitForLoadState("domcontentloaded");
+  await posterPage.waitForTimeout(300);
+
+  const posterCheck = await posterPage.evaluate(async () => {
+    const empty = document.getElementById("empty-state");
+    const poster = empty?.querySelector(".es-poster");
+    const oldTitle = empty?.querySelector(".es-title");
+    const oldChips = empty?.querySelector(".es-ai-chips");
+    const oldCta = empty?.querySelector(".es-cta");
+    const oldHero = empty?.querySelector(".es-hero-img");
+    // 资源 200?
+    const url = chrome.runtime.getURL("icons/poster-ai-team.webp");
+    let assetOk = false, assetSize = 0;
+    try {
+      const r = await fetch(url);
+      assetOk = r.ok;
+      const buf = await r.arrayBuffer();
+      assetSize = buf.byteLength;
+    } catch (e) {}
+    return {
+      hasPoster: !!poster,
+      posterSrc: poster?.getAttribute("src") || null,
+      // 老元素应已删
+      noOldTitle: !oldTitle,
+      noOldChips: !oldChips,
+      noOldCta: !oldCta,
+      noOldHero: !oldHero,
+      assetOk,
+      assetSizeKB: Math.round(assetSize / 1024),
+    };
+  });
+  check("v4.8.11: empty-state 含单张 .es-poster (旧 title/chips/cta/hero 全删)",
+    posterCheck.hasPoster
+      && posterCheck.posterSrc?.includes("poster-ai-team.webp")
+      && posterCheck.noOldTitle
+      && posterCheck.noOldChips
+      && posterCheck.noOldCta
+      && posterCheck.noOldHero,
+    JSON.stringify(posterCheck));
+  check("v4.8.11: poster-ai-team.webp 资源加载成功 (压缩后 ~170KB)",
+    posterCheck.assetOk && posterCheck.assetSizeKB > 50 && posterCheck.assetSizeKB < 400,
+    JSON.stringify(posterCheck));
 
   // 等几秒收集 layout logs
   await popupPage.waitForTimeout(2000);

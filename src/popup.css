@@ -392,97 +392,22 @@ body {
 .btn-icon:active { transform: translateY(0); }
 .btn-icon svg { display: block; }
 .chat-messages { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 12px; }
-/* v4.7.6 F23: 群聊空状态 — Arena 辩论强调风格 */
+/* v4.8.11: 群聊空状态 = 单张 AI 小队海报，标题/副文案/CTA 已画进海报 */
 .empty-state {
   margin: auto;
-  text-align: center;
-  color: var(--ink-soft);
-  max-width: 460px;
-  padding: 24px 20px;
-}
-/* v4.8.2: hero 图换成 AI 群英二次元卡通图 — 不再用渐变 emoji 圆形 */
-.empty-state .es-hero-img {
-  width: 220px;
-  max-width: 80%;
-  height: auto;
-  display: block;
-  margin: 0 auto 20px;
-  /* 让暗背景下边缘融合一些，不要硬白边 */
-  border-radius: 16px;
-  filter: drop-shadow(0 8px 28px rgba(255, 175, 80, 0.18));
-}
-.empty-state .es-title {
-  font-size: 24px;
-  font-weight: 700;
-  color: var(--ink);
-  margin-bottom: 10px;
-  letter-spacing: -0.01em;
-  line-height: 1.3;
-}
-.empty-state .es-title-em {
-  background: linear-gradient(135deg, #ff6b6b, #ffa94d);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-  margin-right: 2px;
-}
-.empty-state .es-desc {
-  font-size: 13.5px;
-  color: var(--ink-soft);
-  line-height: 1.75;
-  margin: 0 0 22px;
-}
-.empty-state .es-ai-chips {
   display: flex;
   justify-content: center;
-  flex-wrap: wrap;
-  gap: 6px 8px;
-  margin-bottom: 26px;
-}
-.empty-state .es-chip {
-  display: inline-flex;
   align-items: center;
-  gap: 5px;
-  font-size: 11.5px;
-  color: var(--ink-soft);
-  background: rgba(127, 127, 127, 0.08);
-  border: 1px solid rgba(127, 127, 127, 0.16);
-  padding: 4px 9px 4px 5px;
-  border-radius: 999px;
-  white-space: nowrap;
+  padding: 16px;
+  max-width: 100%;
 }
-.empty-state .es-chip-logo {
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  background: #fff;
-  padding: 1px;
-  object-fit: contain;
-  flex-shrink: 0;
-}
-.empty-state .es-cta {
-  display: inline-block;
-  padding: 11px 22px;
-  background: #fff;
-  color: #1d1d1f;
-  border-radius: 11px;
-  font-size: 14px;
-  font-weight: 700;
-  margin-bottom: 10px;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.08);
-}
-.empty-state .es-cta-note {
-  margin-top: 4px;
-  font-size: 11.5px;
-  color: var(--ink-soft);
-  opacity: 0.7;
-  font-style: italic;
-}
-@media (prefers-color-scheme: dark) {
-  .empty-state .es-cta {
-    background: rgba(255, 255, 255, 0.92);
-    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.4);
-  }
+.empty-state .es-poster {
+  display: block;
+  width: 100%;
+  max-width: 480px;
+  height: auto;
+  border-radius: 18px;
+  filter: drop-shadow(0 12px 36px rgba(255, 175, 80, 0.20));
 }
 .msg { display: flex; gap: 8px; align-items: flex-start; }
 .msg.me { justify-content: flex-end; }
