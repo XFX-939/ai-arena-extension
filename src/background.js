@@ -475,21 +475,72 @@ async function handleBroadcast(text, images) {
   return results;
 }
 
+// v4.8.5 F25: 鲁棒化 — 3 次重试 + 超时 + 启动 polling + popup loading 占位
 async function retryInjectParticipant(id) {
   const p = StateMachine.getParticipant(id);
   if (!p || !p.tabId) return { ok: false, error: "参与者无效" };
+  const text = StateMachine.debateSession.originalQuestion;
+  if (!text) return { ok: false, error: "无原始问题可重发（debateSession 为空）" };
+
+  const pendingMsgId = `m${Date.now()}_retry_${p.id}`;
+  const displayText = `🔄 重发原题：${text.length > 40 ? text.slice(0, 40) + "…" : text}`;
+  // 立刻推 popup loading 占位
   try {
-    const ready = await waitForContentScript(p.tabId);
-    if (!ready) {
-      return { ok: false, error: "页面未就绪" };
+    chrome.runtime.sendMessage({
+      type: "chatStreamUpdate", role: "user",
+      msgId: pendingMsgId,
+      text: `${displayText} · 正在发送…`,
+    }).catch(() => {});
+    chrome.runtime.sendMessage({
+      type: "chatStreamUpdate", role: "ai",
+      msgId: pendingMsgId, participantId: p.service,
+      text: "", isDone: false,
+    }).catch(() => {});
+  } catch (_) {}
+
+  const MAX_TRIES = 3;
+  let lastError = "未知错误";
+  let injectResult = null;
+  for (let attempt = 0; attempt < MAX_TRIES; attempt++) {
+    try {
+      const ready = await waitForContentScript(p.tabId);
+      if (!ready) {
+        lastError = "页面未就绪 (content script 失联)";
+      } else {
+        StateMachine.setLastSent(p.id, text);
+        const result = await sendMessageWithTimeout(p.tabId, { action: "inject", text }, 15000);
+        if (result?.status === "sent" || result?.status === "inputted") {
+          injectResult = result;
+          break;
+        }
+        lastError = result?.error || `inject 异常状态: ${result?.status}`;
+      }
+    } catch (e) {
+      lastError = e?.message || lastError;
     }
-    const text = StateMachine.debateSession.originalQuestion;
-    const result = await chrome.tabs.sendMessage(p.tabId, { action: "inject", text });
-    const success = result.status !== "error";
-    return { ok: success, result };
-  } catch (e) {
-    return { ok: false, error: e.message };
+    if (attempt < MAX_TRIES - 1) {
+      await new Promise(r => setTimeout(r, 1500));
+    }
   }
+
+  if (injectResult) {
+    notifyStatus(`已重发原题给 ${p.name}`);
+    try {
+      ChatBus.notifyRoundStart(displayText, [p.service], pendingMsgId);
+    } catch (e) { console.warn("[bg] notifyRoundStart fail:", e?.message); }
+    return { ok: true, result: injectResult };
+  }
+
+  try {
+    chrome.runtime.sendMessage({
+      type: "chatStreamUpdate", role: "ai",
+      msgId: pendingMsgId, participantId: p.service,
+      text: `⚠ 重发失败：${lastError}\n\n请确认 ${p.name} 网页可用，必要时刷新页面后再试。`,
+      isDone: true,
+    }).catch(() => {});
+  } catch (_) {}
+  notifyStatus(`⚠ 重发给 ${p.name} 失败: ${lastError}`);
+  return { ok: false, error: lastError };
 }
 
 // ── 手动发送给单个参与者（根据当前阶段自动构建 prompt） ──
@@ -526,33 +577,84 @@ async function sendToOneParticipant(participantId) {
   }
 }
 
-// ── 向指定服务单独发送任意 prompt（PPT 制作默认 ChatGPT） ──
+// ── 向指定服务单独发送任意 prompt（PPT 制作 / 气泡 🔄 重发） ──
+// v4.8.5 F25: 鲁棒化 — 3 次重试 + 立刻 popup loading 占位 + 成功后启动 polling
+//   让 popup 同步新 AI 回答（之前 inject 完不启动 polling，popup 永远看不到结果）
 async function sendPromptToService(service, text) {
   const prompt = (text || "").trim();
   if (!prompt) return { ok: false, error: "prompt 为空" };
   const p = StateMachine.participants.find(x => x.service === service);
   if (!p?.tabId) return { ok: false, error: `未找到已打开的 ${SERVICES[service]?.name || service} 参与者` };
 
+  // v4.8.5 F25: 立刻推 popup loading 占位（pendingMsgId 复用模式，类似 F20/F21）
+  const pendingMsgId = `m${Date.now()}_resend_${p.id}`;
+  const displayText = `🔄 重发：${prompt.length > 40 ? prompt.slice(0, 40) + "…" : prompt}`;
   try {
-    const ready = await waitForContentScript(p.tabId);
-    if (!ready) return { ok: false, error: "页面未就绪" };
+    chrome.runtime.sendMessage({
+      type: "chatStreamUpdate", role: "user",
+      msgId: pendingMsgId,
+      text: `${displayText} · 正在发送…`,
+    }).catch(() => {});
+    chrome.runtime.sendMessage({
+      type: "chatStreamUpdate", role: "ai",
+      msgId: pendingMsgId, participantId: p.service,
+      text: "", isDone: false,
+    }).catch(() => {});
+  } catch (_) {}
 
-    p.response = null;
-    p.responsePreview = null;
-    StateMachine.setLastSent(p.id, prompt);
-    StateMachine.setFlowState(FlowState.BROADCASTING);
-    StateMachine.save();
-    StateMachine._broadcastStateUpdate();
+  // v4.8.5 F25: 3 次重试 inject + sendMessageWithTimeout 15s 防挂死
+  const MAX_TRIES = 3;
+  let lastError = "未知错误";
+  let injectResult = null;
+  for (let attempt = 0; attempt < MAX_TRIES; attempt++) {
+    try {
+      const ready = await waitForContentScript(p.tabId);
+      if (!ready) {
+        lastError = "页面未就绪 (content script 失联)";
+      } else {
+        p.response = null;
+        p.responsePreview = null;
+        StateMachine.setLastSent(p.id, prompt);
+        StateMachine.setFlowState(FlowState.BROADCASTING);
+        StateMachine.save();
+        StateMachine._broadcastStateUpdate();
 
-    const result = await chrome.tabs.sendMessage(p.tabId, { action: "inject", text: prompt });
-    if (result.status === "error") return { ok: false, error: result.error || "注入失败" };
-
-    StateMachine.setFlowState(FlowState.AWAITING_RESPONSES);
-    notifyStatus(`已发送给 ${p.name}`);
-    return { ok: true, participantId: p.id, name: p.name, result };
-  } catch (e) {
-    return { ok: false, error: e.message };
+        const result = await sendMessageWithTimeout(p.tabId, { action: "inject", text: prompt }, 15000);
+        if (result?.status === "sent" || result?.status === "inputted") {
+          injectResult = result;
+          break;
+        }
+        lastError = result?.error || `inject 异常状态: ${result?.status}`;
+      }
+    } catch (e) {
+      lastError = e?.message || lastError;
+    }
+    if (attempt < MAX_TRIES - 1) {
+      await new Promise(r => setTimeout(r, 1500));
+    }
   }
+
+  if (injectResult) {
+    StateMachine.setFlowState(FlowState.AWAITING_RESPONSES);
+    notifyStatus(`已重发给 ${p.name}`);
+    // 启动 polling 让 AI 新回答能同步进 popup（复用 pendingMsgId 让占位气泡自动升级）
+    try {
+      ChatBus.notifyRoundStart(displayText, [p.service], pendingMsgId);
+    } catch (e) { console.warn("[bg] notifyRoundStart fail:", e?.message); }
+    return { ok: true, participantId: p.id, name: p.name, result: injectResult };
+  }
+
+  // 3 次都失败 — 推明确错误气泡（复用 pendingMsgId 升级 loading 为错误信息）
+  try {
+    chrome.runtime.sendMessage({
+      type: "chatStreamUpdate", role: "ai",
+      msgId: pendingMsgId, participantId: p.service,
+      text: `⚠ 重发失败：${lastError}\n\n请确认 ${p.name} 网页可用，必要时刷新页面后再试。`,
+      isDone: true,
+    }).catch(() => {});
+  } catch (_) {}
+  notifyStatus(`⚠ 重发给 ${p.name} 失败: ${lastError}`);
+  return { ok: false, error: lastError };
 }
 
 // ── 辩论（状态机驱动） ──

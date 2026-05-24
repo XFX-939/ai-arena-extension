@@ -306,6 +306,30 @@ function staticCheck() {
       pattern: /正在重新提取…/,
       desc: "F24 立刻推 loading 占位",
     },
+    {
+      id: "F25-sendPrompt-retry",
+      file: "src/background.js",
+      pattern: /F25.*3 次重试.*sendMessageWithTimeout/s,
+      desc: "F25 sendPromptToService 3 次重试 + 超时",
+    },
+    {
+      id: "F25-retryInject-retry",
+      file: "src/background.js",
+      pattern: /F25:\s*鲁棒化.*3 次重试.*启动 polling/s,
+      desc: "F25 retryInjectParticipant 3 次重试 + 启动 polling",
+    },
+    {
+      id: "F25-loading",
+      file: "src/background.js",
+      pattern: /正在发送…/,
+      desc: "F25 立刻推 popup loading 占位",
+    },
+    {
+      id: "F25-polling-trigger",
+      file: "src/background.js",
+      pattern: /ChatBus\.notifyRoundStart\(displayText,\s*\[p\.service\],\s*pendingMsgId\)/,
+      desc: "F25 inject 成功后启动 polling 让 popup 同步新回答",
+    },
   ];
   console.log("═".repeat(70));
   console.log("静态白盒：13 项源码 patch 存在性检查");
@@ -670,6 +694,70 @@ try {
     record("F20-fix", "regression", f20, "500ms 内未收到 pending 占位 — 仍是老的等 inject 完成才出气泡");
   } else {
     record("F20-fix", "partial", f20, `pending 收到但 msgId 复用失败 — 会变成两条 user 消息`);
+  }
+
+  // ════════════════════════════════════════════════════════
+  // F25-fix: sendPromptToService 3 次重试 + 启动 polling + popup loading 占位
+  // 模拟 inject 前 2 次失败 + 第 3 次成功
+  // ════════════════════════════════════════════════════════
+  console.log("\n=== F25-fix: 重发机制鲁棒化 ===");
+  const f25 = await sw.evaluate(async () => {
+    return new Promise(async (resolve) => {
+      StateMachine.hardReset();
+      StateMachine.participants = [{
+        id: "pF25", service: "ai_f25", tabId: 43001,
+        name: "F25", response: null, responsePreview: null,
+      }];
+
+      // mock inject: 前 2 次 status="error"，第 3 次 status="sent"
+      let injectCalls = 0;
+      const origTabsSend = chrome.tabs.sendMessage;
+      chrome.tabs.sendMessage = async (tid, msg) => {
+        if (msg.action === "ping") return { ready: true };  // waitForContentScript 通过
+        if (msg.action === "inject") {
+          injectCalls++;
+          if (injectCalls <= 2) return { site: "test", status: "error", error: "页面忙" };
+          return { site: "test", status: "sent" };
+        }
+        if (msg.action === "readResponse") {
+          return { text: "", isStreaming: false, hasRichContent: false, richTypes: [] };
+        }
+        return { status: "sent" };
+      };
+
+      const pushed = [];
+      const origRuntime = chrome.runtime.sendMessage;
+      chrome.runtime.sendMessage = (m) => {
+        if (m?.type === "chatStreamUpdate" && (m.participantId === "ai_f25" || m.role === "user")) {
+          pushed.push({ role: m.role, text: m.text || "", msgId: m.msgId, isDone: m.isDone });
+        }
+        return Promise.resolve();
+      };
+
+      const t0 = Date.now();
+      const result = await sendPromptToService("ai_f25", "测试重发问题");
+
+      chrome.tabs.sendMessage = origTabsSend;
+      chrome.runtime.sendMessage = origRuntime;
+
+      const loadingUser = pushed.find(m => m.role === "user" && m.text.includes("正在发送"));
+      const loadingAi = pushed.find(m => m.role === "ai" && m.text === "" && !m.isDone);
+      resolve({
+        result_ok: result?.ok,
+        injectCalls,
+        elapsed_ms: Date.now() - t0,
+        loading_user_pushed: !!loadingUser,
+        loading_ai_pushed: !!loadingAi,
+        loading_msgId: loadingUser?.msgId,
+      });
+    });
+  });
+  if (f25.result_ok && f25.injectCalls === 3 && f25.loading_user_pushed && f25.loading_ai_pushed) {
+    record("F25-fix", "fixed", f25,
+      `inject 前 2 次失败 → 第 3 次成功（共 ${f25.injectCalls} 次）+ loading 占位推送（user+ai 各 1）+ 总耗时 ${f25.elapsed_ms}ms`);
+  } else {
+    record("F25-fix", "regression", f25,
+      `result_ok=${f25.result_ok} injectCalls=${f25.injectCalls} userLoading=${f25.loading_user_pushed} aiLoading=${f25.loading_ai_pushed}`);
   }
 
   // ════════════════════════════════════════════════════════
