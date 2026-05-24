@@ -171,28 +171,14 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
   injectBootstrapToTab(tabId, tab.url, "navigation");
 });
 
-// 页面导航后自动重连 content script
-chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
-  if (changeInfo.status !== 'complete') return;
-  const p = StateMachine.getParticipantByTabId(tabId);
-  if (!p) return;
-
-  setTimeout(async () => {
-    try {
-      await sendMessageWithTimeout(tabId, { action: "ping" }, 3000);
-    } catch {
-      try {
-        await chrome.scripting.executeScript({
-          target: { tabId },
-          files: ["inject-images.js", `content-${p.service}.js`]
-        });
-        notifyStatus(`${p.name} 已自动重连`);
-      } catch (e) {
-        console.warn(`[Arena] Auto-reconnect failed for ${p.name}:`, e.message);
-      }
-    }
-  }, 2000);
-});
+// v4.8.23 F33: 删除冗余 auto-reconnect inject —— 真凶
+// 老代码 onUpdated complete 时给 AI tab 主动 inject content-${service}.js
+// 但 manifest content_scripts 已经在 document_idle 自动注入了 → 第二次 inject
+// 导致 `const SITE = "deepseek"` 重复声明 SyntaxError → 整个 script 抛错 →
+// chrome.runtime.onMessage listener 注册失败 → sendMessage readResponse 收不到
+// 响应 → polling 读到空文本 → 45s empty timeout → "未提取到内容"
+//
+// manifest content_scripts 已经处理 navigation 重注入，auto-reconnect 是冗余
 
 // ── 标签页关闭 → 直接移除参与者 ──
 chrome.tabs.onRemoved.addListener((closedId) => {
