@@ -309,6 +309,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         case "miniMenuExpand":
           // v4.8.28: mini 模式下 task-menu 打开时临时撑大窗口让菜单向下露出
           sendResponse(await ChatBus.miniMenuExpand(msg.expand)); break;
+        case "setMiniSkip":
+          // v4.8.30: popup-mini-roster 点击 AI 头像切置灰 → broadcast 过滤集合
+          ChatBus.setMiniSkippedServices(msg.services || []);
+          sendResponse({ ok: true });
+          break;
         case "popupReady":
           // v4.6.7 F17: popup DOMContentLoaded 主动告知 SW 自己的 windowId
           // SW 重启后 ChatBus.popupWindowId 是 null，靠这条消息恢复

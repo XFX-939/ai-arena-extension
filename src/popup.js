@@ -266,14 +266,26 @@
     `).join("");
     $mentionMenu.hidden = false;
     mentionActive = true;
+    // v4.8.30: mini 模式下也撑高窗口让菜单可见
+    notifyMiniExpand(true);
     $mentionMenu.querySelectorAll(".mention-item").forEach(el => {
       el.addEventListener("click", () => selectMention(el.dataset.id));
     });
   }
 
   function hideMentionMenu() {
+    if (!$mentionMenu.hidden) notifyMiniExpand(false);
     $mentionMenu.hidden = true;
     mentionActive = false;
+  }
+
+  // v4.8.30: 通用 mini 撑高 helper（task-menu / mention-menu 共用）
+  function isMini() { return document.body.getAttribute("data-mode") === "mini"; }
+  function notifyMiniExpand(expand) {
+    if (!isMini()) return;
+    try {
+      chrome.runtime.sendMessage({ type: "miniMenuExpand", expand }, () => void chrome.runtime.lastError);
+    } catch (_) {}
   }
 
   function selectMention(id) {
