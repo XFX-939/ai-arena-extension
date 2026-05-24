@@ -67,7 +67,7 @@ try {
   // 2) 读 manifest version_name 验证版本同步（直接读源文件）
   const manifest = JSON.parse(fs.readFileSync(path.join(EXT_PATH, "manifest.json"), "utf8"));
   console.log(`[smoke] manifest version: ${manifest.version}, version_name: ${manifest.version_name}`);
-  check("manifest version_name = 4.6.12-beta", manifest.version_name === "4.6.12-beta", `actual: ${manifest.version_name}`);
+  check("manifest version_name = 4.7.1-beta", manifest.version_name === "4.7.1-beta", `actual: ${manifest.version_name}`);
 
   // 3) 打开 sidepanel.html（作为普通 tab），验证 DOM
   const sidepanelPage = await context.newPage();
@@ -75,10 +75,10 @@ try {
   await sidepanelPage.waitForLoadState("domcontentloaded");
 
   const versionBadge = await sidepanelPage.locator(".version").textContent();
-  check("sidepanel version badge", versionBadge === "v4.6.12-beta", `actual: "${versionBadge}"`);
+  check("sidepanel version badge", versionBadge === "v4.7.1-beta", `actual: "${versionBadge}"`);
 
   const footerVersion = await sidepanelPage.locator(".footer").textContent();
-  check("sidepanel footer version", footerVersion?.includes("v4.6.12-beta"), `actual: "${footerVersion?.slice(0, 100)}"`);
+  check("sidepanel footer version", footerVersion?.includes("v4.7.1-beta"), `actual: "${footerVersion?.slice(0, 100)}"`);
 
   const openChatBtn = await sidepanelPage.locator("#btn-open-chat").count();
   check('sidepanel has "🪟 群聊" button', openChatBtn === 1);
@@ -96,7 +96,7 @@ try {
   await popupPage.waitForLoadState("domcontentloaded");
 
   const popupVersion = await popupPage.locator(".chat-version").textContent();
-  check("popup chat-version = v4.6.12-beta", popupVersion === "v4.6.12-beta", `actual: "${popupVersion}"`);
+  check("popup chat-version = v4.7.1-beta", popupVersion === "v4.7.1-beta", `actual: "${popupVersion}"`);
 
   // 图标资产验证（v4.0.11）
   const assetsOk = await popupPage.evaluate(async (extId) => {
@@ -386,6 +386,83 @@ try {
   check("v4.6.8: 累计 sub-tab — 热力图 7×24=168 cells + 图例",
     lifetimeChart.hasHeatSvg && lifetimeChart.heatCellCount === 168 && lifetimeChart.hasLegend,
     JSON.stringify(lifetimeChart));
+
+  // ========== v4.7.0: 本次 sub-tab 心流柱状图 + 任务分布饼图 ==========
+  console.log("\n[smoke] === v4.7.0 心流 + 任务饼图 ===");
+
+  // 切到 stats Tab 的"本次" sub-tab
+  await popupPage.click('.rp-tab[data-tab="stats"]');
+  await popupPage.waitForTimeout(200);
+  await popupPage.click('.rp-substat-tab[data-sub="session"]');
+  await popupPage.waitForTimeout(200);
+
+  // 先注入 7 天心流数据 + emit 任务事件
+  await popupPage.evaluate(() => {
+    const today = new Date();
+    const daily = {};
+    const flows = [12, 18, 47, 25, 8, 3, 22]; // 周三峰值 47
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date(today);
+      d.setDate(d.getDate() - i);
+      const k = d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+      daily[k] = { conversations: 5 + i, chars: 3000, models: {}, flowSec: flows[6 - i] * 60 };
+    }
+    window.ChatStats._injectFakeData({ daily });
+    // 模拟 4 个任务被触发
+    window.ChatStats._emitTask("ask");
+    window.ChatStats._emitTask("ask");
+    window.ChatStats._emitTask("ask");
+    window.ChatStats._emitTask("debate");
+    window.ChatStats._emitTask("summary");
+    window.ChatStats._emitTask("ppt");
+  });
+  await popupPage.waitForTimeout(300);
+
+  // 心流柱状图渲染
+  const flowChart = await popupPage.evaluate(() => {
+    return {
+      hasFlowTitle: document.body.innerText.includes("每日心流"),
+      barCount: document.querySelectorAll(".rp-flow-bar").length,
+      hasPeakColor: !!document.querySelector('.rp-flow-bar[fill="#34c759"]')
+    };
+  });
+  check("v4.7.0: 本次 sub-tab 心流柱状图 — 7 个柱 + 峰值绿色高亮",
+    flowChart.hasFlowTitle && flowChart.barCount === 7 && flowChart.hasPeakColor,
+    JSON.stringify(flowChart));
+
+  // 任务饼图渲染
+  const taskPie = await popupPage.evaluate(() => {
+    const arcs = document.querySelectorAll(".rp-pie-svg circle");
+    const legRows = document.querySelectorAll(".rp-pie-leg-row");
+    const centerNum = document.querySelector(".rp-pie-center-num")?.textContent;
+    return {
+      hasPieSvg: !!document.querySelector(".rp-pie-svg"),
+      arcCount: arcs.length,
+      legendRowCount: legRows.length,
+      centerTotal: centerNum
+    };
+  });
+  check("v4.7.0: 本次 sub-tab 任务饼图 — 4 个弧 + 4 行图例 + 中心总数 6",
+    taskPie.hasPieSvg && taskPie.arcCount === 4 && taskPie.legendRowCount === 4 && taskPie.centerTotal === "6",
+    JSON.stringify(taskPie));
+
+  // sessionStats.taskCounts 真累加
+  const sessionTask = await popupPage.evaluate(() => window.ChatStats._session().taskCounts);
+  check("v4.7.0: sessionStats.taskCounts 累加正确 (ask=3 debate=1 summary=1 ppt=1)",
+    sessionTask.ask === 3 && sessionTask.debate === 1 && sessionTask.summary === 1 && sessionTask.ppt === 1,
+    JSON.stringify(sessionTask));
+
+  // 任务零次时显示 empty
+  const taskPieEmpty = await popupPage.evaluate(() => {
+    // 把 sessionStats 重置
+    window.ChatStats._injectFakeSession({ taskCounts: { ask: 0, debate: 0, summary: 0, ppt: 0 } });
+    return {
+      hasEmpty: !!document.querySelector(".rp-pie-empty"),
+      noSvg: !document.querySelector(".rp-pie-svg")
+    };
+  });
+  check("v4.7.0: 任务计数全 0 时显示 empty 提示（无饼图）",
+    taskPieEmpty.hasEmpty && taskPieEmpty.noSvg, JSON.stringify(taskPieEmpty));
 
   // 6) 任务模式 hover 子菜单验证（DOM 存在性）
   const debateSubItems = await popupPage.locator('.menu-item.has-sub:has(span:text("辩论")) .sub-menu .menu-item').count();

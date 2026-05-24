@@ -3,14 +3,23 @@
 (function () {
   const STATS_KEY = "arena_lifetime_stats";
   let activeSub = "session";
-  const sessionStats = { conversations: 0, debates: 0, totalChars: 0 };
-  // v4.6.8: lifetimeStats 增加 daily / heatmap 时间序列
-  //   daily: { "YYYY-MM-DD": { conversations, chars, models: { [service]: { chars, rounds } } } }
-  //   heatmap: 长度 168 的 Int32Array 索引 = weekday(0=Sun..6=Sat) * 24 + hour(0..23)
+  // v4.7.0: sessionStats 加 taskCounts + sessionStart（用于本次心流计算）
+  const sessionStats = {
+    conversations: 0, debates: 0, totalChars: 0,
+    taskCounts: { ask: 0, debate: 0, summary: 0, ppt: 0 },
+    sessionStart: Date.now()
+  };
+  // v4.6.8/v4.7.0: lifetimeStats 增加 daily / heatmap / 任务计数 / 心流时间序列
+  //   daily: { "YYYY-MM-DD": { conversations, chars, models, flowSec, taskCounts } }
+  //   heatmap: 长度 168 的数组 索引 = weekday(0=Sun..6=Sat) * 24 + hour(0..23)
+  //   taskCounts (累计): { ask, debate, summary, ppt }
   let lifetimeStats = {
     conversations: 0, debates: 0, totalChars: 0,
-    models: {}, daily: {}, heatmap: new Array(168).fill(0)
+    models: {}, daily: {}, heatmap: new Array(168).fill(0),
+    taskCounts: { ask: 0, debate: 0, summary: 0, ppt: 0 }
   };
+  // 用于心流计算：最近一次 user 提问时间戳
+  let _lastUserMsgTs = 0;
 
   // service id → 中文名 + emoji（与 popup-role-hats.js / popup.js 同源）
   const SERVICE_META = {
@@ -142,6 +151,105 @@
     `;
   }
 
+  // ============== 图表：每日心流柱状图（v4.7.0） ==============
+  // 心流分钟 = 连续提问（间隔 < 30s）累积秒数 / 60
+  function renderFlowChart() {
+    const keys = _lastNDayKeys(7);
+    const flowMins = keys.map(k => Math.round((lifetimeStats.daily?.[k]?.flowSec || 0) / 60));
+    const maxV = Math.max(...flowMins, 1);
+    const todayMin = flowMins[flowMins.length - 1];
+    const peakIdx = flowMins.indexOf(maxV);
+    const totalMin = flowMins.reduce((a, b) => a + b, 0);
+    const weekdayLabels = ["日", "一", "二", "三", "四", "五", "六"];
+    const todayWd = new Date().getDay();
+    const W = 280, H = 100, PAD = { l: 8, r: 8, t: 8, b: 22 };
+    const innerW = W - PAD.l - PAD.r;
+    const innerH = H - PAD.t - PAD.b;
+    const barW = innerW / 7 * 0.7;
+    const stepX = innerW / 7;
+    return `
+      <div class="rp-chart-wrap">
+        <div class="rp-chart-title">🔥 每日心流（连续提问分钟数）</div>
+        <svg class="rp-chart-svg" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="7天心流分钟数">
+          ${flowMins.map((v, i) => {
+            const x = PAD.l + i * stepX + (stepX - barW) / 2;
+            const h = (v / maxV) * innerH;
+            const y = PAD.t + innerH - h;
+            const isToday = i === flowMins.length - 1;
+            const isPeak = i === peakIdx && v > 0;
+            const opacity = isPeak ? "1" : isToday ? "0.85" : (0.25 + (v / maxV) * 0.5).toFixed(2);
+            const fill = isPeak ? "#34c759" : "var(--accent)";
+            return `<rect class="rp-flow-bar" x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${barW.toFixed(1)}" height="${h.toFixed(1)}" fill="${fill}" opacity="${opacity}" rx="2"><title>${keys[i].slice(5)} · ${v} 分钟${isPeak ? " (峰值)" : ""}</title></rect>`;
+          }).join("")}
+          ${flowMins.map((v, i) => {
+            const x = PAD.l + i * stepX + stepX / 2;
+            const wdRelative = (todayWd - (6 - i) + 7) % 7;
+            const lbl = weekdayLabels[wdRelative];
+            const isToday = i === flowMins.length - 1;
+            const isPeak = i === peakIdx && v > 0;
+            const fill = isPeak ? "#34c759" : isToday ? "var(--accent)" : "var(--ink-soft)";
+            const fw = (isToday || isPeak) ? "700" : "400";
+            return `<text x="${x.toFixed(1)}" y="${H - 8}" class="rp-chart-axis" text-anchor="middle" fill="${fill}" font-weight="${fw}">${lbl}${isPeak ? " " + v + "'" : ""}</text>`;
+          }).join("")}
+        </svg>
+        <div class="rp-chart-meta">今日 ${todayMin} 分钟 · 7 日总计 ${totalMin} 分钟</div>
+      </div>
+    `;
+  }
+
+  // ============== 图表：任务分布饼图（v4.7.0） ==============
+  // 数据：本次 sub-tab → sessionStats.taskCounts；累计 → lifetimeStats.taskCounts
+  function renderTaskPie() {
+    const src = activeSub === "session" ? sessionStats.taskCounts : (lifetimeStats.taskCounts || { ask: 0, debate: 0, summary: 0, ppt: 0 });
+    const TASKS = [
+      { key: "ask",     label: "同时提问", color: "var(--accent)", emoji: "💬" },
+      { key: "debate",  label: "辩论",     color: "#34c759",       emoji: "⚔️" },
+      { key: "summary", label: "裁判总结", color: "#ff9f0a",       emoji: "📋" },
+      { key: "ppt",     label: "PPT 制作", color: "#ff3b30",       emoji: "📊" }
+    ];
+    const total = TASKS.reduce((s, t) => s + (src[t.key] || 0), 0);
+    if (total === 0) {
+      return `
+        <div class="rp-chart-wrap">
+          <div class="rp-chart-title">📋 任务分布</div>
+          <div class="rp-pie-empty">本次还没触发任何任务<br><span style="opacity:0.6">底部输入框发条消息试试</span></div>
+        </div>
+      `;
+    }
+    // 计算每段弧的 stroke-dasharray
+    const C = 40;  // 圆半径
+    const circ = 2 * Math.PI * C;
+    let offset = 0;
+    const arcs = TASKS.map(t => {
+      const v = src[t.key] || 0;
+      const len = (v / total) * circ;
+      const arc = `<circle cx="50" cy="50" r="${C}" fill="none" stroke="${t.color}" stroke-width="14" stroke-dasharray="${len.toFixed(1)} ${(circ - len).toFixed(1)}" stroke-dashoffset="${(-offset).toFixed(1)}" transform="rotate(-90 50 50)"><title>${t.emoji} ${t.label}: ${v} 次 (${((v / total) * 100).toFixed(0)}%)</title></circle>`;
+      offset += len;
+      return { html: arc, t, v };
+    });
+    return `
+      <div class="rp-chart-wrap">
+        <div class="rp-chart-title">📋 任务分布${activeSub === "session" ? "（本次）" : "（累计）"}</div>
+        <div class="rp-pie-row">
+          <svg class="rp-pie-svg" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="任务分布饼图">
+            ${arcs.map(a => a.html).join("")}
+            <text x="50" y="48" text-anchor="middle" class="rp-pie-center-num">${total}</text>
+            <text x="50" y="62" text-anchor="middle" class="rp-pie-center-lbl">次</text>
+          </svg>
+          <div class="rp-pie-legend">
+            ${arcs.filter(a => a.v > 0).map(a => `
+              <div class="rp-pie-leg-row">
+                <span class="rp-pie-leg-sq" style="background:${a.t.color}"></span>
+                <span class="rp-pie-leg-name">${a.t.emoji} ${a.t.label}</span>
+                <span class="rp-pie-leg-val">${a.v} · ${((a.v / total) * 100).toFixed(0)}%</span>
+              </div>
+            `).join("")}
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
   // ============== 渲染调度 ==============
   function render() {
     const root = document.getElementById("rp-panel-stats");
@@ -188,6 +296,10 @@
     if (activeSub === "lifetime") {
       return cells + render7DayTrend() + renderHeatmap();
     }
+    // v4.7.0: 本次 sub-tab 加 心流柱状图 + 任务分布饼图
+    if (activeSub === "session") {
+      return cells + renderFlowChart() + renderTaskPie();
+    }
     return cells;
   }
 
@@ -204,6 +316,8 @@
         if (!Array.isArray(lifetimeStats.heatmap) || lifetimeStats.heatmap.length !== 168) {
           lifetimeStats.heatmap = new Array(168).fill(0);
         }
+        // v4.7.0: taskCounts 兼容老数据
+        if (!lifetimeStats.taskCounts) lifetimeStats.taskCounts = { ask: 0, debate: 0, summary: 0, ppt: 0 };
       }
     } catch (_) {}
     render();
@@ -229,6 +343,14 @@
         lifetimeStats.heatmap = new Array(168).fill(0);
       }
       lifetimeStats.heatmap[hmIdx] = (lifetimeStats.heatmap[hmIdx] || 0) + 1;
+      // v4.7.0: 心流计算 — 连续提问间隔 < 30s 视为同一心流 session，累计 flowSec
+      const nowMs = now.getTime();
+      const FLOW_GAP_MS = 30 * 1000;
+      if (_lastUserMsgTs && (nowMs - _lastUserMsgTs) < FLOW_GAP_MS) {
+        if (!lifetimeStats.daily[dk].flowSec) lifetimeStats.daily[dk].flowSec = 0;
+        lifetimeStats.daily[dk].flowSec += Math.floor((nowMs - _lastUserMsgTs) / 1000);
+      }
+      _lastUserMsgTs = nowMs;
       // 老数据保留 30 天，超过删（避免 storage 无限增长）
       _pruneOldDaily();
       persistLifetime();
@@ -284,6 +406,22 @@
     render();
   });
 
+  // v4.7.0: 任务分布埋点 — popup-task-menu.js 触发任务时 emit 该事件
+  document.addEventListener("task:dispatched", (e) => {
+    const t = e.detail?.task;
+    if (!t || !["ask", "debate", "summary", "ppt"].includes(t)) return;
+    sessionStats.taskCounts[t] = (sessionStats.taskCounts[t] || 0) + 1;
+    if (!lifetimeStats.taskCounts) lifetimeStats.taskCounts = { ask: 0, debate: 0, summary: 0, ppt: 0 };
+    lifetimeStats.taskCounts[t] = (lifetimeStats.taskCounts[t] || 0) + 1;
+    // 也按日累积
+    const dk = todayKey();
+    if (!lifetimeStats.daily[dk]) lifetimeStats.daily[dk] = { conversations: 0, chars: 0, models: {} };
+    if (!lifetimeStats.daily[dk].taskCounts) lifetimeStats.daily[dk].taskCounts = { ask: 0, debate: 0, summary: 0, ppt: 0 };
+    lifetimeStats.daily[dk].taskCounts[t] = (lifetimeStats.daily[dk].taskCounts[t] || 0) + 1;
+    persistLifetime();
+    if (activeSub === "session") render();
+  });
+
   try {
     chrome.storage.onChanged.addListener((changes, area) => {
       if (area === "local" && changes[STATS_KEY]) {
@@ -298,13 +436,21 @@
     });
   } catch (_) {}
 
-  // v4.6.8: 暴露给 E2E
+  // v4.6.8 / v4.7.0: 暴露给 E2E
   window.ChatStats = {
     refresh, render,
     _state: () => lifetimeStats,
+    _session: () => sessionStats,
     _injectFakeData: (data) => {
       lifetimeStats = { ...lifetimeStats, ...data };
       render();
+    },
+    _injectFakeSession: (data) => {
+      Object.assign(sessionStats, data);
+      render();
+    },
+    _emitTask: (task) => {
+      document.dispatchEvent(new CustomEvent("task:dispatched", { detail: { task } }));
     }
   };
 

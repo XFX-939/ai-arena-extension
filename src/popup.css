@@ -2325,3 +2325,69 @@ body { letter-spacing: -0.01em; }
 @media (prefers-color-scheme: dark) {
   .md-math:hover { background: rgba(10,132,255,0.15); }
 }
+
+/* v4.7.0: 心流柱状图 + 任务分布饼图 */
+.rp-flow-bar { transition: opacity 0.2s; cursor: help; }
+.rp-flow-bar:hover { opacity: 1 !important; }
+
+.rp-pie-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 6px 4px;
+}
+.rp-pie-svg {
+  width: 110px;
+  height: 110px;
+  flex-shrink: 0;
+}
+.rp-pie-svg circle { transition: stroke-width 0.2s; cursor: help; }
+.rp-pie-svg circle:hover { stroke-width: 17; }
+.rp-pie-center-num {
+  font-size: 18px;
+  font-weight: 700;
+  fill: var(--ink);
+  font-family: inherit;
+  font-feature-settings: "tnum" 1;
+}
+.rp-pie-center-lbl {
+  font-size: 9px;
+  fill: var(--ink-soft);
+  font-family: inherit;
+}
+.rp-pie-legend {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 11px;
+}
+.rp-pie-leg-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.rp-pie-leg-sq {
+  width: 9px; height: 9px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+.rp-pie-leg-name {
+  flex: 1;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rp-pie-leg-val {
+  color: var(--ink-soft);
+  font-size: 10px;
+  font-feature-settings: "tnum" 1;
+}
+.rp-pie-empty {
+  padding: 16px 8px;
+  text-align: center;
+  font-size: 11px;
+  color: var(--ink-soft);
+  line-height: 1.7;
+}
