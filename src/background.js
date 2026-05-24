@@ -21,11 +21,19 @@ const SERVICES = {
 
 const MAX_PARTICIPANTS = 3;
 const _removingTabs = new Set();
+let _modeSwitchPromise = Promise.resolve();  // v4.8.30 F38-②: setWindowMode 切换串行化
 let windowMode = "tiled"; // "tab" | "tiled"
-chrome.storage.local.get("windowMode", (d) => { if (d.windowMode) windowMode = d.windowMode; });
+// v4.8.30 F38-①: windowMode 异步加载竞态修复 — 包成 Promise 加入 initPromise，
+// 让 injectBootstrapToExistingTabs 等 windowMode 真加载完再分流 tab/tiled 路径
+const _windowModeLoaded = new Promise(resolve => {
+  chrome.storage.local.get("windowMode", (d) => {
+    if (d.windowMode === "tab" || d.windowMode === "tiled") windowMode = d.windowMode;
+    resolve();
+  });
+});
 
 // ── 初始化 ──
-const initPromise = Promise.all([StateMachine.init(), ChatBus.init()]);
+const initPromise = Promise.all([StateMachine.init(), ChatBus.init(), _windowModeLoaded]);
 
 // v4.2.0 Phase 2: 默认点扩展图标 → 开 popup 群聊窗口（而非 sidepanel）
 // sidepanel 仍可通过 popup 内"打开 sidepanel"按钮或 openSidepanel message 进入
@@ -133,7 +141,9 @@ async function injectBootstrapToTab(tabId, url, reason) {
 }
 
 async function injectBootstrapToExistingTabs() {
-  console.log("[F32+] scan existing AI tabs");
+  // v4.8.30 F38-①: 等 windowMode 真加载完，否则会按默认 "tiled" 错走 activateAiWindowsOnce
+  try { await _windowModeLoaded; } catch (_) {}
+  console.log(`[F32+] scan existing AI tabs (mode=${windowMode})`);
   let injected = 0, failed = 0, totalMatched = 0;
   const aiTabIds = [];
   for (const pattern of AI_URL_PATTERNS) {
@@ -168,10 +178,19 @@ async function injectBootstrapToExistingTabs() {
   }
 }
 
+// v4.8.30 F38-④: _activatedOnce 用 chrome.storage.session 持久化，
+// 防 SW 30s idle 回收后重置 → 每次 SW 唤醒 AI window 反复闪烁
 let _activatedOnce = false;
+const _activatedOnceLoaded = (chrome.storage.session
+  ? chrome.storage.session.get("activatedOnce").then(d => { _activatedOnce = !!d.activatedOnce; }).catch(() => {})
+  : Promise.resolve());
 async function activateAiWindowsOnce(aiTabs) {
+  try { await _activatedOnceLoaded; } catch (_) {}
   if (_activatedOnce || !aiTabs.length) return;
   _activatedOnce = true;
+  if (chrome.storage.session) {
+    try { chrome.storage.session.set({ activatedOnce: true }).catch(() => {}); } catch (_) {}
+  }
   // 按 tab 去重（避免一个 window 多个 tab 重复 focus）
   const uniqueWindows = new Map();  // windowId -> first tabId
   for (const t of aiTabs) {
@@ -242,6 +261,9 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
 
 // ── 标签页关闭 → 直接移除参与者 ──
 chrome.tabs.onRemoved.addListener((closedId) => {
+  // v4.8.30 F38-⑤: 显式 detach CDP 防 attachedTabs Map 残留 stale 条目
+  // （onDetach 事件通常会兜底但异常路径可能漏发）
+  if (self.CDPExtractor) self.CDPExtractor.detach(closedId).catch(() => {});
   if (_removingTabs.delete(closedId)) return; // We initiated this removal
   const p = StateMachine.participants.find(p => p.tabId === closedId);
   if (p) {
@@ -278,22 +300,24 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         case "getSelectors":      sendResponse(DEFAULT_SELECTORS[msg.platform] || {}); break;
         case "setWindowMode": {
           // v4.8.29 F37 混合模式: 切换 Tab/并列 时同步 attach/detach CDP
+          // v4.8.30 F38-②: Promise chain 串行化防快速切换竞态（attach fire-and-forget
+          // 还没完成 detachAll 看到空 Map → 残留 debugger attach）
           const oldMode = windowMode;
           windowMode = msg.mode;
           chrome.storage.local.set({ windowMode: msg.mode });
-          if (self.CDPExtractor) {
+          _modeSwitchPromise = _modeSwitchPromise.then(async () => {
+            if (!self.CDPExtractor) return;
             if (msg.mode === "tab" && oldMode !== "tab") {
-              // 切到 Tab 模式 → 批量 attach 所有现有 AI tab
-              console.log(`[F37] mode → tab, attaching ${StateMachine.participants.length} AI tabs`);
+              console.log(`[F37] mode → tab, attaching ${StateMachine.participants.length} AI tabs (serial)`);
               for (const p of StateMachine.participants) {
-                if (p.tabId) self.CDPExtractor.attachAndWake(p.tabId).catch(() => {});
+                if (p.tabId) await self.CDPExtractor.attachAndWake(p.tabId).catch(() => {});
               }
             } else if (msg.mode === "tiled" && oldMode === "tab") {
-              // 切到并列模式 → detach 所有让黄条消失（并列模式靠 MAIN world patch）
-              console.log(`[F37] mode → tiled, detaching all CDP`);
-              self.CDPExtractor.detachAll().catch(() => {});
+              console.log(`[F37] mode → tiled, detaching all CDP (after prior attach finished)`);
+              await self.CDPExtractor.detachAll();
             }
-          }
+          }).catch(e => console.warn("[F38] mode switch chain:", e?.message));
+          await _modeSwitchPromise;
           sendResponse({ ok: true });
           break;
         }
@@ -554,6 +578,11 @@ async function addParticipant(service) {
   // 并列模式靠 MAIN world bootstrap-main-world.js 自动注入（已在 manifest content_scripts）
   if (windowMode === "tab" && self.CDPExtractor) {
     setTimeout(async () => {
+      // v4.8.30 F38-③: timeout 内重检 windowMode — 1.5s 内若切到 tiled，不该再 attach
+      if (windowMode !== "tab") {
+        console.log(`[F38] addParticipant timeout: mode changed to ${windowMode}, skip attach`);
+        return;
+      }
       try {
         const r = await self.CDPExtractor.attachAndWake(tabId);
         console.log(`[F37] tab-mode CDP attach service=${service} tab=${tabId} ok=${r?.ok} code=${r?.code}`);
