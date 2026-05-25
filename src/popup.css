@@ -1100,25 +1100,31 @@ body[data-mode="mini"] .mention-menu {
   overflow: hidden;
   padding-bottom: 40px;  /* 给 toggle 按钮留位 */
 }
-/* v4.8.41: 简洁模式 — 只显示一行 + 展开按钮，极致压缩空间 */
+/* v4.8.41 + v4.8.44 修复: 简洁模式 — 完整 1 行文字 + 下一行展开按钮
+   旧版 max-height:2.5em + padding-bottom:32px 把文字挤到只剩半行（用户反馈裁切过头）
+   新版：文字区独立 1 行（max-height ~1.6em），按钮通过 padding-bottom 留独立第二行空间 */
 .msg-bubble-foldable.compact-fold:not(.expanded) {
-  max-height: 2.5em;  /* 约一行高（含 padding） */
-  padding-bottom: 32px;
+  max-height: none;
+  padding-bottom: 34px;  /* 给底部 absolute 按钮（≈30px 高）腾位 */
   display: block;
+  position: relative;
 }
 .msg-bubble-foldable.compact-fold:not(.expanded) > *:not(.msg-fold-toggle) {
-  display: inline;
-  white-space: nowrap;
+  display: block;
+  max-height: 1.6em;  /* line-height 1.5 × 1 行 + 余量 = 严格一行 */
   overflow: hidden;
+  white-space: nowrap;
   text-overflow: ellipsis;
+  margin: 0;
 }
 .msg-bubble-foldable.compact-fold:not(.expanded)::before {
-  bottom: 30px;
-  height: 36px;
+  display: none;  /* 渐变遮罩不需要 — 已用 ellipsis */
 }
 .msg-bubble-foldable.compact-fold:not(.expanded) .msg-fold-toggle {
-  padding: 6px 12px;
-  font-size: 10.5px;
+  padding: 5px 12px;
+  font-size: 11px;
+  border-top: 1px solid var(--border);
+  background: transparent;
 }
 .msg-bubble-foldable:not(.expanded)::before {
   content: "";

@@ -67,7 +67,7 @@ try {
   // 2) 读 manifest version_name 验证版本同步（直接读源文件）
   const manifest = JSON.parse(fs.readFileSync(path.join(EXT_PATH, "manifest.json"), "utf8"));
   console.log(`[smoke] manifest version: ${manifest.version}, version_name: ${manifest.version_name}`);
-  check("manifest version_name = 4.8.43-beta", manifest.version_name === "4.8.43-beta", `actual: ${manifest.version_name}`);
+  check("manifest version_name = 4.8.44-beta", manifest.version_name === "4.8.44-beta", `actual: ${manifest.version_name}`);
 
   // 3) 打开 sidepanel.html（作为普通 tab），验证 DOM
   const sidepanelPage = await context.newPage();
@@ -75,10 +75,10 @@ try {
   await sidepanelPage.waitForLoadState("domcontentloaded");
 
   const versionBadge = await sidepanelPage.locator(".version").textContent();
-  check("sidepanel version badge", versionBadge === "v4.8.43-beta", `actual: "${versionBadge}"`);
+  check("sidepanel version badge", versionBadge === "v4.8.44-beta", `actual: "${versionBadge}"`);
 
   const footerVersion = await sidepanelPage.locator(".footer").textContent();
-  check("sidepanel footer version", footerVersion?.includes("v4.8.43-beta"), `actual: "${footerVersion?.slice(0, 100)}"`);
+  check("sidepanel footer version", footerVersion?.includes("v4.8.44-beta"), `actual: "${footerVersion?.slice(0, 100)}"`);
 
   const openChatBtn = await sidepanelPage.locator("#btn-open-chat").count();
   check('sidepanel has "🪟 群聊" button', openChatBtn === 1);
@@ -96,7 +96,7 @@ try {
   await popupPage.waitForLoadState("domcontentloaded");
 
   const popupVersion = await popupPage.locator(".chat-version").textContent();
-  check("popup chat-version = v4.8.43-beta", popupVersion === "v4.8.43-beta", `actual: "${popupVersion}"`);
+  check("popup chat-version = v4.8.44-beta", popupVersion === "v4.8.44-beta", `actual: "${popupVersion}"`);
 
   // 图标资产验证（v4.0.11）
   const assetsOk = await popupPage.evaluate(async (extId) => {
@@ -1182,6 +1182,27 @@ try {
     userEditedResult.afterClear?.resp === "AI 新答 v2" &&
     userEditedResult.afterClear?.userEdited === false,
     JSON.stringify(userEditedResult));
+
+  // v4.8.44 ①: 简洁模式折叠裁切修复 — 文字 1 行完整可见 + 下一行按钮
+  //         ②: stateUpdate 路径补"新 service 自动 selected"（image #59 bug）
+  const popupCssV44 = fs.readFileSync(path.join(EXT_PATH, "popup.css"), "utf8");
+  const rosterJsV44 = fs.readFileSync(path.join(EXT_PATH, "popup-roster.js"), "utf8");
+  check("v4.8.44 ①: compact-fold 不再裁切文字（max-height 移除 + padding-bottom 留按钮位）",
+    /\.msg-bubble-foldable\.compact-fold:not\(\.expanded\)\s*\{[\s\S]{0,300}max-height:\s*none/.test(popupCssV44) &&
+    /\.msg-bubble-foldable\.compact-fold:not\(\.expanded\)\s*\{[\s\S]{0,300}padding-bottom:\s*34px/.test(popupCssV44),
+    "compact-fold 仍 max-height:2.5em（会裁文字）");
+  check("v4.8.44 ①: compact-fold 子元素 max-height:1.6em + nowrap + ellipsis（严格 1 行）",
+    /compact-fold:not\(\.expanded\)\s*>\s*\*:not\(\.msg-fold-toggle\)[\s\S]{0,300}max-height:\s*1\.6em/.test(popupCssV44) &&
+    /compact-fold:not\(\.expanded\)\s*>\s*\*:not\(\.msg-fold-toggle\)[\s\S]{0,300}white-space:\s*nowrap/.test(popupCssV44),
+    "compact-fold 子元素未严格 1 行");
+  check("v4.8.44 ①: compact-fold::before 渐变遮罩已删（display:none，与 ellipsis 重复）",
+    /\.msg-bubble-foldable\.compact-fold:not\(\.expanded\)::before[\s\S]{0,200}display:\s*none/.test(popupCssV44),
+    "compact-fold::before 仍存在遮罩");
+  check("v4.8.44 ②: popup-roster.js stateUpdate 路径含'新 service 自动 selected'逻辑",
+    // 匹配 stateUpdate 分支体内 lastKnownServices 比较和 add to selected
+    /msg\.type === "stateUpdate"[\s\S]{0,1500}lastKnownServices\.has\(s\)[\s\S]{0,200}selected\.add\(s\)/.test(rosterJsV44) &&
+    /msg\.type === "stateUpdate"[\s\S]{0,1500}lastKnownServices = known/.test(rosterJsV44),
+    "popup-roster.js stateUpdate 分支仍漏新 service 自动选中");
 
   // ③ 极简任务 picker — 删了 ⚙️ icon 和"任务"label
   const pickerSimple = await popupPage.evaluate(() => {
