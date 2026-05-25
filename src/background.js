@@ -820,35 +820,61 @@ async function sendPromptToService(service, text) {
 
 // ── 辩论（状态机驱动） ──
 
+// v4.8.38 + v4.8.39: 辩论前 sanity 检查 — 三类警告合并到一个 needsConfirm
+//   ① polling: 有 AI 正在 polling 中 → p.response 是上一轮的（v4.8.38）
+//   ② too_short: 回答 < 50 字 → 可能 ChatGPT Pro 在思考中被误判为完成（v4.8.39）
+//   ③ same_as_last: 回答与上一轮完全相同 → 可能提取 bug（v4.8.39）
+const DEBATE_TOO_SHORT_THRESHOLD = 50;
+
+function _buildDebateWarnings(responses) {
+  const warnings = [];
+  // ① polling
+  let pollingServices = [];
+  try {
+    pollingServices = ChatBus.getActivePollingServices?.() || [];
+  } catch (_) {}
+  for (const svc of pollingServices) {
+    const p = StateMachine.participants.find(pp => pp.service === svc);
+    if (p) warnings.push({ type: "polling", name: p.name, service: svc });
+  }
+  // ② / ③ 逐个 response 检查（同一 AI 字数过短优先，不再叠加 same_as_last）
+  const lastRound = StateMachine.debateSession.rounds.slice(-1)[0];
+  for (const [id, r] of Object.entries(responses)) {
+    const text = (r.text || "").trim();
+    if (text.length < DEBATE_TOO_SHORT_THRESHOLD) {
+      warnings.push({ type: "too_short", name: r.name, length: text.length });
+      continue;
+    }
+    if (lastRound?.responses?.[id]?.text === r.text) {
+      warnings.push({ type: "same_as_last", name: r.name });
+    }
+  }
+  return warnings;
+}
+
+function _formatDebateWarningMessage(warnings) {
+  const polling = warnings.filter(w => w.type === "polling");
+  const tooShort = warnings.filter(w => w.type === "too_short");
+  const sameAsLast = warnings.filter(w => w.type === "same_as_last");
+  const lines = [];
+  if (polling.length) {
+    lines.push(`⏳ ${polling.length} 个 AI 仍在回答中：${polling.map(w => w.name).join("、")}`);
+  }
+  if (tooShort.length) {
+    lines.push(`⚠ ${tooShort.length} 个 AI 回答过短（< ${DEBATE_TOO_SHORT_THRESHOLD} 字，可能在思考中未输出完）：${tooShort.map(w => `${w.name}(${w.length}字)`).join("、")}`);
+  }
+  if (sameAsLast.length) {
+    lines.push(`⚠ ${sameAsLast.length} 个 AI 回答与上一轮完全相同（可能提取 bug）：${sameAsLast.map(w => w.name).join("、")}`);
+  }
+  lines.push("");
+  lines.push("用当前内容继续辩论？");
+  return lines.join("\n");
+}
+
 async function handleDebateRound(style = "free", guidance = "", concise = false, force = false) {
   if (StateMachine.participants.length < 2) {
     notifyStatus("至少需要 2 个参与者");
     return { ok: false, error: "参与者不足" };
-  }
-
-  // v4.8.38: 检测是否有 AI 正在 polling（重发后 / 当前轮还没收完）
-  //   handleDebateRound 严格读 p.response，但 polling 未完成时 p.response 仍是上一轮内容。
-  //   非强制模式下返回 needsConfirm，由 popup 弹 confirm 询问用户。
-  if (!force) {
-    let activeServices = [];
-    try {
-      activeServices = ChatBus.getActivePollingServices?.() || [];
-    } catch (_) {}
-    if (activeServices.length > 0) {
-      // service → 友好名 + participant id 映射
-      const pollingNames = activeServices.map(svc => {
-        const p = StateMachine.participants.find(pp => pp.service === svc);
-        return p?.name || svc;
-      });
-      return {
-        ok: false,
-        needsConfirm: true,
-        reason: "polling_in_progress",
-        pollingServices: activeServices,
-        pollingNames,
-        message: `⏳ ${pollingNames.length} 个 AI 仍在回答中（${pollingNames.join("、")}），用当前内容辩论将使用上一轮的回答。确认继续？`,
-      };
-    }
   }
 
   const responses = {};
@@ -861,6 +887,24 @@ async function handleDebateRound(style = "free", guidance = "", concise = false,
   if (Object.keys(responses).length < 2) {
     notifyStatus("至少需要 2 个有效回答");
     return { ok: false, error: "回答不足" };
+  }
+
+  // v4.8.38 + v4.8.39: sanity 检查 — 三类警告合并到一个 needsConfirm
+  if (!force) {
+    const warnings = _buildDebateWarnings(responses);
+    if (warnings.length > 0) {
+      const polling = warnings.filter(w => w.type === "polling");
+      return {
+        ok: false,
+        needsConfirm: true,
+        reason: "suspicious_state",
+        warnings,
+        // 向后兼容字段（v4.8.38 时只有 polling 一类）
+        pollingServices: polling.map(w => w.service),
+        pollingNames: polling.map(w => w.name),
+        message: _formatDebateWarningMessage(warnings),
+      };
+    }
   }
 
   const roundNum = StateMachine.debateSession.rounds.length + 1;
