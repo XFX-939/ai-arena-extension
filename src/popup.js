@@ -143,23 +143,44 @@
   }
 
   // v4.3.6: AI 长文折叠（>800 字且已完成时显示"展开全文"按钮）
+  // v4.8.41: 简洁模式（ChatCompactMode.isOn() === true）下阈值改 100 + 提取中即折叠
   const FOLD_THRESHOLD = 800;
+  const FOLD_THRESHOLD_COMPACT = 100;
   function applyFoldClass(bubble, text, isDone) {
     if (!bubble) return;
     // 移除旧 toggle
     bubble.querySelectorAll(".msg-fold-toggle").forEach(el => el.remove());
-    if (!isDone || (text || "").length <= FOLD_THRESHOLD) {
-      bubble.classList.remove("msg-bubble-foldable", "expanded");
+    const compact = window.ChatCompactMode?.isOn?.() === true;
+    const threshold = compact ? FOLD_THRESHOLD_COMPACT : FOLD_THRESHOLD;
+    const len = (text || "").length;
+    // 简洁模式：提取中也折叠（不要求 isDone）；非简洁：仅完成后折叠
+    const shouldFold = compact ? len > threshold : (isDone && len > threshold);
+    if (!shouldFold) {
+      bubble.classList.remove("msg-bubble-foldable", "expanded", "compact-fold");
       return;
     }
     bubble.classList.add("msg-bubble-foldable");
-    bubble.classList.remove("expanded");  // 完成时默认折叠
+    if (compact) bubble.classList.add("compact-fold");
+    else bubble.classList.remove("compact-fold");
+    bubble.classList.remove("expanded");  // 默认折叠
     const btn = document.createElement("button");
     btn.className = "msg-fold-toggle";
     btn.dataset.act = "fold-toggle";
-    btn.innerHTML = `<span class="msg-fold-icon">▾</span> 展开全文 <span class="msg-fold-count">${(text || "").length} 字</span>`;
+    btn.innerHTML = `<span class="msg-fold-icon">▾</span> 展开全文 <span class="msg-fold-count">${len} 字</span>`;
     bubble.appendChild(btn);
   }
+
+  // v4.8.41: compact mode 切换时，对所有已渲染气泡重新评估折叠状态
+  document.addEventListener("compact:changed", () => {
+    document.querySelectorAll(".msg.ai").forEach(row => {
+      const bubble = row.querySelector(".msg-bubble");
+      if (!bubble) return;
+      const stat = row.querySelector(".msg-meta .stat");
+      const isDone = !!stat?.classList?.contains("done");
+      const text = bubble.innerText || bubble.textContent || "";
+      applyFoldClass(bubble, text, isDone);
+    });
+  });
 
   function updateAIBubble(msgId, participantId, text, isDone, hasRichContent, richTypes) {
     const row = bubbleByKey.get(`${msgId}-${participantId}`);

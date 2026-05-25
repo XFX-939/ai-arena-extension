@@ -29,11 +29,13 @@
         <img class="chat-icon" src="icons/icon48.png" alt="">
         <span class="chat-name">AI Arena</span>
         <span class="chat-subtitle">群聊</span>
-        <span class="chat-version">v4.8.40-beta</span>
+        <span class="chat-version">v4.8.41-beta</span>
       </div>
       <div class="chat-actions">
         <!-- v4.8.15 F30: 折叠到顶 — mini bar 模式触发器 -->
         <button class="btn-mini-mode" id="btn-mini-mode" type="button" title="折叠到顶部一行 / 展开恢复">⇲ 折叠到顶</button>
+        <!-- v4.8.41: 简洁模式 — 长回答超 100 字自动折叠为一行（提取中即生效）-->
+        <button class="btn-compact-mode" id="btn-compact-mode" type="button" aria-pressed="false" title="简洁模式 — 长回答超 100 字自动折叠为一行">⊟ 简洁</button>
         <div class="hdr-mode-toggle" id="hdr-mode-toggle" role="group" aria-label="AI 窗口布局">
           <button type="button" class="hdr-mode-btn" data-mode="tab" title="所有 AI 同窗口不同标签页">Tab</button>
           <button type="button" class="hdr-mode-btn" data-mode="tiled" title="每个 AI 独立窗口并列">并列</button>
@@ -248,5 +250,6 @@
   <script src="popup-task-menu.js"></script>
   <script src="popup.js"></script>
   <script src="popup-mini-mode.js"></script>
+  <script src="popup-compact-mode.js"></script>
 </body>
 </html>
