@@ -731,6 +731,8 @@ const ChatBus = (() => {
     const p = list.find(x => x.id === participantId)
            || list.find(x => x.service === participantId);
     if (!p || !p.tabId) return { ok: false, error: "未找到参与者" };
+    // v4.8.43: 用户主动点重新提取 → 清除 userEdited 让新 AI 内容能被写入
+    try { StateMachine.clearUserEdited?.(p.id); } catch (_) {}
 
     const msgId = `manual_${Date.now()}`;
     // 立刻推 loading 占位（用同 msgId，成功 / 失败时覆盖更新）

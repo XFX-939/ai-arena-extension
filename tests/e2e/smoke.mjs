@@ -67,7 +67,7 @@ try {
   // 2) 读 manifest version_name 验证版本同步（直接读源文件）
   const manifest = JSON.parse(fs.readFileSync(path.join(EXT_PATH, "manifest.json"), "utf8"));
   console.log(`[smoke] manifest version: ${manifest.version}, version_name: ${manifest.version_name}`);
-  check("manifest version_name = 4.8.42-beta", manifest.version_name === "4.8.42-beta", `actual: ${manifest.version_name}`);
+  check("manifest version_name = 4.8.43-beta", manifest.version_name === "4.8.43-beta", `actual: ${manifest.version_name}`);
 
   // 3) 打开 sidepanel.html（作为普通 tab），验证 DOM
   const sidepanelPage = await context.newPage();
@@ -75,10 +75,10 @@ try {
   await sidepanelPage.waitForLoadState("domcontentloaded");
 
   const versionBadge = await sidepanelPage.locator(".version").textContent();
-  check("sidepanel version badge", versionBadge === "v4.8.42-beta", `actual: "${versionBadge}"`);
+  check("sidepanel version badge", versionBadge === "v4.8.43-beta", `actual: "${versionBadge}"`);
 
   const footerVersion = await sidepanelPage.locator(".footer").textContent();
-  check("sidepanel footer version", footerVersion?.includes("v4.8.42-beta"), `actual: "${footerVersion?.slice(0, 100)}"`);
+  check("sidepanel footer version", footerVersion?.includes("v4.8.43-beta"), `actual: "${footerVersion?.slice(0, 100)}"`);
 
   const openChatBtn = await sidepanelPage.locator("#btn-open-chat").count();
   check('sidepanel has "🪟 群聊" button', openChatBtn === 1);
@@ -96,7 +96,7 @@ try {
   await popupPage.waitForLoadState("domcontentloaded");
 
   const popupVersion = await popupPage.locator(".chat-version").textContent();
-  check("popup chat-version = v4.8.42-beta", popupVersion === "v4.8.42-beta", `actual: "${popupVersion}"`);
+  check("popup chat-version = v4.8.43-beta", popupVersion === "v4.8.43-beta", `actual: "${popupVersion}"`);
 
   // 图标资产验证（v4.0.11）
   const assetsOk = await popupPage.evaluate(async (extId) => {
@@ -1052,10 +1052,11 @@ try {
     /\.hqa-btn\[data-act="reextract"\]:hover[\s\S]{0,200}#34c759/.test(popupCssV42) &&
     /\.hqa-btn\[data-act="skip"\]:hover[\s\S]{0,200}#ff9f0a/.test(popupCssV42),
     "popup.css 缺 hover 跳实色");
-  check("v4.8.42 ③: popup.css .hqa-btn::after data-label hover tooltip",
-    /\.hqa-btn::after[\s\S]{0,400}attr\(data-label\)/.test(popupCssV42) &&
-    /\.hqa-btn:hover::after/.test(popupCssV42),
-    "popup.css 缺 hqa-btn tooltip 样式");
+  // v4.8.43 修订：.hqa-btn::after data-label tooltip 已删除（与浏览器原生 title 重复）
+  check("v4.8.43: popup.css .hqa-btn::after 已删除（用浏览器原生 title 显示）",
+    !/\.hqa-btn::after\b/.test(popupCssV42) &&
+    !/\.hqa-btn:hover::after/.test(popupCssV42),
+    "popup.css 仍含 .hqa-btn::after tooltip");
   check("v4.8.42 ③: popup.css 气泡 .msg-meta .acts button 也用 K 样式（resend/reextract/skip 跳色）",
     /\.msg-meta \.acts button\[data-act="resend"\][\s\S]{0,200}rgba\(10,132,255/.test(popupCssV42) &&
     /\.msg-meta \.acts button\[data-act="reextract"\][\s\S]{0,200}rgba\(52,199,89/.test(popupCssV42) &&
@@ -1082,6 +1083,105 @@ try {
       resendLen: svgRuntimeResult.resendSvg.length,
       reextractLen: svgRuntimeResult.reextractSvg.length,
     }));
+
+  // v4.8.43 ①: chat-roster pill 改造（logo + 一行预览） + roster-count "3/3" 已删
+  //         ②: upload-hint 智能隐藏（有 AI 回答后加 .hidden）
+  //         ③: resp-editor DOM + popup-roster.js openEditor/blur 保存
+  //         ④: state-machine setParticipantResponse opts.userEdited + clearUserEdited
+  //         ⑤: broadcast/debate/retryInject/reextractOne 入口清 userEdited
+  const popupHtmlV43 = fs.readFileSync(path.join(EXT_PATH, "popup.html"), "utf8");
+  const rosterJsV43 = fs.readFileSync(path.join(EXT_PATH, "popup-roster.js"), "utf8");
+  const popupCssV43 = fs.readFileSync(path.join(EXT_PATH, "popup.css"), "utf8");
+  const smV43 = fs.readFileSync(path.join(EXT_PATH, "state-machine.js"), "utf8");
+  const bgV43 = fs.readFileSync(path.join(EXT_PATH, "background.js"), "utf8");
+  const chatBusV43 = fs.readFileSync(path.join(EXT_PATH, "chat-bus.js"), "utf8");
+
+  check("v4.8.43 ①: popup.html 删 roster-count（无 'class=\"roster-count\"'）",
+    !/class="roster-count"/.test(popupHtmlV43),
+    "popup.html 仍含 roster-count");
+  check("v4.8.43 ①: popup.html 新增 resp-editor DOM（textarea + close）",
+    /id="resp-editor"/.test(popupHtmlV43) &&
+    /id="resp-editor-text"/.test(popupHtmlV43) &&
+    /id="resp-editor-close"/.test(popupHtmlV43),
+    "popup.html 缺 resp-editor 结构");
+  check("v4.8.43 ①: popup-roster.js 改造为 pill 形态（roster-pill / rp-logo-btn / rp-preview）",
+    /roster-pill/.test(rosterJsV43) &&
+    /rp-logo-btn/.test(rosterJsV43) &&
+    /rp-preview/.test(rosterJsV43) &&
+    /data-toggle/.test(rosterJsV43) &&
+    /data-edit/.test(rosterJsV43),
+    "popup-roster.js 未改造为 pill");
+  check("v4.8.43 ②: popup-roster.js 含 upload-hint 智能隐藏逻辑（checkAndHideHint）",
+    /checkAndHideHint/.test(rosterJsV43) &&
+    /\$hint\.classList\.add\("hidden"\)/.test(rosterJsV43),
+    "popup-roster.js 缺 upload-hint 智能隐藏");
+  check("v4.8.43 ②: popup.css 含 .roster-upload-hint.hidden 隐藏样式（opacity:0 + 收缩）",
+    /\.roster-upload-hint\.hidden[\s\S]{0,300}opacity:\s*0/.test(popupCssV43) &&
+    /\.roster-upload-hint\.hidden[\s\S]{0,300}max-width:\s*0/.test(popupCssV43),
+    "popup.css 缺 .roster-upload-hint.hidden 样式");
+  check("v4.8.43 ③: popup-roster.js 含 openEditor + saveEditorIfDirty + blur 保存",
+    /function openEditor/.test(rosterJsV43) &&
+    /saveEditorIfDirty/.test(rosterJsV43) &&
+    /addEventListener\("blur"/.test(rosterJsV43) &&
+    /setParticipantResponse/.test(rosterJsV43) &&
+    /userEdited:\s*true/.test(rosterJsV43),
+    "popup-roster.js 缺 editor 行为");
+  check("v4.8.43 ③: popup.css 含 .resp-editor + .resp-editor-text 样式",
+    /\.resp-editor\s*\{/.test(popupCssV43) &&
+    /\.resp-editor-text\s*\{/.test(popupCssV43),
+    "popup.css 缺 resp-editor 样式");
+  check("v4.8.43 ④: state-machine.js setParticipantResponse 接受 opts.userEdited + clearUserEdited",
+    /setParticipantResponse\(id, text, opts = \{\}\)/.test(smV43) &&
+    /opts\.userEdited/.test(smV43) &&
+    /p\.userEdited/.test(smV43) &&
+    /clearUserEdited/.test(smV43),
+    "state-machine.js 缺 userEdited 协议");
+  check("v4.8.43 ④: setParticipantResponse 系统路径遇 p.userEdited 跳过（保护用户编辑）",
+    /if \(!opts\.force && !opts\.userEdited && p\.userEdited\)/.test(smV43) &&
+    /skipped:\s*"user-edited"/.test(smV43),
+    "state-machine.js 未实现跳过逻辑");
+  check("v4.8.43 ④: background.js 新增 case setParticipantResponse 路由",
+    /case "setParticipantResponse"/.test(bgV43) &&
+    /StateMachine\.setParticipantResponse\(msg\.id, msg\.text, \{ userEdited: !!msg\.userEdited \}\)/.test(bgV43),
+    "background.js 缺 setParticipantResponse 路由");
+  check("v4.8.43 ⑤: retryInjectParticipant 入口 clearUserEdited",
+    /async function retryInjectParticipant[\s\S]{0,400}clearUserEdited/.test(bgV43),
+    "retryInject 未清 userEdited");
+  check("v4.8.43 ⑤: handleBroadcast / handleDebateRound 清 userEdited（forEach 中 delete p.userEdited）",
+    (bgV43.match(/delete p\.userEdited/g) || []).length >= 2,
+    "broadcast/debate 未清 userEdited");
+  check("v4.8.43 ⑤: chat-bus.js reextractOne 入口 clearUserEdited",
+    /async function reextractOne[\s\S]{0,800}clearUserEdited/.test(chatBusV43),
+    "reextractOne 未清 userEdited");
+
+  // 运行时：验证 setParticipantResponse 系统路径在 userEdited=true 时被跳过
+  const userEditedResult = await serviceWorker.evaluate(async () => {
+    if (!self.StateMachine) return { err: "StateMachine 不可用" };
+    // 构造 mock participant（绕过 addParticipant 流程）
+    const sm = self.StateMachine;
+    sm.participants = [{ id: 999, service: "test", name: "Test", tabId: null, response: "AI 旧答" }];
+    // 1. 用户编辑：userEdited=true
+    const r1 = sm.setParticipantResponse(999, "用户修改", { userEdited: true });
+    const afterEdit = { resp: sm.participants[0].response, userEdited: !!sm.participants[0].userEdited, r1 };
+    // 2. 系统路径写入（polling 模拟）：应该被跳过
+    const r2 = sm.setParticipantResponse(999, "AI 新答覆盖", {});
+    const afterPoll = { resp: sm.participants[0].response, userEdited: !!sm.participants[0].userEdited, r2 };
+    // 3. clearUserEdited
+    sm.clearUserEdited(999);
+    const r3 = sm.setParticipantResponse(999, "AI 新答 v2", {});
+    const afterClear = { resp: sm.participants[0].response, userEdited: !!sm.participants[0].userEdited, r3 };
+    // cleanup
+    sm.participants = [];
+    return { afterEdit, afterPoll, afterClear };
+  }).catch(e => ({ evalErr: e.message }));
+  check("v4.8.43 运行时: userEdited 保护协议 — 用户编辑后系统写入被跳过，clearUserEdited 后恢复",
+    userEditedResult.afterEdit?.resp === "用户修改" &&
+    userEditedResult.afterEdit?.userEdited === true &&
+    userEditedResult.afterPoll?.resp === "用户修改" &&  // 系统写入被跳过
+    userEditedResult.afterPoll?.r2?.skipped === "user-edited" &&
+    userEditedResult.afterClear?.resp === "AI 新答 v2" &&
+    userEditedResult.afterClear?.userEdited === false,
+    JSON.stringify(userEditedResult));
 
   // ③ 极简任务 picker — 删了 ⚙️ icon 和"任务"label
   const pickerSimple = await popupPage.evaluate(() => {

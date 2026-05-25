@@ -307,6 +307,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           sendResponse(await ChatBus.reextractOne(msg.participantId)); break;
         case "chatSkipParticipant":
           sendResponse(ChatBus.skipParticipant(msg.participantId, msg.msgId)); break;
+        // v4.8.43: 用户在 popup 编辑下轮回答 → 写 p.response + 标记 userEdited
+        case "setParticipantResponse":
+          sendResponse(StateMachine.setParticipantResponse(msg.id, msg.text, { userEdited: !!msg.userEdited }));
+          break;
 
         // ── 手动操作 ──
         case "sendToOne":
@@ -569,6 +573,8 @@ async function handleBroadcast(text, images) {
   StateMachine.participants.forEach(p => {
     p.response = null;
     p.responsePreview = null;
+    // v4.8.43: 广播新一题 → 清除用户编辑标记，让 polling 写入新 AI 答案
+    delete p.userEdited;
   });
   StateMachine.save();
   StateMachine._broadcastStateUpdate();
@@ -631,6 +637,8 @@ async function retryInjectParticipant(id) {
   if (!p || !p.tabId) return { ok: false, error: "参与者无效" };
   const text = StateMachine.debateSession.originalQuestion;
   if (!text) return { ok: false, error: "无原始问题可重发（debateSession 为空）" };
+  // v4.8.43: 用户重发 → 清除 userEdited 让新 AI 答案能被 polling 写入
+  try { StateMachine.clearUserEdited?.(id); } catch (_) {}
 
   const pendingMsgId = `m${Date.now()}_retry_${p.id}`;
   const displayText = `🔄 重发原题：${text.length > 40 ? text.slice(0, 40) + "…" : text}`;
@@ -942,6 +950,8 @@ async function handleDebateRound(style = "free", guidance = "", concise = false,
   StateMachine.participants.forEach(p => {
     p.response = null;
     p.responsePreview = null;
+    // v4.8.43: 辩论新轮 → 清除用户编辑标记，让 polling 写入新 AI 答案
+    delete p.userEdited;
   });
 
   const sendResults = {};
