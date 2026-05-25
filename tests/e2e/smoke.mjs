@@ -67,7 +67,7 @@ try {
   // 2) 读 manifest version_name 验证版本同步（直接读源文件）
   const manifest = JSON.parse(fs.readFileSync(path.join(EXT_PATH, "manifest.json"), "utf8"));
   console.log(`[smoke] manifest version: ${manifest.version}, version_name: ${manifest.version_name}`);
-  check("manifest version_name = 4.8.38-beta", manifest.version_name === "4.8.38-beta", `actual: ${manifest.version_name}`);
+  check("manifest version_name = 4.8.39-beta", manifest.version_name === "4.8.39-beta", `actual: ${manifest.version_name}`);
 
   // 3) 打开 sidepanel.html（作为普通 tab），验证 DOM
   const sidepanelPage = await context.newPage();
@@ -75,10 +75,10 @@ try {
   await sidepanelPage.waitForLoadState("domcontentloaded");
 
   const versionBadge = await sidepanelPage.locator(".version").textContent();
-  check("sidepanel version badge", versionBadge === "v4.8.38-beta", `actual: "${versionBadge}"`);
+  check("sidepanel version badge", versionBadge === "v4.8.39-beta", `actual: "${versionBadge}"`);
 
   const footerVersion = await sidepanelPage.locator(".footer").textContent();
-  check("sidepanel footer version", footerVersion?.includes("v4.8.38-beta"), `actual: "${footerVersion?.slice(0, 100)}"`);
+  check("sidepanel footer version", footerVersion?.includes("v4.8.39-beta"), `actual: "${footerVersion?.slice(0, 100)}"`);
 
   const openChatBtn = await sidepanelPage.locator("#btn-open-chat").count();
   check('sidepanel has "🪟 群聊" button', openChatBtn === 1);
@@ -96,7 +96,7 @@ try {
   await popupPage.waitForLoadState("domcontentloaded");
 
   const popupVersion = await popupPage.locator(".chat-version").textContent();
-  check("popup chat-version = v4.8.38-beta", popupVersion === "v4.8.38-beta", `actual: "${popupVersion}"`);
+  check("popup chat-version = v4.8.39-beta", popupVersion === "v4.8.39-beta", `actual: "${popupVersion}"`);
 
   // 图标资产验证（v4.0.11）
   const assetsOk = await popupPage.evaluate(async (extId) => {
@@ -826,7 +826,7 @@ try {
     /getActivePollingServices,/.test(chatBusSrcV38),
     "chat-bus.js 缺 getActivePollingServices export");
   check("v4.8.38: handleDebateRound 加 force 参数 + needsConfirm 早返回",
-    /handleDebateRound\([^)]*force[\s\S]{0,500}if \(!force\)/.test(backgroundSrcV38) &&
+    /handleDebateRound\([^)]*force[\s\S]{0,1500}if \(!force\)/.test(backgroundSrcV38) &&
     /needsConfirm:\s*true/.test(backgroundSrcV38) &&
     /ChatBus\.getActivePollingServices/.test(backgroundSrcV38),
     "background.js handleDebateRound 缺 needsConfirm 逻辑");
@@ -859,6 +859,41 @@ try {
   check("v4.8.38: ChatBus.getActivePollingServices 返回数组（默认空）",
     debateConfirmResult.isArray && debateConfirmResult.polling.length === 0,
     JSON.stringify(debateConfirmResult));
+
+  // v4.8.39: handleDebateRound 扩展 sanity check — 三类警告合并 needsConfirm
+  //   ① polling（v4.8.38）
+  //   ② too_short: 回答 < 50 字（可能 ChatGPT Pro 在思考中被误判为完成）
+  //   ③ same_as_last: 回答与上一轮完全相同（可能提取 bug）
+  const backgroundSrcV39 = backgroundSrcV38; // 同一文件
+  check("v4.8.39: background.js 新增 _buildDebateWarnings + _formatDebateWarningMessage helper",
+    /function _buildDebateWarnings/.test(backgroundSrcV39) &&
+    /function _formatDebateWarningMessage/.test(backgroundSrcV39),
+    "background.js 缺 helper 函数");
+  check("v4.8.39: DEBATE_TOO_SHORT_THRESHOLD 常量 = 50",
+    /const DEBATE_TOO_SHORT_THRESHOLD = 50/.test(backgroundSrcV39),
+    "缺 50 字阈值常量");
+  check("v4.8.39: _buildDebateWarnings 识别 too_short 类型",
+    /text\.length < DEBATE_TOO_SHORT_THRESHOLD/.test(backgroundSrcV39) &&
+    /type:\s*"too_short"/.test(backgroundSrcV39),
+    "_buildDebateWarnings 缺 too_short 判定");
+  check("v4.8.39: _buildDebateWarnings 识别 same_as_last 类型（rounds.slice(-1) 取上一轮）",
+    /rounds\.slice\(-1\)/.test(backgroundSrcV39) &&
+    /type:\s*"same_as_last"/.test(backgroundSrcV39),
+    "_buildDebateWarnings 缺 same_as_last 判定");
+  check("v4.8.39: warnings 在 responses 收集之后才计算（不在 if(!force) 早 return 前）",
+    /Object\.keys\(responses\)\.length < 2[\s\S]{0,200}if \(!force\)/.test(backgroundSrcV39),
+    "warnings 检查顺序不对");
+  check("v4.8.39: needsConfirm payload 含 warnings 数组（用于 popup 端识别多类警告）",
+    /warnings,\s*\n[\s\S]{0,200}pollingServices/.test(backgroundSrcV39),
+    "needsConfirm payload 缺 warnings 字段");
+  check("v4.8.39: 消息文案含三类警告分别的措辞（仍在回答 / 回答过短 / 完全相同）",
+    /仍在回答中/.test(backgroundSrcV39) &&
+    /回答过短/.test(backgroundSrcV39) &&
+    /完全相同/.test(backgroundSrcV39),
+    "_formatDebateWarningMessage 缺至少一种警告措辞");
+
+  // 注：v4.8.39 helper 的运行时验证省略 — 静态检查已覆盖关键变化，
+  //     handleDebateRound 完整流程依赖 StateMachine 参与者状态，需真实多 AI 才能测
 
   // ③ 极简任务 picker — 删了 ⚙️ icon 和"任务"label
   const pickerSimple = await popupPage.evaluate(() => {
