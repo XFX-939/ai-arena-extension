@@ -87,12 +87,36 @@ const StateMachine = {
     return this.participants.find(p => p.tabId === tabId) || null;
   },
 
-  setParticipantResponse(id, text) {
+  // v4.8.43: opts.userEdited 标记是否用户手动编辑
+  //   - 用户编辑（userEdited=true）：写入 p.response 并标记 p.userEdited=true，polling/watcher 跳过覆盖
+  //   - 系统写入（默认 userEdited=false）：若 p.userEdited=true 则跳过（保护用户编辑），除非 opts.force
+  //   - 重发/重新提取/广播新轮（opts.force=true）：清除 userEdited 标记，重新允许自动覆盖
+  setParticipantResponse(id, text, opts = {}) {
     const p = this.getParticipant(id);
-    if (p) {
-      p.response = text;
-      p.responsePreview = text ? text.slice(0, 100) : null;
-      this.lastAcceptedByPid[id] = text || "";
+    if (!p) return { ok: false, error: "no participant" };
+    if (!opts.force && !opts.userEdited && p.userEdited) {
+      // 系统路径 + 用户已编辑 + 非 force → 静默跳过
+      return { ok: false, skipped: "user-edited" };
+    }
+    p.response = text;
+    p.responsePreview = text ? text.slice(0, 100) : null;
+    this.lastAcceptedByPid[id] = text || "";
+    if (opts.userEdited) {
+      p.userEdited = true;
+    } else {
+      // force 或 系统路径无 userEdited 冲突 → 清除标记（重新允许自动覆盖）
+      delete p.userEdited;
+    }
+    this.save();
+    this._broadcastStateUpdate();
+    return { ok: true };
+  },
+
+  // v4.8.43: 重发/重新提取/广播前清除 userEdited，让 polling 可以重新写
+  clearUserEdited(id) {
+    const p = this.getParticipant(id);
+    if (p && p.userEdited) {
+      delete p.userEdited;
       this.save();
       this._broadcastStateUpdate();
     }
@@ -162,3 +186,6 @@ const StateMachine = {
     };
   }
 };
+
+// v4.8.43: 暴露到 self 便于 SW console / 单测访问（不影响生产，importScripts 已让全局可见）
+try { self.StateMachine = StateMachine; } catch (_) {}

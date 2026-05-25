@@ -29,7 +29,7 @@
         <img class="chat-icon" src="icons/icon48.png" alt="">
         <span class="chat-name">AI Arena</span>
         <span class="chat-subtitle">群聊</span>
-        <span class="chat-version">v4.8.42-beta</span>
+        <span class="chat-version">v4.8.43-beta</span>
       </div>
       <div class="chat-actions">
         <!-- v4.8.15 F30: 折叠到顶 — mini bar 模式触发器 -->
@@ -96,13 +96,24 @@
         </div>
       </div>
     </main>
+    <!-- v4.8.43: chat-roster 改造 — pill 形态（logo + 一行预览），点 logo toggle 参与，点预览编辑 p.response -->
     <div class="chat-roster" id="chat-roster">
       <span class="roster-label">下轮发言</span>
       <div class="roster-items" id="roster-items"></div>
-      <span class="roster-upload-hint" title="文件上传需直接到 AI 网页操作 (避免敏感文件经过插件中转)">
+      <span class="roster-upload-hint" id="roster-upload-hint" title="文件上传需直接到 AI 网页操作 (避免敏感文件经过插件中转)">
         🔒 为保证信息安全，文件上传请手动到对应 AI 窗口操作
       </span>
-      <span class="roster-count" id="roster-count">0 / 0</span>
+      <!-- v4.8.43: 删除 roster-count "3/3"（无信息量）-->
+    </div>
+    <!-- v4.8.43: 编辑器面板 — 点击某 pill 的预览区时显示，blur 自动保存到 p.response -->
+    <div class="resp-editor" id="resp-editor" hidden>
+      <div class="resp-editor-head">
+        <img class="resp-editor-logo" id="resp-editor-logo" alt="">
+        <span class="resp-editor-name" id="resp-editor-name"></span>
+        <span class="resp-editor-meta">编辑下轮发言内容（失焦自动保存，覆盖 AI 后续刷新）</span>
+        <button class="resp-editor-close" id="resp-editor-close" type="button" title="收起">✕</button>
+      </div>
+      <textarea class="resp-editor-text" id="resp-editor-text" placeholder="等待 AI 回答…"></textarea>
     </div>
     <footer class="chat-input-bar">
       <div class="task-picker-wrap">
