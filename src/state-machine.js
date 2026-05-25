@@ -169,7 +169,12 @@ const StateMachine = {
       flowState: this.flowState,
       participants: this.participants.map(p => ({
         id: p.id, service: p.service, tabId: p.tabId, name: p.name,
-        responsePreview: p.responsePreview
+        // v4.8.45: 补 response + userEdited
+        //   v4.8.43 popup-roster pill 预览/编辑器依赖完整 response，但 payload 旧版只发 responsePreview
+        //   → pill 永远显示"等待回复..."，编辑器打开拿不到完整内容
+        response: p.response,
+        responsePreview: p.responsePreview,
+        userEdited: !!p.userEdited,
       })),
       debateSession: this.debateSession
     }).catch(() => {});
@@ -180,7 +185,10 @@ const StateMachine = {
       flowState: this.flowState,
       participants: this.participants.map(p => ({
         id: p.id, service: p.service, tabId: p.tabId, name: p.name,
-        responsePreview: p.responsePreview
+        // v4.8.45: 同 _broadcastStateUpdate — popup-roster.refresh() 也走这里
+        response: p.response,
+        responsePreview: p.responsePreview,
+        userEdited: !!p.userEdited,
       })),
       debateSession: this.debateSession
     };
