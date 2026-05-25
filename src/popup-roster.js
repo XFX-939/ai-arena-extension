@@ -174,6 +174,14 @@
       if (Array.isArray(msg.participants)) {
         participants = msg.participants;
         const known = new Set(participants.map(p => p.service));
+        // v4.8.44 修复：新加入的 service 自动加 selected
+        //   原 refresh() storage.get 路径有此逻辑，stateUpdate 快路径漏了
+        //   → 之前只有第一个 AI 走 refresh 被自动选中，后续 stateUpdate 来的未选中（image #59）
+        for (const s of known) {
+          if (!lastKnownServices.has(s) && !selected.has(s)) selected.add(s);
+        }
+        lastKnownServices = known;
+        // 清理已不存在的 service
         for (const s of [...selected]) if (!known.has(s)) selected.delete(s);
         if (selected.size === 0) selected = new Set(known);
         if (editingPid && document.activeElement !== $editorText) {
