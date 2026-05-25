@@ -1100,26 +1100,30 @@ body[data-mode="mini"] .mention-menu {
   overflow: hidden;
   padding-bottom: 40px;  /* 给 toggle 按钮留位 */
 }
-/* v4.8.41 + v4.8.44 + v4.8.48 修复: 简洁模式 — 完整 1 行文字 + 下一行展开按钮
-   v4.8.44 用 `> *:not(.msg-fold-toggle)` 对每个直接子元素都 max-height:1.6em，
-   但 markdown 渲染多段（p/h2/strong 等）时每个子元素都成独立一行 → 多段 = 多行（v4.8.48 用户反馈）
-   v4.8.48 修法：只显示第 1 个 markdown 子元素，其余 display:none */
+/* v4.8.41 + v4.8.44 + v4.8.48 + v4.8.49 修复: 简洁模式 — 2 行文字 + 下一行展开按钮
+   v4.8.48：只显示第 1 个 markdown 子元素 + 其余隐藏（避免多段 markdown 把折叠撑成多行）
+   v4.8.49：从严格 1 行放宽到最多 2 行（用户反馈：1 行信息量不够）
+   用 line-clamp:2 + max-height:3.2em（line-height 1.5 × 2 行 + 余量）
+   第 3 行起 ellipsis 截断；white-space 改为 normal 让文字自然换行（line-clamp 才能生效）*/
 .msg-bubble-foldable.compact-fold:not(.expanded) {
   max-height: none;
   padding-bottom: 34px;  /* 给底部 absolute 按钮（≈30px 高）腾位 */
   display: block;
   position: relative;
 }
-/* 第 1 个子元素：压成 1 行 + ellipsis */
+/* 第 1 个子元素：最多 2 行 + ellipsis */
 .msg-bubble-foldable.compact-fold:not(.expanded) > *:first-child {
-  display: block;
-  max-height: 1.6em;  /* line-height 1.5 × 1 行 + 余量 = 严格一行 */
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;          /* 标准属性（部分浏览器支持） */
+  max-height: 3.2em;      /* line-height 1.5 × 2 行 + 余量 = 严格不超过 2 行 */
   overflow: hidden;
-  white-space: nowrap;
+  white-space: normal;    /* 必须允许换行，line-clamp 才能在第 2 行后截断 */
   text-overflow: ellipsis;
   margin: 0;
 }
-/* 其余子元素（除 toggle 按钮）全部隐藏 — 保证简洁模式始终只一行 */
+/* 其余子元素（除 toggle 按钮）全部隐藏 — 保证简洁模式不被多段 markdown 撑高 */
 .msg-bubble-foldable.compact-fold:not(.expanded) > *:not(:first-child):not(.msg-fold-toggle) {
   display: none;
 }
