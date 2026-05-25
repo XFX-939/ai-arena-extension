@@ -67,7 +67,7 @@ try {
   // 2) 读 manifest version_name 验证版本同步（直接读源文件）
   const manifest = JSON.parse(fs.readFileSync(path.join(EXT_PATH, "manifest.json"), "utf8"));
   console.log(`[smoke] manifest version: ${manifest.version}, version_name: ${manifest.version_name}`);
-  check("manifest version_name = 4.8.44-beta", manifest.version_name === "4.8.44-beta", `actual: ${manifest.version_name}`);
+  check("manifest version_name = 4.8.45-beta", manifest.version_name === "4.8.45-beta", `actual: ${manifest.version_name}`);
 
   // 3) 打开 sidepanel.html（作为普通 tab），验证 DOM
   const sidepanelPage = await context.newPage();
@@ -75,10 +75,10 @@ try {
   await sidepanelPage.waitForLoadState("domcontentloaded");
 
   const versionBadge = await sidepanelPage.locator(".version").textContent();
-  check("sidepanel version badge", versionBadge === "v4.8.44-beta", `actual: "${versionBadge}"`);
+  check("sidepanel version badge", versionBadge === "v4.8.45-beta", `actual: "${versionBadge}"`);
 
   const footerVersion = await sidepanelPage.locator(".footer").textContent();
-  check("sidepanel footer version", footerVersion?.includes("v4.8.44-beta"), `actual: "${footerVersion?.slice(0, 100)}"`);
+  check("sidepanel footer version", footerVersion?.includes("v4.8.45-beta"), `actual: "${footerVersion?.slice(0, 100)}"`);
 
   const openChatBtn = await sidepanelPage.locator("#btn-open-chat").count();
   check('sidepanel has "🪟 群聊" button', openChatBtn === 1);
@@ -96,7 +96,7 @@ try {
   await popupPage.waitForLoadState("domcontentloaded");
 
   const popupVersion = await popupPage.locator(".chat-version").textContent();
-  check("popup chat-version = v4.8.44-beta", popupVersion === "v4.8.44-beta", `actual: "${popupVersion}"`);
+  check("popup chat-version = v4.8.45-beta", popupVersion === "v4.8.45-beta", `actual: "${popupVersion}"`);
 
   // 图标资产验证（v4.0.11）
   const assetsOk = await popupPage.evaluate(async (extId) => {
@@ -1203,6 +1203,52 @@ try {
     /msg\.type === "stateUpdate"[\s\S]{0,1500}lastKnownServices\.has\(s\)[\s\S]{0,200}selected\.add\(s\)/.test(rosterJsV44) &&
     /msg\.type === "stateUpdate"[\s\S]{0,1500}lastKnownServices = known/.test(rosterJsV44),
     "popup-roster.js stateUpdate 分支仍漏新 service 自动选中");
+
+  // v4.8.45: state-machine.js _broadcastStateUpdate + getFullState 必须含 response 字段
+  //   v4.8.43 popup-roster pill 预览/编辑器依赖 p.response 全文
+  //   旧版只发 responsePreview（截 100 字）→ p.response 在 popup 端为 undefined → pill 永远"等待回复..."
+  const smV45 = fs.readFileSync(path.join(EXT_PATH, "state-machine.js"), "utf8");
+  check("v4.8.45: _broadcastStateUpdate payload 含 response + userEdited",
+    /_broadcastStateUpdate[\s\S]{0,500}response:\s*p\.response/.test(smV45) &&
+    /_broadcastStateUpdate[\s\S]{0,500}userEdited:\s*!!p\.userEdited/.test(smV45),
+    "_broadcastStateUpdate payload 缺 response/userEdited 字段");
+  check("v4.8.45: getFullState 返回值含 response + userEdited",
+    /getFullState[\s\S]{0,500}response:\s*p\.response/.test(smV45) &&
+    /getFullState[\s\S]{0,500}userEdited:\s*!!p\.userEdited/.test(smV45),
+    "getFullState 缺 response/userEdited 字段");
+
+  // 运行时：popupPage 监听 stateUpdate，SW 触发 setParticipantResponse → 验证 payload 含 response
+  // （chrome.runtime 不广播给 sender 自己，需要 popup 上下文做 listener）
+  await popupPage.evaluate(() => {
+    window.__v45_received = null;
+    window.__v45_listener = (msg) => {
+      if (msg.type === "stateUpdate" && msg.participants?.some(p => p.id === 888)) {
+        window.__v45_received = msg;
+      }
+    };
+    chrome.runtime.onMessage.addListener(window.__v45_listener);
+  });
+  await serviceWorker.evaluate(async () => {
+    if (!self.StateMachine) return;
+    const sm = self.StateMachine;
+    sm.participants = [{ id: 888, service: "test45", name: "T45", tabId: null, response: null }];
+    sm.setParticipantResponse(888, "v4.8.45 测试回答", { userEdited: true });
+  }).catch(() => {});
+  await popupPage.waitForTimeout(200);
+  const stateUpdatePayloadResult = await popupPage.evaluate(() => {
+    const r = window.__v45_received;
+    chrome.runtime.onMessage.removeListener(window.__v45_listener);
+    const p888 = r?.participants?.find(p => p.id === 888);
+    return { hasPayload: !!r, p888 };
+  });
+  await serviceWorker.evaluate(() => {
+    if (self.StateMachine) self.StateMachine.participants = [];
+  }).catch(() => {});
+  check("v4.8.45 运行时: stateUpdate payload 中 participant 含 response 全文 + userEdited",
+    stateUpdatePayloadResult.hasPayload === true &&
+    stateUpdatePayloadResult.p888?.response === "v4.8.45 测试回答" &&
+    stateUpdatePayloadResult.p888?.userEdited === true,
+    JSON.stringify(stateUpdatePayloadResult));
 
   // ③ 极简任务 picker — 删了 ⚙️ icon 和"任务"label
   const pickerSimple = await popupPage.evaluate(() => {
