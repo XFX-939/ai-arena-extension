@@ -67,7 +67,7 @@ try {
   // 2) 读 manifest version_name 验证版本同步（直接读源文件）
   const manifest = JSON.parse(fs.readFileSync(path.join(EXT_PATH, "manifest.json"), "utf8"));
   console.log(`[smoke] manifest version: ${manifest.version}, version_name: ${manifest.version_name}`);
-  check("manifest version_name = 4.8.39-beta", manifest.version_name === "4.8.39-beta", `actual: ${manifest.version_name}`);
+  check("manifest version_name = 4.8.40-beta", manifest.version_name === "4.8.40-beta", `actual: ${manifest.version_name}`);
 
   // 3) 打开 sidepanel.html（作为普通 tab），验证 DOM
   const sidepanelPage = await context.newPage();
@@ -75,10 +75,10 @@ try {
   await sidepanelPage.waitForLoadState("domcontentloaded");
 
   const versionBadge = await sidepanelPage.locator(".version").textContent();
-  check("sidepanel version badge", versionBadge === "v4.8.39-beta", `actual: "${versionBadge}"`);
+  check("sidepanel version badge", versionBadge === "v4.8.40-beta", `actual: "${versionBadge}"`);
 
   const footerVersion = await sidepanelPage.locator(".footer").textContent();
-  check("sidepanel footer version", footerVersion?.includes("v4.8.39-beta"), `actual: "${footerVersion?.slice(0, 100)}"`);
+  check("sidepanel footer version", footerVersion?.includes("v4.8.40-beta"), `actual: "${footerVersion?.slice(0, 100)}"`);
 
   const openChatBtn = await sidepanelPage.locator("#btn-open-chat").count();
   check('sidepanel has "🪟 群聊" button', openChatBtn === 1);
@@ -96,7 +96,7 @@ try {
   await popupPage.waitForLoadState("domcontentloaded");
 
   const popupVersion = await popupPage.locator(".chat-version").textContent();
-  check("popup chat-version = v4.8.39-beta", popupVersion === "v4.8.39-beta", `actual: "${popupVersion}"`);
+  check("popup chat-version = v4.8.40-beta", popupVersion === "v4.8.40-beta", `actual: "${popupVersion}"`);
 
   // 图标资产验证（v4.0.11）
   const assetsOk = await popupPage.evaluate(async (extId) => {
@@ -894,6 +894,22 @@ try {
 
   // 注：v4.8.39 helper 的运行时验证省略 — 静态检查已覆盖关键变化，
   //     handleDebateRound 完整流程依赖 StateMachine 参与者状态，需真实多 AI 才能测
+
+  // v4.8.40: watcher 修复 — polling 判完成后启动 watcher 兜底
+  //   ① 核心 bug：watcher 抓到追加更新只更新 popup 气泡 + chatLog，**不写 p.response**
+  //      → 下一轮辩论 handleDebateRound 读到的还是初始文本（ChatGPT Pro 思考片段）
+  //   ② 增大 timeout 120s → 600s（覆盖 ChatGPT Pro 深度推理 3-5 分钟场景）
+  const chatBusSrcV40 = fs.readFileSync(path.join(EXT_PATH, "chat-bus.js"), "utf8");
+  check("v4.8.40: watcher startWatch 内调 StateMachine.setParticipantResponse",
+    /watchers\.set[\s\S]{0,200}|setInterval[\s\S]{0,2000}StateMachine\.setParticipantResponse\(participant\.id, text\)/.test(chatBusSrcV40) ||
+    /text \!== state\.lastText[\s\S]{0,500}StateMachine\.setParticipantResponse\(participant\.id, text\)/.test(chatBusSrcV40),
+    "watcher 缺 setParticipantResponse 调用（仍只更新 popup 气泡，p.response 未刷新）");
+  check("v4.8.40: WATCH_MAX_DURATION_MS = 600000",
+    /WATCH_MAX_DURATION_MS\s*=\s*600000/.test(chatBusSrcV40),
+    "watcher 总时长未拉到 600s");
+  check("v4.8.40: 注释明示修复原因（思考片段 / Pro 深度推理）",
+    /思考片段/.test(chatBusSrcV40) && /深度推理/.test(chatBusSrcV40),
+    "缺修复缘由注释");
 
   // ③ 极简任务 picker — 删了 ⚙️ icon 和"任务"label
   const pickerSimple = await popupPage.evaluate(() => {

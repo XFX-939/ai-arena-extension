@@ -267,7 +267,10 @@ const ChatBus = (() => {
   // 让 watcher 跑满 60s 确保覆盖审核延迟 / 工具调用结果回传等晚到追加场景
   const watchers = new Map();  // service → { intervalId, msgId, lastText, startTs }
   const WATCH_INTERVAL_MS = 3000;
-  const WATCH_MAX_DURATION_MS = 120000;  // 120s 总兜底（v4.6.11 从 60s 拉到 120s 覆盖更多审核延迟场景）
+  // v4.8.40: 拉到 600s — ChatGPT Pro 深度推理可能 3-5 分钟，watcher 必须覆盖到追加阶段
+  //   副作用：watcher 期间 SW 保活（每 3s 一次 setInterval 触发，避免 30s idle 回收 → 反而是正面）
+  //   单 slot 限制 + 下一轮启动时清旧 watcher 保证不累积
+  const WATCH_MAX_DURATION_MS = 600000;  // 600s 总兜底（v4.8.40 从 120s 拉到 600s）
   const WATCH_MAX_SLOTS = 1;  // 只保留最新一轮防累积
 
   // v4.6.7 F17: 不再依赖 popupWindowId 做 silent return — MV3 SW 30s 空闲被回收时
@@ -651,6 +654,11 @@ const ChatBus = (() => {
         // 文本比上次长且非残留 → 追加更新（用同 msgId 让 popup updateAIBubble 直接覆盖气泡）
         if (text && text.length > state.lastText.length && text !== state.lastText) {
           state.lastText = text;
+          // v4.8.40 核心修复：watcher 必须写 p.response，否则下一轮辩论 handleDebateRound
+          //   读 p.response 还是 polling 完成时的初始文本（ChatGPT Pro 思考片段），
+          //   导致辩论用旧的思考做上下文。setParticipantResponse 同时更新
+          //   lastAcceptedByPid（下次 polling sanity check 基准）。
+          try { StateMachine.setParticipantResponse(participant.id, text); } catch (_) {}
           sendToPopup({
             type: "chatStreamUpdate", role: "ai", msgId: state.msgId,
             participantId: service, text, isDone: true,
@@ -662,7 +670,7 @@ const ChatBus = (() => {
             text, ts: Date.now(), watcherUpdate: true,
           });
         }
-        // v4.6.10: 文本不变也不停 watcher，继续跑满 60s 覆盖晚到追加
+        // v4.6.10: 文本不变也不停 watcher，继续跑满总兜底时长覆盖晚到追加
       } catch (_) {
         // tab 失效 / content script 失联 → 停 watcher
         clearInterval(state.intervalId);
