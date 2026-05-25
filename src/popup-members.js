@@ -154,20 +154,34 @@
         // v4.8.20 ① 出战动画：新加入时注入 6 颗星芒，CSS sparkOut 让它们散开
         const sparks = isNew ? Array(6).fill('<span class="hero-slot-spark"></span>').join("") : "";
         return `
-          <div class="hero-slot filled status-${status || 'idle'}${isNew ? ' just-added' : ''}" data-pid="${escapeHtml(p.id)}" data-slot="${i}" title="${escapeHtml(p.name || meta.name)} · ${statusTextOf(p)}">
-            <div class="hero-slot-bg"></div>
-            <div class="hero-slot-glow"></div>
-            ${heroSrc
-              ? `<img class="hero-slot-logo" src="${heroSrc}" alt="${escapeHtml(meta.name)}">`
-              : `<span class="hero-slot-fb">${escapeHtml((meta.name || "?")[0])}</span>`}
-            <div class="hero-slot-name">${escapeHtml(meta.name)}</div>
-            <div class="hero-slot-status"><span class="rp-status-dot ${status}"></span></div>
-            <span class="hero-slot-check">✓</span>
-            <button class="hero-slot-more" data-pid="${escapeHtml(p.id)}" title="操作">⋯</button>
-            ${sparks}
+          <div class="hero-slot-wrap" data-pid="${escapeHtml(p.id)}">
+            <div class="hero-slot filled status-${status || 'idle'}${isNew ? ' just-added' : ''}" data-pid="${escapeHtml(p.id)}" data-slot="${i}" title="${escapeHtml(p.name || meta.name)} · ${statusTextOf(p)}">
+              <div class="hero-slot-bg"></div>
+              <div class="hero-slot-glow"></div>
+              ${heroSrc
+                ? `<img class="hero-slot-logo" src="${heroSrc}" alt="${escapeHtml(meta.name)}">`
+                : `<span class="hero-slot-fb">${escapeHtml((meta.name || "?")[0])}</span>`}
+              <div class="hero-slot-name">${escapeHtml(meta.name)}</div>
+              <div class="hero-slot-status"><span class="rp-status-dot ${status}"></span></div>
+              <span class="hero-slot-check">✓</span>
+              <button class="hero-slot-more" data-pid="${escapeHtml(p.id)}" title="操作">⋯</button>
+              ${sparks}
+            </div>
+            <!-- v4.8.41: 卡片下方 3 个快捷按钮 — 重发/提取/跳过，比 ⋯ 菜单更显眼 -->
+            <div class="hero-quick-actions">
+              <button class="hqa-btn" data-act="resend" data-pid="${escapeHtml(p.id)}" data-service="${escapeHtml(p.service)}" title="重新发送原题给 ${escapeHtml(meta.name)}">
+                <span class="hqa-icon">🔄</span><span class="hqa-label">重发</span>
+              </button>
+              <button class="hqa-btn" data-act="reextract" data-pid="${escapeHtml(p.id)}" data-service="${escapeHtml(p.service)}" title="重新提取 ${escapeHtml(meta.name)} 当前回答">
+                <span class="hqa-icon">📥</span><span class="hqa-label">提取</span>
+              </button>
+              <button class="hqa-btn" data-act="skip" data-pid="${escapeHtml(p.id)}" data-service="${escapeHtml(p.service)}" title="跳过 ${escapeHtml(meta.name)} 本轮（解除 polling 卡住）">
+                <span class="hqa-icon">⏭</span><span class="hqa-label">跳过</span>
+              </button>
+            </div>
           </div>`;
       }
-      return `<div class="hero-slot empty" data-slot="${i}" title="空位 — 在下方选择 AI 添加"><div class="hero-slot-plus">＋</div><div class="hero-slot-empty-lbl">空位</div></div>`;
+      return `<div class="hero-slot-wrap"><div class="hero-slot empty" data-slot="${i}" title="空位 — 在下方选择 AI 添加"><div class="hero-slot-plus">＋</div><div class="hero-slot-empty-lbl">空位</div></div></div>`;
     }).join("");
     _lastPidSet = currentPidSet;
 
@@ -199,6 +213,18 @@
       el.addEventListener("click", (e) => {
         e.stopPropagation();
         openActionMenu(e, el.dataset.pid);
+      });
+    });
+    // v4.8.41: 卡片下方快捷按钮（重发/提取/跳过）
+    root.querySelectorAll(".hqa-btn").forEach(btn => {
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const act = btn.dataset.act;
+        const pid = btn.dataset.pid;
+        const service = btn.dataset.service;
+        if (act === "resend") retryInject(pid);
+        else if (act === "reextract") reextractOne(pid);
+        else if (act === "skip") skipOne(service);
       });
     });
     // v4.3.15: 排行榜折叠按钮
@@ -253,6 +279,11 @@
 
   function reextractOne(pid) {
     chrome.runtime.sendMessage({ type: "chatReextractOne", participantId: pid }, () => {});
+  }
+
+  // v4.8.41: 跳过本轮 — service 而非 pid（chat-bus.skipParticipant 以 service 做 polling Map key）
+  function skipOne(service) {
+    chrome.runtime.sendMessage({ type: "chatSkipParticipant", participantId: service }, () => {});
   }
 
   function openActionMenu(ev, pid) {

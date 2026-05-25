@@ -67,7 +67,7 @@ try {
   // 2) 读 manifest version_name 验证版本同步（直接读源文件）
   const manifest = JSON.parse(fs.readFileSync(path.join(EXT_PATH, "manifest.json"), "utf8"));
   console.log(`[smoke] manifest version: ${manifest.version}, version_name: ${manifest.version_name}`);
-  check("manifest version_name = 4.8.40-beta", manifest.version_name === "4.8.40-beta", `actual: ${manifest.version_name}`);
+  check("manifest version_name = 4.8.41-beta", manifest.version_name === "4.8.41-beta", `actual: ${manifest.version_name}`);
 
   // 3) 打开 sidepanel.html（作为普通 tab），验证 DOM
   const sidepanelPage = await context.newPage();
@@ -75,10 +75,10 @@ try {
   await sidepanelPage.waitForLoadState("domcontentloaded");
 
   const versionBadge = await sidepanelPage.locator(".version").textContent();
-  check("sidepanel version badge", versionBadge === "v4.8.40-beta", `actual: "${versionBadge}"`);
+  check("sidepanel version badge", versionBadge === "v4.8.41-beta", `actual: "${versionBadge}"`);
 
   const footerVersion = await sidepanelPage.locator(".footer").textContent();
-  check("sidepanel footer version", footerVersion?.includes("v4.8.40-beta"), `actual: "${footerVersion?.slice(0, 100)}"`);
+  check("sidepanel footer version", footerVersion?.includes("v4.8.41-beta"), `actual: "${footerVersion?.slice(0, 100)}"`);
 
   const openChatBtn = await sidepanelPage.locator("#btn-open-chat").count();
   check('sidepanel has "🪟 群聊" button', openChatBtn === 1);
@@ -96,7 +96,7 @@ try {
   await popupPage.waitForLoadState("domcontentloaded");
 
   const popupVersion = await popupPage.locator(".chat-version").textContent();
-  check("popup chat-version = v4.8.40-beta", popupVersion === "v4.8.40-beta", `actual: "${popupVersion}"`);
+  check("popup chat-version = v4.8.41-beta", popupVersion === "v4.8.41-beta", `actual: "${popupVersion}"`);
 
   // 图标资产验证（v4.0.11）
   const assetsOk = await popupPage.evaluate(async (extId) => {
@@ -910,6 +910,98 @@ try {
   check("v4.8.40: 注释明示修复原因（思考片段 / Pro 深度推理）",
     /思考片段/.test(chatBusSrcV40) && /深度推理/.test(chatBusSrcV40),
     "缺修复缘由注释");
+
+  // v4.8.41 ①: 简洁模式 + popup-compact-mode.js 新模块
+  const compactModeSrc = fs.readFileSync(path.join(EXT_PATH, "popup-compact-mode.js"), "utf8");
+  const popupHtmlSrc = fs.readFileSync(path.join(EXT_PATH, "popup.html"), "utf8");
+  const popupJsSrcV41 = fs.readFileSync(path.join(EXT_PATH, "popup.js"), "utf8");
+  const popupCssSrcV41 = fs.readFileSync(path.join(EXT_PATH, "popup.css"), "utf8");
+  const membersSrcV41 = fs.readFileSync(path.join(EXT_PATH, "popup-members.js"), "utf8");
+
+  check("v4.8.41 ①: popup.html 新增 #btn-compact-mode 按钮（折叠到顶旁边）",
+    /id="btn-compact-mode"/.test(popupHtmlSrc) &&
+    /aria-pressed/.test(popupHtmlSrc),
+    "popup.html 缺简洁模式按钮");
+  check("v4.8.41 ①: popup-compact-mode.js 存在 + 暴露 ChatCompactMode.isOn",
+    /window\.ChatCompactMode\s*=/.test(compactModeSrc) &&
+    /isOn:/.test(compactModeSrc) &&
+    /data-compact/.test(compactModeSrc),
+    "popup-compact-mode.js 不完整");
+  check("v4.8.41 ①: popup.html 加载 popup-compact-mode.js",
+    /<script src="popup-compact-mode\.js"><\/script>/.test(popupHtmlSrc),
+    "popup.html 未加载 compact mode 模块");
+  check("v4.8.41 ①: storage key 持久化（compactMode）+ 持久化逻辑",
+    /STORAGE_KEY\s*=\s*"compactMode"/.test(compactModeSrc) &&
+    /chrome\.storage\.local\.set/.test(compactModeSrc) &&
+    /chrome\.storage\.local\.get/.test(compactModeSrc),
+    "compactMode 未持久化");
+
+  // v4.8.41 ②: applyFoldClass 适配 compact（100 字 + 不要求 isDone）
+  check("v4.8.41 ②: applyFoldClass 检测 ChatCompactMode.isOn 切换阈值",
+    /FOLD_THRESHOLD_COMPACT\s*=\s*100/.test(popupJsSrcV41) &&
+    /ChatCompactMode\?\.isOn\?\.\(\)/.test(popupJsSrcV41),
+    "applyFoldClass 缺 compact 分支");
+  check("v4.8.41 ②: compact 模式提取中也折叠（不要求 isDone）",
+    /shouldFold\s*=\s*compact\s*\?\s*len\s*>\s*threshold/.test(popupJsSrcV41),
+    "compact 仍需 isDone，未实现提取中折叠");
+  check("v4.8.41 ②: compact:changed 事件让已渲染气泡重新评估折叠",
+    /addEventListener\("compact:changed"/.test(popupJsSrcV41) &&
+    /querySelectorAll\(".msg\.ai"\)/.test(popupJsSrcV41),
+    "compact 切换时未重新评估已渲染气泡");
+  check("v4.8.41 ②: popup.css 含 .compact-fold 一行折叠样式",
+    /\.msg-bubble-foldable\.compact-fold:not\(\.expanded\)/.test(popupCssSrcV41) &&
+    /text-overflow:\s*ellipsis/.test(popupCssSrcV41),
+    "popup.css 缺 compact-fold 样式");
+  check("v4.8.41 ②: popup.css 含 .btn-compact-mode 按钮样式（含 active 态）",
+    /\.btn-compact-mode/.test(popupCssSrcV41) &&
+    /\.btn-compact-mode\.active/.test(popupCssSrcV41),
+    "popup.css 缺简洁模式按钮样式");
+
+  // v4.8.41 ③: hero-slot 下方 3 个快捷按钮
+  check("v4.8.41 ③: popup-members.js 含 hqa-btn / hero-quick-actions 容器",
+    /hero-quick-actions/.test(membersSrcV41) &&
+    /hqa-btn/.test(membersSrcV41) &&
+    /data-act="resend"/.test(membersSrcV41) &&
+    /data-act="reextract"/.test(membersSrcV41) &&
+    /data-act="skip"/.test(membersSrcV41),
+    "popup-members.js 缺快捷按钮 DOM");
+  check("v4.8.41 ③: popup-members.js 含 skipOne 调用 chatSkipParticipant",
+    /function skipOne/.test(membersSrcV41) &&
+    /chatSkipParticipant/.test(membersSrcV41),
+    "popup-members.js 缺 skipOne 函数");
+  check("v4.8.41 ③: 卡片 wrap 包裹 hero-slot + quick-actions",
+    /hero-slot-wrap/.test(membersSrcV41),
+    "缺 hero-slot-wrap 容器");
+  check("v4.8.41 ③: popup.css 含 .hero-quick-actions / .hqa-btn 样式",
+    /\.hero-quick-actions/.test(popupCssSrcV41) &&
+    /\.hqa-btn/.test(popupCssSrcV41) &&
+    /grid-template-columns:\s*repeat\(3,\s*1fr\)/.test(popupCssSrcV41),
+    "popup.css 缺 hero-quick-actions 样式");
+
+  // 运行时验证：popup 默认无 compact 按钮 active；toggle 后 data-compact=on
+  const compactRuntimeResult = await popupPage.evaluate(async () => {
+    const btn = document.getElementById("btn-compact-mode");
+    if (!btn) return { err: "btn-compact-mode 不存在" };
+    const initial = {
+      pressed: btn.getAttribute("aria-pressed"),
+      active: btn.classList.contains("active"),
+      bodyAttr: document.body.getAttribute("data-compact"),
+    };
+    btn.click();
+    await new Promise(r => setTimeout(r, 80));
+    const after = {
+      pressed: btn.getAttribute("aria-pressed"),
+      active: btn.classList.contains("active"),
+      bodyAttr: document.body.getAttribute("data-compact"),
+    };
+    btn.click();  // 再点恢复关闭，避免影响后续
+    return { initial, after };
+  });
+  check("v4.8.41 运行时: 简洁模式按钮 toggle 正确切换 data-compact 和 active",
+    compactRuntimeResult.initial?.bodyAttr === "off" &&
+    compactRuntimeResult.after?.bodyAttr === "on" &&
+    compactRuntimeResult.after?.active === true,
+    JSON.stringify(compactRuntimeResult));
 
   // ③ 极简任务 picker — 删了 ⚙️ icon 和"任务"label
   const pickerSimple = await popupPage.evaluate(() => {

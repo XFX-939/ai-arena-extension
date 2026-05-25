@@ -1100,6 +1100,26 @@ body[data-mode="mini"] .mention-menu {
   overflow: hidden;
   padding-bottom: 40px;  /* 给 toggle 按钮留位 */
 }
+/* v4.8.41: 简洁模式 — 只显示一行 + 展开按钮，极致压缩空间 */
+.msg-bubble-foldable.compact-fold:not(.expanded) {
+  max-height: 2.5em;  /* 约一行高（含 padding） */
+  padding-bottom: 32px;
+  display: block;
+}
+.msg-bubble-foldable.compact-fold:not(.expanded) > *:not(.msg-fold-toggle) {
+  display: inline;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.msg-bubble-foldable.compact-fold:not(.expanded)::before {
+  bottom: 30px;
+  height: 36px;
+}
+.msg-bubble-foldable.compact-fold:not(.expanded) .msg-fold-toggle {
+  padding: 6px 12px;
+  font-size: 10.5px;
+}
 .msg-bubble-foldable:not(.expanded)::before {
   content: "";
   position: absolute;
@@ -2804,6 +2824,51 @@ body { letter-spacing: -0.01em; }
   gap: 8px;
   padding: 4px 0 10px;
 }
+/* v4.8.41: hero-slot 外包一层 wrap 容纳卡片 + 下方快捷按钮（不影响 grid 列宽）*/
+.hero-slot-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+/* v4.8.41: 卡片下方 3 个快捷按钮（重发/提取/跳过） — 比 ⋯ 菜单更显眼 */
+.hero-quick-actions {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 4px;
+}
+.hqa-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  padding: 5px 2px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 10px;
+  color: var(--ink-soft);
+  transition: all 0.15s;
+  min-width: 0;
+}
+.hqa-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+}
+.hqa-btn:active { transform: translateY(0) scale(0.96); }
+.hqa-icon {
+  font-size: 14px;
+  line-height: 1;
+}
+.hqa-label {
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
 .hero-slot {
   /* v4.8.17: 0.85 → 0.72 贴合卡牌比例 */
   /* v4.8.19: 0.72 → 0.78 + .hero-slot-logo 改 contain 兜底所有卡牌比例（0.666 ~ 0.881 跨度大）*/
@@ -3166,6 +3231,42 @@ body { letter-spacing: -0.01em; }
 }
 .btn-mini-mode:active { transform: translateY(0) scale(0.98); }
 /* btn-mini-pulse / btn-mini-aura 已删（v4.8.24 静态化）*/
+
+/* v4.8.41: 简洁模式按钮 — 紧贴折叠到顶，关闭态克制（描边胶囊），开启态渐变实色提示 */
+.btn-compact-mode {
+  background: transparent;
+  color: var(--ink);
+  border: 1px solid var(--border);
+  height: 30px;
+  padding: 0 12px;
+  border-radius: 999px;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  letter-spacing: 0.01em;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+  margin-right: 8px;
+  transition: transform 0.2s, background 0.2s, color 0.2s, box-shadow 0.2s;
+}
+.btn-compact-mode:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  transform: translateY(-1px);
+}
+.btn-compact-mode:active { transform: translateY(0) scale(0.98); }
+.btn-compact-mode.active {
+  background: linear-gradient(135deg, #5eead4 0%, #34c759 100%);
+  color: #0a1024;
+  border-color: transparent;
+  box-shadow: 0 0 0 1px rgba(94,234,212,0.45), 0 4px 12px rgba(52,199,89,0.25);
+}
+.btn-compact-mode.active:hover {
+  transform: translateY(-1px) scale(1.02);
+  box-shadow: 0 0 0 1px rgba(94,234,212,0.65), 0 6px 16px rgba(52,199,89,0.35);
+}
 
 /* mini 模式 — 全隐藏的区域 */
 body[data-mode="mini"] .chat-sidebar,
