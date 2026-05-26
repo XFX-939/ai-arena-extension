@@ -3432,12 +3432,13 @@ body { letter-spacing: -0.01em; }
   box-shadow: 0 0 0 1px rgba(94,234,212,0.65), 0 6px 16px rgba(52,199,89,0.35);
 }
 
-/* mini 模式 — 全隐藏的区域 */
+/* mini 模式 — 全隐藏的区域
+   v4.8.57: chat-roster 从隐藏 → 显示（"折叠到顶"新语义：保留 pill 列 + input bar 两行）
+   v4.8.27 时 mini 是"单行 bar"设计，故连 roster 也藏；现在改成多行模式，roster 保留 */
 body[data-mode="mini"] .chat-sidebar,
 body[data-mode="mini"] .chat-rightpanel,
 body[data-mode="mini"] .chat-messages,
 body[data-mode="mini"] .empty-state,
-body[data-mode="mini"] .chat-roster,        /* v4.8.27: 单行模式下 roster 也藏掉 */
 body[data-mode="mini"] .arena-badge {        /* 辩论轮次徽章也藏 */
   display: none !important;
 }
@@ -3455,19 +3456,17 @@ body[data-mode="mini"] .chat-actions #btn-hard-reset {
   display: none !important;
 }
 
-/* v4.8.27: mini 模式核心 — chat-main 改 row flex，header/input-bar 全部并排成一行 */
+/* v4.8.27: mini 模式 — chat-main 原 row flex（单行 bar），
+   v4.8.57: 改回 column —— mini 现在是"折叠到顶 = roster pill + input-bar 两行"多行设计 */
 body[data-mode="mini"] .chat-app { height: auto; min-height: 0; }
 body[data-mode="mini"] .chat-main {
   width: 100%;
   height: auto;
   min-height: 0;
   display: flex;
-  flex-direction: row;
-  align-items: center;
-  justify-content: flex-start;
-  gap: 8px;
-  /* v4.8.30: padding 加大让按钮底部不贴边（8 12 → 12 14）*/
-  padding: 12px 14px;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 10px 8px;
   background: transparent;
 }
 body[data-mode="mini"] .chat-header {
@@ -3494,31 +3493,29 @@ body[data-mode="mini"] .btn-mini-mode {
 body[data-mode="mini"] .btn-mini-mode:hover {
   box-shadow: 0 0 0 1px rgba(94,234,212,0.55), 0 6px 18px rgba(94,234,212,0.45);
 }
-/* input-bar 占满剩余宽度，去 padding/border */
+/* v4.8.57: mini input-bar 恢复正常 row 布局（不再 flex:1 占满，因为现在是 column） */
 body[data-mode="mini"] .chat-input-bar {
-  flex: 1;
   padding: 0;
   border-top: none;
   background: transparent;
   display: flex;
   align-items: center;
   gap: 8px;
-  min-width: 0;          /* 让 .chat-input-wrap flex 收缩生效 */
+  min-width: 0;
 }
 body[data-mode="mini"] .chat-input-wrap {
   min-width: 0;
 }
-
-/* v4.8.30: mini 模式参与者头像横排（picker 和输入框之间） — full 模式 display:none */
-.mini-roster { display: none; }
-body[data-mode="mini"] .mini-roster {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-shrink: 0;
-  margin: 0 4px;
+/* v4.8.57: chat-roster 在 mini 下保持正常 flex 行，但去掉 card 背景让和上下 input/header 视觉融合 */
+body[data-mode="mini"] .chat-roster {
+  padding: 4px 0;
+  background: transparent;
+  border-top: none;
 }
-body[data-mode="mini"] .mini-roster.empty { display: none; }
+
+/* v4.8.30: mini 模式参与者头像横排 — v4.8.57 隐藏（已被 chat-roster pill 取代，避免重复显示 AI 头像）*/
+.mini-roster { display: none; }
+body[data-mode="mini"] .mini-roster { display: none; }
 .mini-ai {
   position: relative;
   width: 28px; height: 28px;

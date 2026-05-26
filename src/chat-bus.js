@@ -23,13 +23,13 @@ const ChatBus = (() => {
       STORAGE_KEYS.miniBounds, STORAGE_KEYS.mode,
     ]);
     if (Array.isArray(data[STORAGE_KEYS.log])) chatLog.push(...data[STORAGE_KEYS.log].slice(-MAX_LOG));
-    // v4.8.37: sanity check — 清理 v4.8.36 之前 toggleMiniMode race 留下的污染数据
-    //   popupBounds.height 应为 full 模式合理值；< 200 视为被 mini 大小（86）污染 → 丢弃
-    //   popupMiniBounds.height > 150 已有 stale check（toggleMiniMode），此处 init 不再处理
-    if (data[STORAGE_KEYS.bounds] && data[STORAGE_KEYS.bounds].height >= 200) {
+    // v4.8.37: sanity check — 清理 toggleMiniMode race 留下的污染数据
+    //   popupBounds.height 应为 full 模式合理值；< 400 视为被 mini 大小污染 → 丢弃
+    //   （v4.8.57: 阈值从 200 升到 400 — 因 mini default 升到 200，旧 >= 200 已无法区分污染）
+    if (data[STORAGE_KEYS.bounds] && data[STORAGE_KEYS.bounds].height >= 400) {
       popupBounds = data[STORAGE_KEYS.bounds];
     } else if (data[STORAGE_KEYS.bounds]) {
-      console.log("[chat-bus] v4.8.37 sanity: discard polluted popupBounds height=", data[STORAGE_KEYS.bounds].height);
+      console.log("[chat-bus] v4.8.57 sanity: discard polluted popupBounds height=", data[STORAGE_KEYS.bounds].height);
       await chrome.storage.local.remove(STORAGE_KEYS.bounds).catch(() => {});
     }
     if (data[STORAGE_KEYS.miniBounds]) popupMiniBounds = data[STORAGE_KEYS.miniBounds];
@@ -97,7 +97,8 @@ const ChatBus = (() => {
       }
       const width = Math.min(900, Math.round(display.workArea.width * 0.7));
       // v4.8.27: 60→78 / v4.8.30: 78→86（padding 16→24 + 控件底部不贴边 + AI logos）
-      const height = 86;
+      // v4.8.57: 86→200 — mini 改成多行（顶栏 + roster pill 2 行 + input-bar），需要更高
+      const height = 200;
       return {
         left: display.workArea.left + Math.round((display.workArea.width - width) / 2),
         top: display.workArea.top,
@@ -136,9 +137,10 @@ const ChatBus = (() => {
       // 切到目标 bounds
       let target;
       if (next === "mini") {
-        // v4.8.27: 旧版 mini 默认高度 60，但实际经常被 Chrome 撑到 200+ 用户也未必拉低；
-        //          新版 row flex 一行 78px 足够，若持久化的 height > 150 认为是脏数据，回退默认
-        const stale = popupMiniBounds && popupMiniBounds.height > 150;
+        // v4.8.27: 旧 mini 默认 60；v4.8.57: 多行设计后默认 200。
+        //   stale 阈值 > 400 — 用户曾把 mini 拉到 400+ 视为脏数据（不该比预期 default 高那么多），回退默认。
+        //   也兼容 v4.8.56 之前老用户存的 86/100 等小值（< 400 都视为有效，但实际 chrome 会自动撑到能装下内容）
+        const stale = popupMiniBounds && popupMiniBounds.height > 400;
         target = (!stale && popupMiniBounds) || await defaultMiniBounds();
       } else {
         target = popupBounds || await defaultBounds();

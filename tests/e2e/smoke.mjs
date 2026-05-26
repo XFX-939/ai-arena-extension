@@ -67,7 +67,7 @@ try {
   // 2) 读 manifest version_name 验证版本同步（直接读源文件）
   const manifest = JSON.parse(fs.readFileSync(path.join(EXT_PATH, "manifest.json"), "utf8"));
   console.log(`[smoke] manifest version: ${manifest.version}, version_name: ${manifest.version_name}`);
-  check("manifest version_name = 4.8.56-beta", manifest.version_name === "4.8.56-beta", `actual: ${manifest.version_name}`);
+  check("manifest version_name = 4.8.57-beta", manifest.version_name === "4.8.57-beta", `actual: ${manifest.version_name}`);
 
   // 3) 打开 sidepanel.html（作为普通 tab），验证 DOM
   const sidepanelPage = await context.newPage();
@@ -75,10 +75,10 @@ try {
   await sidepanelPage.waitForLoadState("domcontentloaded");
 
   const versionBadge = await sidepanelPage.locator(".version").textContent();
-  check("sidepanel version badge", versionBadge === "v4.8.56-beta", `actual: "${versionBadge}"`);
+  check("sidepanel version badge", versionBadge === "v4.8.57-beta", `actual: "${versionBadge}"`);
 
   const footerVersion = await sidepanelPage.locator(".footer").textContent();
-  check("sidepanel footer version", footerVersion?.includes("v4.8.56-beta"), `actual: "${footerVersion?.slice(0, 100)}"`);
+  check("sidepanel footer version", footerVersion?.includes("v4.8.57-beta"), `actual: "${footerVersion?.slice(0, 100)}"`);
 
   const openChatBtn = await sidepanelPage.locator("#btn-open-chat").count();
   check('sidepanel has "🪟 群聊" button', openChatBtn === 1);
@@ -96,7 +96,7 @@ try {
   await popupPage.waitForLoadState("domcontentloaded");
 
   const popupVersion = await popupPage.locator(".chat-version").textContent();
-  check("popup chat-version = v4.8.56-beta", popupVersion === "v4.8.56-beta", `actual: "${popupVersion}"`);
+  check("popup chat-version = v4.8.57-beta", popupVersion === "v4.8.57-beta", `actual: "${popupVersion}"`);
 
   // 图标资产验证（v4.0.11）
   const assetsOk = await popupPage.evaluate(async (extId) => {
@@ -782,8 +782,8 @@ try {
   check("v4.8.37: rememberBounds 检测 _modeSwitching 早 return",
     /async function rememberBounds[\s\S]{0,300}if \(_modeSwitching\) return/.test(chatBusSrcV37),
     "rememberBounds 缺 _modeSwitching 早 return");
-  check("v4.8.37: init 加 popupBounds.height < 200 sanity check（清污染数据）",
-    /data\[STORAGE_KEYS\.bounds\]\.height >= 200/.test(chatBusSrcV37) &&
+  check("v4.8.37+v4.8.57: init 加 popupBounds.height < 400 sanity check（v4.8.57 阈值从 200 升到 400）",
+    /data\[STORAGE_KEYS\.bounds\]\.height >= 400/.test(chatBusSrcV37) &&
     /discard polluted popupBounds/.test(chatBusSrcV37),
     "init 缺 popupBounds sanity check");
 
@@ -1628,6 +1628,51 @@ try {
   check("v4.8.56 运行时: white-space=normal + line-clamp=2（line-clamp 实际生效）",
     rpTextRuntime.whiteSpace === "normal" && rpTextRuntime.lineClamp === "2",
     JSON.stringify(rpTextRuntime));
+
+  // v4.8.57: 折叠到顶语义改为 "roster pill + input-bar 两行" 多行 mini
+  //   旧 v4.8.27 设计：mini = chat-main row flex 单行 bar（roster/messages 全 hide，mini-roster 显示小头像横排）
+  //   新 v4.8.57 设计：mini = chat-main column 多行（顶栏 + chat-roster pill 列 + chat-input-bar），
+  //     mini-roster 隐藏（被 chat-roster 取代）；defaultMiniBounds 86 → 200
+  const cssV57 = fs.readFileSync(path.join(EXT_PATH, "popup.css"), "utf8");
+  const busV57 = fs.readFileSync(path.join(EXT_PATH, "chat-bus.js"), "utf8");
+  check("v4.8.57 ①: mini 下 chat-roster 不再 hide（hide rule 不含 .chat-roster）",
+    !/body\[data-mode="mini"\]\s+\.chat-roster,?\s*[\r\n]+[\s\S]{0,400}display:\s*none/.test(cssV57),
+    "mini 仍含 .chat-roster display:none");
+  check("v4.8.57 ①: mini chat-main flex-direction: column（不再 row 单行）",
+    /body\[data-mode="mini"\]\s+\.chat-main\s*\{[^}]*flex-direction:\s*column/s.test(cssV57),
+    "chat-main 仍 row");
+  check("v4.8.57 ②: mini-roster 在 mini 下隐藏（避免和 chat-roster pill 重复显示 AI 头像）",
+    /body\[data-mode="mini"\]\s+\.mini-roster\s*\{\s*display:\s*none/.test(cssV57),
+    "mini-roster 仍在 mini 下 flex 显示");
+  check("v4.8.57 ③: defaultMiniBounds 高度从 86 升到 200 + stale 阈值从 150 升到 400",
+    /const height = 200/.test(busV57) &&
+    /popupMiniBounds\.height > 400/.test(busV57),
+    "chat-bus.js 高度/stale 未升");
+  check("v4.8.57 ④: popupBounds sanity 阈值从 200 升到 400（防 mini 200 污染 full）",
+    /data\[STORAGE_KEYS\.bounds\]\.height >= 400/.test(busV57),
+    "popupBounds sanity 阈值未升");
+
+  // 运行时：切到 mini → roster 应该 display flex（不再 none），chat-main 应该 column
+  const miniV57Runtime = await popupPage.evaluate(() => {
+    document.body.setAttribute("data-mode", "mini");
+    const roster = document.getElementById("chat-roster");
+    const main = document.querySelector(".chat-main");
+    const miniRoster = document.querySelector(".mini-roster");
+    const rosterDisplay = roster ? getComputedStyle(roster).display : null;
+    const mainDirection = main ? getComputedStyle(main).flexDirection : null;
+    const miniRosterDisplay = miniRoster ? getComputedStyle(miniRoster).display : null;
+    document.body.setAttribute("data-mode", "full");  // 还原
+    return { rosterDisplay, mainDirection, miniRosterDisplay };
+  });
+  check("v4.8.57 运行时: mini 下 .chat-roster display 不是 none（roster 可见）",
+    miniV57Runtime.rosterDisplay !== "none" && miniV57Runtime.rosterDisplay !== null,
+    JSON.stringify(miniV57Runtime));
+  check("v4.8.57 运行时: mini 下 .chat-main flex-direction === column",
+    miniV57Runtime.mainDirection === "column",
+    JSON.stringify(miniV57Runtime));
+  check("v4.8.57 运行时: mini 下 .mini-roster display === none（被 chat-roster 取代）",
+    miniV57Runtime.miniRosterDisplay === "none",
+    JSON.stringify(miniV57Runtime));
 
   // v4.8.52: Tab 模式 debugger 提示
   //   chrome.debugger.attach 会强制显示"AI Arena 已开始调试此浏览器"横条，
@@ -3135,25 +3180,24 @@ try {
     document.body.setAttribute("data-mode", "full");   // 还原避免污染后续测试
     return result;
   });
-  check("v4.8.27 ①: mini 模式 chat-main flex-direction:row + roster/messages 隐藏 + input-bar flex:1",
-    miniLayoutCheck.mainDirection === "row"
-      && miniLayoutCheck.rosterHidden
-      && miniLayoutCheck.messagesHidden
-      && miniLayoutCheck.inputBarFlex === "1",
+  // v4.8.57 改写：mini 从 row 单行 → column 多行；roster 从 hide → show
+  check("v4.8.27 ①+v4.8.57: mini 模式 chat-main flex-direction:column + roster 显示 + messages 隐藏",
+    miniLayoutCheck.mainDirection === "column"
+      && !miniLayoutCheck.rosterHidden
+      && miniLayoutCheck.messagesHidden,
     JSON.stringify(miniLayoutCheck));
 
-  // ② defaultMiniBounds height 78 + stale 检测 > 150
+  // ② defaultMiniBounds height 200 (v4.8.57) + stale 检测 > 400
   const busCheck = await popupPage.evaluate(() => {
     return fetch(chrome.runtime.getURL("chat-bus.js"))
       .then(r => r.text())
       .then(src => ({
-        // v4.8.30: height 78 → 86（padding 加大）；放宽为"在 [60, 150) 范围内"
-        height78: /const height = (78|82|86)/.test(src),
-        staleCheck: src.includes("popupMiniBounds.height > 150"),
+        height200: /const height = 200/.test(src),
+        staleCheck: src.includes("popupMiniBounds.height > 400"),
       }));
   });
-  check("v4.8.27 ②: defaultMiniBounds 高度 78 + 旧 bounds height>150 视为脏数据回退默认",
-    busCheck.height78 && busCheck.staleCheck,
+  check("v4.8.27 ②+v4.8.57: defaultMiniBounds 高度 200 + stale 阈值 > 400",
+    busCheck.height200 && busCheck.staleCheck,
     JSON.stringify(busCheck));
 
   // ========== v4.8.28: mini 模式 task-menu 向下弹 + 撑大窗口 ==========
@@ -3217,18 +3261,18 @@ try {
   // ========== v4.8.30: mini 高度 + AI logos + mention-menu 撑高 ==========
   console.log("\n[smoke] === v4.8.30 mini polish ===");
 
-  // ① 高度增加：chat-main padding 12 14 + defaultMiniBounds 86
+  // v4.8.57 改写：mini chat-main padding 6 10 8 + defaultMiniBounds 200
   const heightCheck = await popupPage.evaluate(() => {
     return Promise.all([
       fetch(chrome.runtime.getURL("popup.css")).then(r => r.text()),
       fetch(chrome.runtime.getURL("chat-bus.js")).then(r => r.text()),
     ]).then(([css, js]) => ({
-      mainPadding1214: /body\[data-mode="mini"\] \.chat-main\s*\{[^}]*padding:\s*12px 14px/.test(css),
-      defaultHeight86: js.includes("const height = 86"),
+      mainPaddingV57: /body\[data-mode="mini"\] \.chat-main\s*\{[^}]*padding:\s*6px 10px 8px/.test(css),
+      defaultHeight200: js.includes("const height = 200"),
     }));
   });
-  check("v4.8.30 ①: chat-main padding 12px 14px + defaultMiniBounds 86",
-    heightCheck.mainPadding1214 && heightCheck.defaultHeight86,
+  check("v4.8.30 ①+v4.8.57: chat-main padding 6/10/8 + defaultMiniBounds 200",
+    heightCheck.mainPaddingV57 && heightCheck.defaultHeight200,
     JSON.stringify(heightCheck));
 
   // ② mini-roster DOM + JS + CSS 完整（v4.8.31: 改用 brand svg + removeParticipant，删 miniSkipped）
@@ -3244,15 +3288,16 @@ try {
       jsClickRemoves: js.includes('type: "removeParticipant"'),     // v4.8.31: 点击 = 移除
       jsNoMiniSkipped: !js.includes("miniSkipped"),                 // v4.8.31: 已删除
       cssHidesInFull: /^\.mini-roster\s*\{\s*display:\s*none/m.test(css),
-      cssShowsInMini: /body\[data-mode="mini"\]\s+\.mini-roster\s*\{[^}]*display:\s*flex/.test(css),
+      // v4.8.57: mini-roster 在 mini 下也 display:none（被 chat-roster pill 列取代）
+      cssHiddenInMini: /body\[data-mode="mini"\]\s+\.mini-roster\s*\{\s*display:\s*none/.test(css),
       cssHasStatusDot: /\.mini-ai-dot\.busy[^}]*animation/.test(css),
     }));
   });
-  check("v4.8.31 ②: mini-roster brand svg + 点击 removeParticipant + 删 miniSkipped 整套",
+  check("v4.8.31 ②+v4.8.57: mini-roster JS/HTML 保留但 mini 下隐藏（被 chat-roster pill 取代）",
     rosterCheck.htmlHasRoster && rosterCheck.jsHasRender
       && rosterCheck.jsUsesBrandSvg && rosterCheck.jsClickRemoves
       && rosterCheck.jsNoMiniSkipped
-      && rosterCheck.cssHidesInFull && rosterCheck.cssShowsInMini
+      && rosterCheck.cssHidesInFull && rosterCheck.cssHiddenInMini
       && rosterCheck.cssHasStatusDot,
     JSON.stringify(rosterCheck));
 
