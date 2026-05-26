@@ -67,7 +67,7 @@ try {
   // 2) 读 manifest version_name 验证版本同步（直接读源文件）
   const manifest = JSON.parse(fs.readFileSync(path.join(EXT_PATH, "manifest.json"), "utf8"));
   console.log(`[smoke] manifest version: ${manifest.version}, version_name: ${manifest.version_name}`);
-  check("manifest version_name = 4.8.57-beta", manifest.version_name === "4.8.57-beta", `actual: ${manifest.version_name}`);
+  check("manifest version_name = 4.8.58-beta", manifest.version_name === "4.8.58-beta", `actual: ${manifest.version_name}`);
 
   // 3) 打开 sidepanel.html（作为普通 tab），验证 DOM
   const sidepanelPage = await context.newPage();
@@ -75,10 +75,10 @@ try {
   await sidepanelPage.waitForLoadState("domcontentloaded");
 
   const versionBadge = await sidepanelPage.locator(".version").textContent();
-  check("sidepanel version badge", versionBadge === "v4.8.57-beta", `actual: "${versionBadge}"`);
+  check("sidepanel version badge", versionBadge === "v4.8.58-beta", `actual: "${versionBadge}"`);
 
   const footerVersion = await sidepanelPage.locator(".footer").textContent();
-  check("sidepanel footer version", footerVersion?.includes("v4.8.57-beta"), `actual: "${footerVersion?.slice(0, 100)}"`);
+  check("sidepanel footer version", footerVersion?.includes("v4.8.58-beta"), `actual: "${footerVersion?.slice(0, 100)}"`);
 
   const openChatBtn = await sidepanelPage.locator("#btn-open-chat").count();
   check('sidepanel has "🪟 群聊" button', openChatBtn === 1);
@@ -96,7 +96,7 @@ try {
   await popupPage.waitForLoadState("domcontentloaded");
 
   const popupVersion = await popupPage.locator(".chat-version").textContent();
-  check("popup chat-version = v4.8.57-beta", popupVersion === "v4.8.57-beta", `actual: "${popupVersion}"`);
+  check("popup chat-version = v4.8.58-beta", popupVersion === "v4.8.58-beta", `actual: "${popupVersion}"`);
 
   // 图标资产验证（v4.0.11）
   const assetsOk = await popupPage.evaluate(async (extId) => {
@@ -1673,6 +1673,65 @@ try {
   check("v4.8.57 运行时: mini 下 .mini-roster display === none（被 chat-roster 取代）",
     miniV57Runtime.miniRosterDisplay === "none",
     JSON.stringify(miniV57Runtime));
+
+  // v4.8.58: mini 下"展开/简洁"按钮 DOM-move 到 task-picker 旁；chat-header 整体隐藏
+  const miniJs = fs.readFileSync(path.join(EXT_PATH, "popup-mini-mode.js"), "utf8");
+  check("v4.8.58 ①: popup-mini-mode.js 含 relocateModeButtons + 标记 in-input-bar class",
+    /function relocateModeButtons/.test(miniJs) &&
+    /classList\.add\("in-input-bar"\)/.test(miniJs) &&
+    /classList\.remove\("in-input-bar"\)/.test(miniJs),
+    "缺 relocateModeButtons 函数");
+  check("v4.8.58 ①: applyMode 调用 relocateModeButtons",
+    /function applyMode[\s\S]{0,200}relocateModeButtons\(m\)/.test(miniJs),
+    "applyMode 未调 relocateModeButtons");
+
+  const cssV58 = fs.readFileSync(path.join(EXT_PATH, "popup.css"), "utf8");
+  check("v4.8.58 ②: mini 下 chat-header 隐藏（按钮已搬走）",
+    /body\[data-mode="mini"\][\s\S]{0,200}\.chat-header,?[\s\S]{0,400}display:\s*none/.test(cssV58),
+    "mini 下 chat-header 未隐藏");
+  check("v4.8.58 ②: .btn-mini-mode.in-input-bar / .btn-compact-mode.in-input-bar 胶囊样式",
+    /\.btn-mini-mode\.in-input-bar,\s*[\r\n]*\.btn-compact-mode\.in-input-bar/.test(cssV58) ||
+    (/\.btn-mini-mode\.in-input-bar\s*\{/.test(cssV58) && /\.btn-compact-mode\.in-input-bar/.test(cssV58)),
+    "缺 .in-input-bar 胶囊样式");
+
+  // 运行时：切到 mini → 两个按钮应该在 chat-input-bar 内（不在 chat-actions），且带 .in-input-bar class
+  const moveRuntime = await popupPage.evaluate(() => {
+    document.body.setAttribute("data-mode", "full");
+    // 触发一次 mini relocate（直接调 popup-mini-mode.js 暴露的 toggleMode 通过 click）
+    const btn = document.getElementById("btn-mini-mode");
+    if (!btn) return { err: "btn-mini-mode 不存在" };
+    // 模拟 click 进 mini —— 但 click 还会 sendMessage 到 SW，可能 race；
+    // 我们直接调内部 logic：手动改 data-mode + 触发 storage change 不会调 relocate。
+    // 替代方案：直接调 popup-mini-mode.js 内部的 applyMode（未暴露），所以用 DOM-mutating 同样的逻辑
+    // 这里通过 setMode click 路径走（接受 sendMessage 异步 race，500ms 等待）
+    btn.click();
+    return new Promise(res => setTimeout(() => {
+      const inputBar = document.querySelector(".chat-input-bar");
+      const taskWrap = document.querySelector(".task-picker-wrap");
+      const miniBtn = document.getElementById("btn-mini-mode");
+      const compactBtn = document.getElementById("btn-compact-mode");
+      const result = {
+        miniInInputBar: miniBtn?.parentElement === inputBar,
+        compactInInputBar: compactBtn?.parentElement === inputBar,
+        miniHasClass: miniBtn?.classList.contains("in-input-bar"),
+        compactHasClass: compactBtn?.classList.contains("in-input-bar"),
+        miniRightAfterTask: miniBtn && taskWrap?.nextSibling === miniBtn,
+        bodyMode: document.body.getAttribute("data-mode"),
+      };
+      // 还原
+      btn.click();
+      setTimeout(() => res(result), 300);
+    }, 400));
+  });
+  check("v4.8.58 运行时: mini 下两个按钮在 chat-input-bar 内（不在 chat-actions）",
+    moveRuntime.miniInInputBar && moveRuntime.compactInInputBar,
+    JSON.stringify(moveRuntime));
+  check("v4.8.58 运行时: 两个按钮带 .in-input-bar class",
+    moveRuntime.miniHasClass && moveRuntime.compactHasClass,
+    JSON.stringify(moveRuntime));
+  check("v4.8.58 运行时: btn-mini-mode 紧跟 task-picker-wrap（顺序正确）",
+    moveRuntime.miniRightAfterTask,
+    JSON.stringify(moveRuntime));
 
   // v4.8.52: Tab 模式 debugger 提示
   //   chrome.debugger.attach 会强制显示"AI Arena 已开始调试此浏览器"横条，
@@ -3267,7 +3326,7 @@ try {
       fetch(chrome.runtime.getURL("popup.css")).then(r => r.text()),
       fetch(chrome.runtime.getURL("chat-bus.js")).then(r => r.text()),
     ]).then(([css, js]) => ({
-      mainPaddingV57: /body\[data-mode="mini"\] \.chat-main\s*\{[^}]*padding:\s*6px 10px 8px/.test(css),
+      mainPaddingV57: /body\[data-mode="mini"\] \.chat-main\s*\{[^}]*padding:\s*8px 10px/.test(css),  // v4.8.58: 简化为 8px 10px（chat-header 已隐藏）
       defaultHeight200: js.includes("const height = 200"),
     }));
   });
