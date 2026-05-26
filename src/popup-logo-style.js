@@ -16,17 +16,16 @@
   // v4.8.54:
   //   - chick：黄色小鸡 meme 卡片（225×320 webp）
   //   - leader：AI 公司 CEO 手捧 logo（225×320 webp）；claude 暂无图，fileMap 兜底走 basic
+  // v4.8.55: name 统一缩成 2 字（设置面板更紧凑，desc 仍承载详细说明）；leader 删 fileMap 兜底
   const STYLES = {
-    basic:   { dir: "icons/brands",        name: "默认基础", desc: "纯品牌 logo·无装饰", ext: "svg",
+    basic:   { dir: "icons/brands",        name: "基础", desc: "纯品牌 logo·无装饰", ext: "svg",
                extOverrides: { huawei: "png" },
                idMap: { chatgpt: "openai" } },
-    classic: { dir: "icons/heroes",        name: "经典英雄", desc: "Q 版热血英雄·首发版", ext: "webp" },
-    anime:   { dir: "icons/heroes-anime",  name: "二次元少女", desc: "Q 版美少女·人气番剧风", ext: "webp" },
-    cat:     { dir: "icons/heroes-cat",    name: "小猫风格", desc: "毛茸茸 Q 版萌猫", ext: "webp" },
-    chick:   { dir: "icons/heroes-chick",  name: "小鸡 meme", desc: "黄色小鸡 meme·童趣", ext: "webp" },
-    leader:  { dir: "icons/heroes-leader", name: "领袖手持", desc: "AI 公司 CEO 捧 logo（claude 暂无图，回退基础）", ext: "webp",
-               // claude 暂无 leader 图 — 兜底走 basic 风格（整路径覆盖 dir/ext/idMap）
-               fileMap: { claude: "icons/brands/claude.svg" } },
+    classic: { dir: "icons/heroes",        name: "英雄", desc: "Q 版热血英雄·首发版", ext: "webp" },
+    anime:   { dir: "icons/heroes-anime",  name: "少女", desc: "Q 版美少女·人气番剧风", ext: "webp" },
+    cat:     { dir: "icons/heroes-cat",    name: "小猫", desc: "毛茸茸 Q 版萌猫", ext: "webp" },
+    chick:   { dir: "icons/heroes-chick",  name: "小鸡", desc: "黄色小鸡 meme·童趣", ext: "webp" },
+    leader:  { dir: "icons/heroes-leader", name: "领袖", desc: "AI 公司 CEO 手捧 logo", ext: "webp" },
   };
   const IDS = ["claude","gemini","chatgpt","deepseek","doubao","qwen","kimi","yuanbao","grok","huawei"];
 
