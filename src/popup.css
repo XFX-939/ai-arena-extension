@@ -3434,12 +3434,13 @@ body { letter-spacing: -0.01em; }
 
 /* mini 模式 — 全隐藏的区域
    v4.8.57: chat-roster 从隐藏 → 显示（"折叠到顶"新语义：保留 pill 列 + input bar 两行）
-   v4.8.27 时 mini 是"单行 bar"设计，故连 roster 也藏；现在改成多行模式，roster 保留 */
+   v4.8.58: chat-header 整体隐藏（"展开/简洁"按钮已 DOM-move 到 task-picker 旁边）*/
 body[data-mode="mini"] .chat-sidebar,
 body[data-mode="mini"] .chat-rightpanel,
 body[data-mode="mini"] .chat-messages,
 body[data-mode="mini"] .empty-state,
-body[data-mode="mini"] .arena-badge {        /* 辩论轮次徽章也藏 */
+body[data-mode="mini"] .chat-header,
+body[data-mode="mini"] .arena-badge {
   display: none !important;
 }
 /* v4.8.28: mini 模式下 task-menu 改向下弹（窗口上方无空间），
@@ -3449,6 +3450,8 @@ body[data-mode="mini"] .task-menu {
   top: calc(100% + 6px) !important;
   /* 子菜单仍然 left:100% 横向弹出，不动 */
 }
+/* v4.8.58: chat-header 整体隐藏后，旧的 chat-title / hdr-mode-toggle / btn-clear / btn-hard-reset
+   单独 hide 规则也没意义了，但保留兜底（防 chat-header 因其他原因显示时仍精简） */
 body[data-mode="mini"] .chat-title,
 body[data-mode="mini"] .chat-actions .hdr-mode-toggle,
 body[data-mode="mini"] .chat-actions #btn-clear,
@@ -3457,7 +3460,8 @@ body[data-mode="mini"] .chat-actions #btn-hard-reset {
 }
 
 /* v4.8.27: mini 模式 — chat-main 原 row flex（单行 bar），
-   v4.8.57: 改回 column —— mini 现在是"折叠到顶 = roster pill + input-bar 两行"多行设计 */
+   v4.8.57: 改回 column —— mini 现在是"折叠到顶 = roster pill + input-bar 两行"多行设计
+   v4.8.58: chat-header 已隐藏，chat-main 内只剩 chat-roster + chat-input-bar 两行 */
 body[data-mode="mini"] .chat-app { height: auto; min-height: 0; }
 body[data-mode="mini"] .chat-main {
   width: 100%;
@@ -3466,32 +3470,28 @@ body[data-mode="mini"] .chat-main {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  padding: 6px 10px 8px;
+  padding: 8px 10px;
   background: transparent;
 }
-body[data-mode="mini"] .chat-header {
+/* v4.8.58: 按钮 DOM-move 到 input-bar 后用 .in-input-bar 标记 — 改为青绿胶囊 */
+.btn-mini-mode.in-input-bar,
+.btn-compact-mode.in-input-bar {
   flex-shrink: 0;
-  padding: 0;
-  min-height: 0;
-  height: auto;
-  border: none;
-  background: transparent;
-  backdrop-filter: none;
-  /* 让 .chat-actions 自然 flex 自己 — 默认就是 inline-flex */
+  font-size: 11.5px;
+  padding: 5px 10px;
+  height: 28px;
+  border-radius: 14px;
+  white-space: nowrap;
 }
-body[data-mode="mini"] .chat-actions {
-  gap: 0;
-  padding: 0;
-}
-body[data-mode="mini"] .btn-mini-mode {
-  margin-right: 0;
-  /* 展开按钮换青绿，跟 input-bar 配色协调（不再橙红抢眼）*/
+.btn-mini-mode.in-input-bar {
   background: linear-gradient(135deg, #5eead4, #a78bfa);
   color: #0a1024;
+  border: none;
   box-shadow: 0 0 0 1px rgba(94,234,212,0.35), 0 2px 8px rgba(94,234,212,0.25);
 }
-body[data-mode="mini"] .btn-mini-mode:hover {
+.btn-mini-mode.in-input-bar:hover {
   box-shadow: 0 0 0 1px rgba(94,234,212,0.55), 0 6px 18px rgba(94,234,212,0.45);
+  transform: translateY(-1px);
 }
 /* v4.8.57: mini input-bar 恢复正常 row 布局（不再 flex:1 占满，因为现在是 column） */
 body[data-mode="mini"] .chat-input-bar {

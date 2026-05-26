@@ -16,10 +16,40 @@
     btn.title = mode === "mini" ? "展开恢复完整窗口" : "折叠到顶部一行";
   }
 
+  // v4.8.58: mini 下把"⇱ 展开"和"⊟ 简洁"按钮 DOM-move 到 task-picker 旁边
+  //   原位置：chat-header > chat-actions（顶栏右侧）
+  //   mini 新位置：chat-input-bar 内 task-picker-wrap 之后
+  //   full 时移回 chat-actions（保留顶栏原始顺序：先 btn-mini-mode 再 btn-compact-mode）
+  //   事件监听绑在 DOM 节点上，move 后保留，不需要重绑
+  function relocateModeButtons(m) {
+    const miniBtn = document.getElementById("btn-mini-mode");
+    const compactBtn = document.getElementById("btn-compact-mode");
+    if (!miniBtn || !compactBtn) return;
+    if (m === "mini") {
+      const taskWrap = document.querySelector(".task-picker-wrap");
+      const inputBar = taskWrap?.parentNode;
+      if (!inputBar) return;
+      // 按顺序 insert：task-picker-wrap → btn-mini-mode → btn-compact-mode → ...
+      inputBar.insertBefore(miniBtn, taskWrap.nextSibling);
+      inputBar.insertBefore(compactBtn, miniBtn.nextSibling);
+      miniBtn.classList.add("in-input-bar");
+      compactBtn.classList.add("in-input-bar");
+    } else {
+      const actions = document.querySelector(".chat-actions");
+      if (!actions) return;
+      // 移回顶栏（放在 chat-actions 最前，保持原始顺序）
+      actions.insertBefore(miniBtn, actions.firstChild);
+      actions.insertBefore(compactBtn, miniBtn.nextSibling);
+      miniBtn.classList.remove("in-input-bar");
+      compactBtn.classList.remove("in-input-bar");
+    }
+  }
+
   function applyMode(mode) {
     const m = mode === "mini" ? "mini" : "full";
     document.body.setAttribute("data-mode", m);
     setLabel(m);
+    relocateModeButtons(m);
   }
 
   function toggleMode() {
