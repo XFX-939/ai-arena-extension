@@ -67,7 +67,7 @@ try {
   // 2) 读 manifest version_name 验证版本同步（直接读源文件）
   const manifest = JSON.parse(fs.readFileSync(path.join(EXT_PATH, "manifest.json"), "utf8"));
   console.log(`[smoke] manifest version: ${manifest.version}, version_name: ${manifest.version_name}`);
-  check("manifest version_name = 4.8.54-beta", manifest.version_name === "4.8.54-beta", `actual: ${manifest.version_name}`);
+  check("manifest version_name = 4.8.55-beta", manifest.version_name === "4.8.55-beta", `actual: ${manifest.version_name}`);
 
   // 3) 打开 sidepanel.html（作为普通 tab），验证 DOM
   const sidepanelPage = await context.newPage();
@@ -75,10 +75,10 @@ try {
   await sidepanelPage.waitForLoadState("domcontentloaded");
 
   const versionBadge = await sidepanelPage.locator(".version").textContent();
-  check("sidepanel version badge", versionBadge === "v4.8.54-beta", `actual: "${versionBadge}"`);
+  check("sidepanel version badge", versionBadge === "v4.8.55-beta", `actual: "${versionBadge}"`);
 
   const footerVersion = await sidepanelPage.locator(".footer").textContent();
-  check("sidepanel footer version", footerVersion?.includes("v4.8.54-beta"), `actual: "${footerVersion?.slice(0, 100)}"`);
+  check("sidepanel footer version", footerVersion?.includes("v4.8.55-beta"), `actual: "${footerVersion?.slice(0, 100)}"`);
 
   const openChatBtn = await sidepanelPage.locator("#btn-open-chat").count();
   check('sidepanel has "🪟 群聊" button', openChatBtn === 1);
@@ -96,7 +96,7 @@ try {
   await popupPage.waitForLoadState("domcontentloaded");
 
   const popupVersion = await popupPage.locator(".chat-version").textContent();
-  check("popup chat-version = v4.8.54-beta", popupVersion === "v4.8.54-beta", `actual: "${popupVersion}"`);
+  check("popup chat-version = v4.8.55-beta", popupVersion === "v4.8.55-beta", `actual: "${popupVersion}"`);
 
   // 图标资产验证（v4.0.11）
   const assetsOk = await popupPage.evaluate(async (extId) => {
@@ -1523,29 +1523,24 @@ try {
     /chick:\s*\{\s*dir:\s*"icons\/heroes-chick"/.test(logoStyleJsV54) &&
     /leader:\s*\{\s*dir:\s*"icons\/heroes-leader"/.test(logoStyleJsV54),
     "STYLES 缺 chick / leader");
-  check("v4.8.54 ②: leader 风格 fileMap 含 claude → brands/claude.svg 兜底",
-    /fileMap:\s*\{\s*claude:\s*"icons\/brands\/claude\.svg"/.test(logoStyleJsV54),
-    "leader 风格 claude 兜底未配置");
-  check("v4.8.54 ③: heroPath / previewPath 支持 fileMap 整路径覆盖",
+  // v4.8.55: leader 风格 claude 现已补图（PIL 手绘花朵 + Dario 底图），删除 fileMap claude 兜底
+  check("v4.8.55: leader 风格 fileMap claude 兜底已删（现有真实 claude.webp）",
+    !/fileMap:\s*\{\s*claude:/.test(logoStyleJsV54),
+    "leader 风格 fileMap claude 兜底未删");
+  check("v4.8.54 ③: heroPath / previewPath 仍保留 fileMap 整路径覆盖能力（虽然当前无 style 使用）",
     /if \(meta\.fileMap\?\.\[id\]\) return meta\.fileMap\[id\]/.test(logoStyleJsV54) &&
     /if \(meta\.fileMap\?\.claude\) return meta\.fileMap\.claude/.test(logoStyleJsV54),
-    "heroPath/previewPath 缺 fileMap 兜底");
+    "heroPath/previewPath 缺 fileMap 能力");
 
-  // 文件资产存在性 — 10 chick + 9 leader（claude 走 brands/claude.svg 兜底）
+  // 文件资产存在性 — 10 chick + 10 leader（claude 现在也有）
   const chickMissing = SVC_IDS.filter(id => !fs.existsSync(path.join(EXT_PATH, "icons/heroes-chick", `${id}.webp`)));
   check("v4.8.54 ④: 10 个 heroes-chick webp 全部存在",
     chickMissing.length === 0, `missing: ${chickMissing.join(", ")}`);
-  const leaderMissing = SVC_IDS.filter(id => {
-    if (id === "claude") return false;  // 兜底走 basic
-    return !fs.existsSync(path.join(EXT_PATH, "icons/heroes-leader", `${id}.webp`));
-  });
-  check("v4.8.54 ④: 9 个 heroes-leader webp 全部存在（claude 走 basic 兜底，不计入）",
+  const leaderMissing = SVC_IDS.filter(id => !fs.existsSync(path.join(EXT_PATH, "icons/heroes-leader", `${id}.webp`)));
+  check("v4.8.55: 10 个 heroes-leader webp 全部存在（含 claude）",
     leaderMissing.length === 0, `missing: ${leaderMissing.join(", ")}`);
-  check("v4.8.54 ④: heroes-leader 下不该有 claude.webp（防意外覆盖兜底）",
-    !fs.existsSync(path.join(EXT_PATH, "icons/heroes-leader", "claude.webp")),
-    "heroes-leader 有 claude.webp 会覆盖 fileMap 兜底");
 
-  // 运行时验证：leader 风格 claude → brands/claude.svg；chick claude → heroes-chick/claude.webp
+  // 运行时验证：leader 风格 claude → 现在走 heroes-leader/claude.webp（不再兜底 brands）
   const v54Runtime = await popupPage.evaluate(() => {
     window.ArenaLogoStyle.setCurrent("leader", false);
     const leaderClaude = window.ArenaLogoStyle.heroPath("claude");
@@ -1555,15 +1550,34 @@ try {
     window.ArenaLogoStyle.setCurrent("classic", false);
     return { leaderClaude, leaderDeepseek, chickClaude };
   });
-  check("v4.8.54 运行时: leader 风格 claude → brands/claude.svg（fileMap 兜底）",
-    v54Runtime.leaderClaude === "icons/brands/claude.svg",
+  check("v4.8.55 运行时: leader 风格 claude → icons/heroes-leader/claude.webp（不再兜底）",
+    v54Runtime.leaderClaude === "icons/heroes-leader/claude.webp",
     JSON.stringify(v54Runtime));
-  check("v4.8.54 运行时: leader 风格 deepseek → icons/heroes-leader/deepseek.webp（不走兜底）",
+  check("v4.8.54 运行时: leader 风格 deepseek → icons/heroes-leader/deepseek.webp",
     v54Runtime.leaderDeepseek === "icons/heroes-leader/deepseek.webp",
     JSON.stringify(v54Runtime));
   check("v4.8.54 运行时: chick 风格 claude → icons/heroes-chick/claude.webp",
     v54Runtime.chickClaude === "icons/heroes-chick/claude.webp",
     JSON.stringify(v54Runtime));
+
+  // v4.8.55: 风格 name 全部缩成 2 字（设置 cards 更紧凑）
+  check("v4.8.55: STYLES name 全部 2 字（基础/英雄/少女/小猫/小鸡/领袖）",
+    /basic:[\s\S]{0,200}name:\s*"基础"/.test(logoStyleJsV54) &&
+    /classic:[\s\S]{0,200}name:\s*"英雄"/.test(logoStyleJsV54) &&
+    /anime:[\s\S]{0,200}name:\s*"少女"/.test(logoStyleJsV54) &&
+    /cat:[\s\S]{0,200}name:\s*"小猫"/.test(logoStyleJsV54) &&
+    /chick:[\s\S]{0,200}name:\s*"小鸡"/.test(logoStyleJsV54) &&
+    /leader:[\s\S]{0,200}name:\s*"领袖"/.test(logoStyleJsV54),
+    "STYLES name 未全部缩成 2 字");
+
+  // 运行时：listStyles 返回的 name 都是 2 字
+  const v55NameRuntime = await popupPage.evaluate(() => {
+    const list = window.ArenaLogoStyle.listStyles();
+    return list.map(s => ({ id: s.id, name: s.name, nameLen: [...s.name].length }));
+  });
+  check("v4.8.55 运行时: listStyles 每个 name 都恰好 2 个字符",
+    v55NameRuntime.every(s => s.nameLen === 2),
+    JSON.stringify(v55NameRuntime));
 
   // v4.8.52: Tab 模式 debugger 提示
   //   chrome.debugger.attach 会强制显示"AI Arena 已开始调试此浏览器"横条，
