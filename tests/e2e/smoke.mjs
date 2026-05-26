@@ -67,7 +67,7 @@ try {
   // 2) 读 manifest version_name 验证版本同步（直接读源文件）
   const manifest = JSON.parse(fs.readFileSync(path.join(EXT_PATH, "manifest.json"), "utf8"));
   console.log(`[smoke] manifest version: ${manifest.version}, version_name: ${manifest.version_name}`);
-  check("manifest version_name = 4.8.53-beta", manifest.version_name === "4.8.53-beta", `actual: ${manifest.version_name}`);
+  check("manifest version_name = 4.8.54-beta", manifest.version_name === "4.8.54-beta", `actual: ${manifest.version_name}`);
 
   // 3) 打开 sidepanel.html（作为普通 tab），验证 DOM
   const sidepanelPage = await context.newPage();
@@ -75,10 +75,10 @@ try {
   await sidepanelPage.waitForLoadState("domcontentloaded");
 
   const versionBadge = await sidepanelPage.locator(".version").textContent();
-  check("sidepanel version badge", versionBadge === "v4.8.53-beta", `actual: "${versionBadge}"`);
+  check("sidepanel version badge", versionBadge === "v4.8.54-beta", `actual: "${versionBadge}"`);
 
   const footerVersion = await sidepanelPage.locator(".footer").textContent();
-  check("sidepanel footer version", footerVersion?.includes("v4.8.53-beta"), `actual: "${footerVersion?.slice(0, 100)}"`);
+  check("sidepanel footer version", footerVersion?.includes("v4.8.54-beta"), `actual: "${footerVersion?.slice(0, 100)}"`);
 
   const openChatBtn = await sidepanelPage.locator("#btn-open-chat").count();
   check('sidepanel has "🪟 群聊" button', openChatBtn === 1);
@@ -96,7 +96,7 @@ try {
   await popupPage.waitForLoadState("domcontentloaded");
 
   const popupVersion = await popupPage.locator(".chat-version").textContent();
-  check("popup chat-version = v4.8.53-beta", popupVersion === "v4.8.53-beta", `actual: "${popupVersion}"`);
+  check("popup chat-version = v4.8.54-beta", popupVersion === "v4.8.54-beta", `actual: "${popupVersion}"`);
 
   // 图标资产验证（v4.0.11）
   const assetsOk = await popupPage.evaluate(async (extId) => {
@@ -1490,12 +1490,14 @@ try {
     window.ArenaLogoStyle.setCurrent("classic", false);
     return { ids, basicChatgpt, basicHuawei, basicClaude, bodyAttrBasic, catClaude, bodyAttrCat };
   });
-  check("v4.8.51 运行时: listStyles 返回 4 个（basic + classic + anime + cat）",
+  check("v4.8.51+v4.8.54 运行时: listStyles 返回 6 个（basic + classic + anime + cat + chick + leader）",
     Array.isArray(logoStyleRuntime.ids) &&
     logoStyleRuntime.ids.includes("basic") &&
     logoStyleRuntime.ids.includes("classic") &&
     logoStyleRuntime.ids.includes("anime") &&
-    logoStyleRuntime.ids.includes("cat"),
+    logoStyleRuntime.ids.includes("cat") &&
+    logoStyleRuntime.ids.includes("chick") &&
+    logoStyleRuntime.ids.includes("leader"),
     JSON.stringify(logoStyleRuntime));
   check("v4.8.51 运行时: basic 风格 heroPath — chatgpt→openai.svg / huawei.png / claude.svg",
     logoStyleRuntime.basicChatgpt === "icons/brands/openai.svg" &&
@@ -1509,6 +1511,59 @@ try {
     logoStyleRuntime.bodyAttrBasic === "basic" &&
     logoStyleRuntime.bodyAttrCat === "cat",
     JSON.stringify(logoStyleRuntime));
+
+  // v4.8.54: 新增 chick + leader 风格 + 默认改 basic
+  //   leader 风格 claude 暂无图 → fileMap 兜底走 basic 的 claude.svg
+  //   DEFAULT 从 classic 改 basic — 但 storage 已存的 logoStyle 仍优先（"记忆" via 现有 storage 机制）
+  const logoStyleJsV54 = fs.readFileSync(path.join(EXT_PATH, "popup-logo-style.js"), "utf8");
+  check("v4.8.54 ①: DEFAULT 改为 basic",
+    /const DEFAULT = "basic"/.test(logoStyleJsV54),
+    "DEFAULT 未改成 basic");
+  check("v4.8.54 ②: STYLES 含 chick + leader",
+    /chick:\s*\{\s*dir:\s*"icons\/heroes-chick"/.test(logoStyleJsV54) &&
+    /leader:\s*\{\s*dir:\s*"icons\/heroes-leader"/.test(logoStyleJsV54),
+    "STYLES 缺 chick / leader");
+  check("v4.8.54 ②: leader 风格 fileMap 含 claude → brands/claude.svg 兜底",
+    /fileMap:\s*\{\s*claude:\s*"icons\/brands\/claude\.svg"/.test(logoStyleJsV54),
+    "leader 风格 claude 兜底未配置");
+  check("v4.8.54 ③: heroPath / previewPath 支持 fileMap 整路径覆盖",
+    /if \(meta\.fileMap\?\.\[id\]\) return meta\.fileMap\[id\]/.test(logoStyleJsV54) &&
+    /if \(meta\.fileMap\?\.claude\) return meta\.fileMap\.claude/.test(logoStyleJsV54),
+    "heroPath/previewPath 缺 fileMap 兜底");
+
+  // 文件资产存在性 — 10 chick + 9 leader（claude 走 brands/claude.svg 兜底）
+  const chickMissing = SVC_IDS.filter(id => !fs.existsSync(path.join(EXT_PATH, "icons/heroes-chick", `${id}.webp`)));
+  check("v4.8.54 ④: 10 个 heroes-chick webp 全部存在",
+    chickMissing.length === 0, `missing: ${chickMissing.join(", ")}`);
+  const leaderMissing = SVC_IDS.filter(id => {
+    if (id === "claude") return false;  // 兜底走 basic
+    return !fs.existsSync(path.join(EXT_PATH, "icons/heroes-leader", `${id}.webp`));
+  });
+  check("v4.8.54 ④: 9 个 heroes-leader webp 全部存在（claude 走 basic 兜底，不计入）",
+    leaderMissing.length === 0, `missing: ${leaderMissing.join(", ")}`);
+  check("v4.8.54 ④: heroes-leader 下不该有 claude.webp（防意外覆盖兜底）",
+    !fs.existsSync(path.join(EXT_PATH, "icons/heroes-leader", "claude.webp")),
+    "heroes-leader 有 claude.webp 会覆盖 fileMap 兜底");
+
+  // 运行时验证：leader 风格 claude → brands/claude.svg；chick claude → heroes-chick/claude.webp
+  const v54Runtime = await popupPage.evaluate(() => {
+    window.ArenaLogoStyle.setCurrent("leader", false);
+    const leaderClaude = window.ArenaLogoStyle.heroPath("claude");
+    const leaderDeepseek = window.ArenaLogoStyle.heroPath("deepseek");
+    window.ArenaLogoStyle.setCurrent("chick", false);
+    const chickClaude = window.ArenaLogoStyle.heroPath("claude");
+    window.ArenaLogoStyle.setCurrent("classic", false);
+    return { leaderClaude, leaderDeepseek, chickClaude };
+  });
+  check("v4.8.54 运行时: leader 风格 claude → brands/claude.svg（fileMap 兜底）",
+    v54Runtime.leaderClaude === "icons/brands/claude.svg",
+    JSON.stringify(v54Runtime));
+  check("v4.8.54 运行时: leader 风格 deepseek → icons/heroes-leader/deepseek.webp（不走兜底）",
+    v54Runtime.leaderDeepseek === "icons/heroes-leader/deepseek.webp",
+    JSON.stringify(v54Runtime));
+  check("v4.8.54 运行时: chick 风格 claude → icons/heroes-chick/claude.webp",
+    v54Runtime.chickClaude === "icons/heroes-chick/claude.webp",
+    JSON.stringify(v54Runtime));
 
   // v4.8.52: Tab 模式 debugger 提示
   //   chrome.debugger.attach 会强制显示"AI Arena 已开始调试此浏览器"横条，
@@ -2538,12 +2593,14 @@ try {
         .map(e => e.textContent.trim()),
     };
   });
-  check("v4.8.15+v4.8.51: 设置 Tab 风格 section 含 4 cards (basic + classic + anime + cat) + active=classic",
-    settingsCheck.count === 4
+  check("v4.8.15+v4.8.51+v4.8.54: 设置 Tab 风格 section 含 6 cards (basic+classic+anime+cat+chick+leader)",
+    settingsCheck.count === 6
       && settingsCheck.styles.includes("basic")
       && settingsCheck.styles.includes("classic")
       && settingsCheck.styles.includes("anime")
       && settingsCheck.styles.includes("cat")
+      && settingsCheck.styles.includes("chick")
+      && settingsCheck.styles.includes("leader")
       && settingsCheck.activeStyle === "classic"
       && settingsCheck.hasPreviewImg
       && settingsCheck.sectionTitle.includes("风格")
