@@ -5,6 +5,8 @@ src/_metadata/
 node_modules/
 dist/
 *.zip
+# 允许推广页发布 zip
+!docs/**/*.zip
 .DS_Store
 Thumbs.db
 tests/e2e/.userdata/
