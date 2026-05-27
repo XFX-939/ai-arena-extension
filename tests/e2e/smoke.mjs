@@ -2318,6 +2318,15 @@ try {
     /type:\s*"summary"[\s\S]{0,400}ChatGatekeeperBridge\?\.handleResp\(msg,\s*resp,\s*\{\s*textField:\s*"customInstruction"/.test(taskMenuJsV490),
     "summary 分支未接 bridge 或 textField 不对");
 
+  // ── v4.9.0 ⑫: popup-tasks.js bindDebate + PPT 发送 都接 bridge ──
+  const tasksJsV490 = fs.readFileSync(path.join(EXT_PATH, "popup-tasks.js"), "utf8");
+  check("v4.9.0 ⑫a: popup-tasks bindDebate sendOnce 调 ChatGatekeeperBridge.handleResp",
+    /sendOnce\s*=\s*\(force\)\s*=>\s*\{[\s\S]{0,400}ChatGatekeeperBridge\?\.handleResp\(msg,\s*resp,\s*\{\s*textField:\s*"guidance"/.test(tasksJsV490),
+    "popup-tasks bindDebate 未接 bridge");
+  check("v4.9.0 ⑫b: popup-tasks PPT 发送按钮接 bridge（textField: text）",
+    /#rp-btn-ppt-send[\s\S]{0,600}ChatGatekeeperBridge\?\.handleResp\(msg,\s*resp,\s*\{\s*textField:\s*"text"/.test(tasksJsV490),
+    "PPT 发送按钮未接 bridge");
+
   // v4.8.52: Tab 模式 debugger 提示
   //   chrome.debugger.attach 会强制显示"AI Arena 已开始调试此浏览器"横条，
   //   用户点取消会 detach 所有 attach → 后台 AI tab 失反节流 → 流式渲染降到 1 fps。
