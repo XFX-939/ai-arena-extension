@@ -67,7 +67,7 @@ try {
   // 2) 读 manifest version_name 验证版本同步（直接读源文件）
   const manifest = JSON.parse(fs.readFileSync(path.join(EXT_PATH, "manifest.json"), "utf8"));
   console.log(`[smoke] manifest version: ${manifest.version}, version_name: ${manifest.version_name}`);
-  check("manifest version_name = 4.8.67-beta", manifest.version_name === "4.8.67-beta", `actual: ${manifest.version_name}`);
+  check("manifest version_name = 4.9.0-beta", manifest.version_name === "4.9.0-beta", `actual: ${manifest.version_name}`);
 
   // 3) 打开 sidepanel.html（作为普通 tab），验证 DOM
   const sidepanelPage = await context.newPage();
@@ -75,10 +75,10 @@ try {
   await sidepanelPage.waitForLoadState("domcontentloaded");
 
   const versionBadge = await sidepanelPage.locator(".version").textContent();
-  check("sidepanel version badge", versionBadge === "v4.8.67-beta", `actual: "${versionBadge}"`);
+  check("sidepanel version badge", versionBadge === "v4.9.0-beta", `actual: "${versionBadge}"`);
 
   const footerVersion = await sidepanelPage.locator(".footer").textContent();
-  check("sidepanel footer version", footerVersion?.includes("v4.8.67-beta"), `actual: "${footerVersion?.slice(0, 100)}"`);
+  check("sidepanel footer version", footerVersion?.includes("v4.9.0-beta"), `actual: "${footerVersion?.slice(0, 100)}"`);
 
   const openChatBtn = await sidepanelPage.locator("#btn-open-chat").count();
   check('sidepanel has "🪟 群聊" button', openChatBtn === 1);
@@ -96,7 +96,7 @@ try {
   await popupPage.waitForLoadState("domcontentloaded");
 
   const popupVersion = await popupPage.locator(".chat-version").textContent();
-  check("popup chat-version = v4.8.67-beta", popupVersion === "v4.8.67-beta", `actual: "${popupVersion}"`);
+  check("popup chat-version = v4.9.0-beta", popupVersion === "v4.9.0-beta", `actual: "${popupVersion}"`);
 
   // 图标资产验证（v4.0.11）
   const assetsOk = await popupPage.evaluate(async (extId) => {
@@ -2095,6 +2095,322 @@ try {
     !tutPageRuntime.err && tutPageRuntime.after?.page1HiddenNow && tutPageRuntime.after?.page2VisibleNow &&
     tutPageRuntime.after?.dot2Active && tutPageRuntime.after?.curText === "2" && tutPageRuntime.after?.current === 2,
     `actual: ${JSON.stringify(tutPageRuntime.after)}`);
+
+  // ── v4.9.0 ①: gatekeeper-rules.js 内置词表 ──
+  const rulesJsV490 = fs.readFileSync(path.join(EXT_PATH, "gatekeeper-rules.js"), "utf8");
+  check("v4.9.0 ①: gatekeeper-rules.js 暴露 BUILTIN_RULES 含 5 类正则 + 2 个词表",
+    /self\.BUILTIN_RULES\s*=/.test(rulesJsV490) &&
+    /id:\s*"huawei-staff-id"/.test(rulesJsV490) &&
+    /id:\s*"internal-ip-10"/.test(rulesJsV490) &&
+    /id:\s*"huawei-email"/.test(rulesJsV490) &&
+    /id:\s*"mobile-phone-cn"/.test(rulesJsV490) &&
+    /id:\s*"carrier-cn"/.test(rulesJsV490) &&
+    /id:\s*"strategic-keywords"/.test(rulesJsV490),
+    "gatekeeper-rules.js 词表不完整");
+  check("v4.9.0 ①+T1-review: BUILTIN_RULES 总数 9 条（防词表误删）",
+    /huawei-internal-domain/.test(rulesJsV490) &&
+    /internal-ip-172/.test(rulesJsV490) &&
+    /internal-ip-192/.test(rulesJsV490),
+    "BUILTIN_RULES 词表条目不齐（应含 internal-ip-172/192 + huawei-internal-domain）");
+
+  // ── v4.9.0 ②: gatekeeper-store.js storage 抽象 ──
+  const storeJsV490 = fs.readFileSync(path.join(EXT_PATH, "gatekeeper-store.js"), "utf8");
+  check("v4.9.0 ②: gatekeeper-store 暴露 6 个核心 API",
+    /self\.GatekeeperStore\s*=/.test(storeJsV490) &&
+    /isEnabled,\s*setEnabled,/.test(storeJsV490) &&
+    /loadRules,/.test(storeJsV490) &&
+    /loadWhitelist,\s*addWhitelist,\s*removeWhitelist/.test(storeJsV490) &&
+    /loadStats,\s*bumpStat/.test(storeJsV490),
+    "gatekeeper-store API 不完整");
+  check("v4.9.0 ②: 默认启用（isEnabled 未设值返回 true）",
+    /\[KEY_ENABLED\]\s*!==\s*false/.test(storeJsV490),
+    "默认启用语义不对");
+
+  // ── v4.9.0 ③: gatekeeper-engine.js 扫描引擎 ──
+  const engineJsV490 = fs.readFileSync(path.join(EXT_PATH, "gatekeeper-engine.js"), "utf8");
+  check("v4.9.0 ③: gatekeeper-engine 暴露 scan / maskText / hasBlocking",
+    /self\.GatekeeperEngine\s*=/.test(engineJsV490) &&
+    /scan,\s*maskText,\s*hasBlocking/.test(engineJsV490),
+    "engine API 不完整");
+  check("v4.9.0 ③: scan 含 100ms 超时兜底（防 ReDoS）",
+    /SCAN_TIMEOUT_MS\s*=\s*100/.test(engineJsV490) &&
+    /Date\.now\(\)\s*>\s*deadline/.test(engineJsV490),
+    "scan 缺超时兜底");
+  check("v4.9.0 ③: scan 接 whitelist 跳过 + 按 index 倒序 mask",
+    /if\s*\(whitelist\[matched\]\)\s*continue/.test(engineJsV490) &&
+    /sort\(\(a,\s*b\)\s*=>\s*b\.index\s*-\s*a\.index\)/.test(engineJsV490),
+    "engine 行为不符 spec");
+
+  // ── v4.9.0 ④: background.js importScripts 加 3 个 gatekeeper-*.js ──
+  const bgV490 = fs.readFileSync(path.join(EXT_PATH, "background.js"), "utf8");
+  check("v4.9.0 ④: background.js importScripts 含 gatekeeper-rules/store/engine",
+    /importScripts\([^)]*"gatekeeper-rules\.js"[^)]*"gatekeeper-store\.js"[^)]*"gatekeeper-engine\.js"/.test(bgV490),
+    "background.js importScripts 缺 gatekeeper 模块");
+
+  // ── v4.9.0 ⑤: background.js guardedSend wrapper ──
+  check("v4.9.0 ⑤: background.js 含 async function guardedSend",
+    /async function guardedSend\(\{\s*text,\s*handler,\s*msg\s*\}\)/.test(bgV490),
+    "缺 guardedSend 函数");
+  check("v4.9.0 ⑤: guardedSend 检查 skipGatekeeper + isEnabled + return reason:sensitive_blocked",
+    /msg\?\.skipGatekeeper/.test(bgV490) &&
+    /Store\.isEnabled\(\)/.test(bgV490) &&
+    /reason:\s*"sensitive_blocked"/.test(bgV490) &&
+    /hits,\s*masked,\s*original/.test(bgV490),
+    "guardedSend 行为不符 spec");
+  check("v4.9.0 ⑤: guardedSend 异常时降级放行（try/catch）",
+    /catch\s*\(e\)\s*\{[\s\S]{0,200}falling back to handler/.test(bgV490),
+    "guardedSend 缺异常降级");
+
+  // ⑥ 前重读 background.js（T6 改了 5 个 case）
+  const bgV490_t6 = fs.readFileSync(path.join(EXT_PATH, "background.js"), "utf8");
+  // ── v4.9.0 ⑥: 5 个 handler 都包了 guardedSend ──
+  check("v4.9.0 ⑥: case 'broadcast' 走 guardedSend",
+    /case\s+"broadcast":\s*\n\s*sendResponse\(await guardedSend/.test(bgV490_t6),
+    "case broadcast 没接 guardedSend");
+  check("v4.9.0 ⑥: case 'debateRound' 用 msg.guidance 做 text",
+    /case\s+"debateRound":[\s\S]{0,200}text:\s*msg\.guidance/.test(bgV490_t6),
+    "case debateRound 没接或字段不对");
+  check("v4.9.0 ⑥: case 'summary' 用 msg.customInstruction 做 text",
+    /case\s+"summary":[\s\S]{0,200}text:\s*msg\.customInstruction/.test(bgV490_t6),
+    "case summary 没接或字段不对");
+  check("v4.9.0 ⑥: case 'sendPromptToService' 走 guardedSend",
+    /case\s+"sendPromptToService":[\s\S]{0,300}guardedSend/.test(bgV490_t6),
+    "case sendPromptToService 没接");
+  check("v4.9.0 ⑥: case 'chatBroadcast' 走 guardedSend",
+    /case\s+"chatBroadcast":[\s\S]{0,300}guardedSend/.test(bgV490_t6),
+    "case chatBroadcast 没接");
+
+  // ── v4.9.0 ⑦: popup-modal.js showSensitiveBlocked ──
+  const modalJsV490 = fs.readFileSync(path.join(EXT_PATH, "popup-modal.js"), "utf8");
+  check("v4.9.0 ⑦: popup-modal 暴露 showSensitiveBlocked + 3 个 role(mask/confirm/cancel)",
+    /window\.ChatModal\s*=\s*\{[^}]*showSensitiveBlocked/s.test(modalJsV490) &&
+    /data-role="mask"/.test(modalJsV490) &&
+    /data-role="confirm"/.test(modalJsV490) &&
+    /data-role="cancel"/.test(modalJsV490),
+    "showSensitiveBlocked API 或按钮 role 不完整");
+  check("v4.9.0 ⑦: modal 文案符合 spec（检测到 N 处敏感信息 + 3 按钮中文）",
+    /\$\{n\}\s*处敏感信息/.test(modalJsV490) &&
+    /自动打码后发送/.test(modalJsV490) &&
+    /我确认无敏感\s*·\s*加入白名单/.test(modalJsV490) &&
+    /取消修改/.test(modalJsV490),
+    "modal 文案不符 spec v1");
+
+  // 运行时：popup 中调 showSensitiveBlocked 验证 DOM 出现 + 按钮可点
+  const gkModalRuntime = await popupPage.evaluate(async () => {
+    if (!window.ChatModal?.showSensitiveBlocked) return { err: "showSensitiveBlocked 未暴露" };
+    let maskCalled = false, confirmCalled = false, cancelCalled = false;
+    window.ChatModal.showSensitiveBlocked(
+      {
+        hits: [
+          { category: "工号", text: "Z12345678", masked: "<工号>", severity: "block" },
+          { category: "客户", text: "中国移动",   masked: "<客户>", severity: "block" },
+        ],
+        masked: "请帮我分析 <工号> 在 <客户> 的需求",
+        original: "请帮我分析 Z12345678 在 中国移动 的需求",
+      },
+      {
+        onMask: () => { maskCalled = true; },
+        onConfirm: () => { confirmCalled = true; },
+        onCancel: () => { cancelCalled = true; },
+      }
+    );
+    await new Promise(r => setTimeout(r, 50));
+    const overlay = document.querySelector(".gatekeeper-modal");
+    const titleText = document.querySelector(".arena-modal-title")?.textContent || "";
+    const hitsRowCount = document.querySelectorAll(".gk-hit-row").length;
+    const previewText = document.querySelector(".gk-preview-body")?.textContent || "";
+    const maskTagCount = document.querySelectorAll(".gk-mask-tag").length;
+    // 测点主按钮
+    document.querySelector('[data-role="mask"]')?.click();
+    await new Promise(r => setTimeout(r, 200));
+    const gone = !document.querySelector(".gatekeeper-modal");
+    return { hasOverlay: !!overlay, titleText, hitsRowCount, previewText, maskTagCount, maskCalled, gone };
+  });
+  check("v4.9.0 ⑦ 运行时: showSensitiveBlocked 渲染 overlay + 2 hits + 2 mask-tag + 标题数字正确",
+    !gkModalRuntime.err &&
+    gkModalRuntime.hasOverlay &&
+    gkModalRuntime.titleText.includes("2 处敏感信息") &&
+    gkModalRuntime.hitsRowCount === 2 &&
+    gkModalRuntime.previewText.includes("<工号>") &&
+    gkModalRuntime.maskTagCount === 2,
+    `actual: ${JSON.stringify(gkModalRuntime)}`);
+  check("v4.9.0 ⑦ 运行时: 点击主按钮触发 onMask + modal 关闭",
+    gkModalRuntime.maskCalled === true && gkModalRuntime.gone === true,
+    `actual: ${JSON.stringify(gkModalRuntime)}`);
+
+  // ── v4.9.0 ⑧: popup.css 守门员 modal 样式 ──
+  const cssV490 = fs.readFileSync(path.join(EXT_PATH, "popup.css"), "utf8");
+  check("v4.9.0 ⑧: popup.css 含 .gk-hits / .gk-hit-cat / .gk-mask-tag / .gk-preview-body 样式",
+    /\.gk-hits\s*\{/.test(cssV490) &&
+    /\.gk-hit-cat\s*\{[^}]*background:\s*rgba\(255,\s*159,\s*10/.test(cssV490) &&
+    /\.gk-mask-tag\s*\{[^}]*color:\s*#34c759/.test(cssV490) &&
+    /\.gk-preview-body\s*\{/.test(cssV490) &&
+    /\.arena-modal-actions\.gk-actions/.test(cssV490),
+    "守门员 modal 样式不完整");
+
+  // ── v4.9.0 ⑨: popup-gatekeeper-bridge.js ──
+  const bridgeJsV490 = fs.readFileSync(path.join(EXT_PATH, "popup-gatekeeper-bridge.js"), "utf8");
+  check("v4.9.0 ⑨: bridge 暴露 ChatGatekeeperBridge.handleResp",
+    /window\.ChatGatekeeperBridge\s*=\s*\{[^}]*handleResp/s.test(bridgeJsV490),
+    "bridge handleResp 未暴露");
+  check("v4.9.0 ⑨: handleResp 仅在 reason === sensitive_blocked 时处理",
+    /resp\.reason\s*!==\s*"sensitive_blocked"/.test(bridgeJsV490),
+    "bridge 触发条件不严");
+  check("v4.9.0 ⑨: bridge onMask/onConfirm 用 textField + skipGatekeeper:true 重发",
+    /\[textField\]:\s*newText/.test(bridgeJsV490) &&
+    /skipGatekeeper:\s*true/.test(bridgeJsV490),
+    "bridge 重发协议不符 spec");
+  check("v4.9.0 ⑨: bridge onConfirm 调 GatekeeperStore.addWhitelist",
+    /GatekeeperStore[\s\S]{0,200}addWhitelist\(theHits\.map\(h\s*=>\s*h\.text\)\)/.test(bridgeJsV490),
+    "bridge onConfirm 未加白名单");
+
+  // ── v4.9.0 ⑩: popup.html 引入 4 个 gatekeeper 脚本 ──
+  const htmlV490 = fs.readFileSync(path.join(EXT_PATH, "popup.html"), "utf8");
+  check("v4.9.0 ⑩: popup.html 含 gatekeeper-rules/store/engine + bridge 4 个 script",
+    /<script src="gatekeeper-rules\.js"><\/script>/.test(htmlV490) &&
+    /<script src="gatekeeper-store\.js"><\/script>/.test(htmlV490) &&
+    /<script src="gatekeeper-engine\.js"><\/script>/.test(htmlV490) &&
+    /<script src="popup-gatekeeper-bridge\.js"><\/script>/.test(htmlV490),
+    "popup.html 缺 gatekeeper 脚本引入");
+  check("v4.9.0 ⑩: bridge 在 popup-modal 之后引入（依赖顺序对）",
+    /popup-modal\.js[\s\S]*popup-gatekeeper-bridge\.js/.test(htmlV490),
+    "bridge 引入顺序在 popup-modal 之前");
+
+  // 运行时：popup 加载后 4 个全局 API 都可用
+  const gkLoadCheck = await popupPage.evaluate(() => ({
+    hasRules: Array.isArray(window.BUILTIN_RULES),
+    hasStore: typeof window.GatekeeperStore?.isEnabled === "function",
+    hasEngine: typeof window.GatekeeperEngine?.scan === "function",
+    hasBridge: typeof window.ChatGatekeeperBridge?.handleResp === "function",
+  }));
+  check("v4.9.0 ⑩ 运行时: popup 全局含 BUILTIN_RULES / GatekeeperStore / Engine / Bridge",
+    gkLoadCheck.hasRules && gkLoadCheck.hasStore && gkLoadCheck.hasEngine && gkLoadCheck.hasBridge,
+    `actual: ${JSON.stringify(gkLoadCheck)}`);
+
+  // 运行时：scan 真实运行验证（带白名单跳过）
+  const scanRuntime = await popupPage.evaluate(async () => {
+    if (!window.GatekeeperEngine) return { err: "engine 未加载" };
+    // 清白名单先
+    await new Promise(r => chrome.storage.local.set({ "gatekeeper.whitelist": {} }, r));
+    const text1 = "我的工号 Z12345678 邮箱 abc@huawei.com";
+    const hits1 = await window.GatekeeperEngine.scan(text1);
+    const cats = hits1.map(h => h.category).sort();
+    const masked1 = window.GatekeeperEngine.maskText(text1, hits1);
+    // 加白名单后再扫
+    await window.GatekeeperStore.addWhitelist(["Z12345678"]);
+    const hits2 = await window.GatekeeperEngine.scan(text1);
+    return { hits1Count: hits1.length, cats, masked1, hits2Count: hits2.length };
+  });
+  check("v4.9.0 ⑩ 运行时: scan 命中 2 类（工号 + 内部邮箱）+ mask 替换为 <类别>",
+    !scanRuntime.err &&
+    scanRuntime.hits1Count === 2 &&
+    JSON.stringify(scanRuntime.cats) === JSON.stringify(["内部邮箱", "工号"]) &&
+    scanRuntime.masked1 === "我的工号 <工号> 邮箱 <内部邮箱>",
+    `actual: ${JSON.stringify(scanRuntime)}`);
+  check("v4.9.0 ⑩ 运行时: 白名单加入后命中数下降（Z12345678 不再算 hit）",
+    !scanRuntime.err && scanRuntime.hits2Count === 1,
+    `actual: ${JSON.stringify(scanRuntime)}`);
+
+  // ── v4.9.0 ⑪: popup-task-menu.js dispatch 3 分支接 bridge ──
+  const taskMenuJsV490 = fs.readFileSync(path.join(EXT_PATH, "popup-task-menu.js"), "utf8");
+  check("v4.9.0 ⑪: ask 分支调 ChatGatekeeperBridge.handleResp（textField: text）",
+    /type:\s*"chatBroadcast"[\s\S]{0,400}ChatGatekeeperBridge\?\.handleResp\(msg,\s*resp,\s*\{\s*textField:\s*"text"/.test(taskMenuJsV490),
+    "ask 分支未接 bridge");
+  check("v4.9.0 ⑪: debate 分支用 textField: guidance",
+    /type:\s*"debateRound"[\s\S]{0,500}ChatGatekeeperBridge\?\.handleResp\(msg,\s*resp,\s*\{\s*textField:\s*"guidance"/.test(taskMenuJsV490),
+    "debate 分支未接 bridge 或 textField 不对");
+  check("v4.9.0 ⑪: summary 分支用 textField: customInstruction",
+    /type:\s*"summary"[\s\S]{0,400}ChatGatekeeperBridge\?\.handleResp\(msg,\s*resp,\s*\{\s*textField:\s*"customInstruction"/.test(taskMenuJsV490),
+    "summary 分支未接 bridge 或 textField 不对");
+
+  // ── v4.9.0 ⑫: popup-tasks.js bindDebate + PPT 发送 都接 bridge ──
+  const tasksJsV490 = fs.readFileSync(path.join(EXT_PATH, "popup-tasks.js"), "utf8");
+  check("v4.9.0 ⑫a: popup-tasks bindDebate sendOnce 调 ChatGatekeeperBridge.handleResp",
+    /sendOnce\s*=\s*\(force\)\s*=>\s*\{[\s\S]{0,400}ChatGatekeeperBridge\?\.handleResp\(msg,\s*resp,\s*\{\s*textField:\s*"guidance"/.test(tasksJsV490),
+    "popup-tasks bindDebate 未接 bridge");
+  check("v4.9.0 ⑫b: popup-tasks PPT 发送按钮接 bridge（textField: text）",
+    /#rp-btn-ppt-send[\s\S]{0,600}ChatGatekeeperBridge\?\.handleResp\(msg,\s*resp,\s*\{\s*textField:\s*"text"/.test(tasksJsV490),
+    "PPT 发送按钮未接 bridge");
+
+  // ── v4.9.0 ⑬ 端到端: 模拟 bridge.handleResp 完整重发流程 ──
+  const e2eFlow = await popupPage.evaluate(async () => {
+    // 清白名单
+    await new Promise(r => chrome.storage.local.set({ "gatekeeper.whitelist": {} }, r));
+    let retryFired = false;
+    let retryMsg = null;
+    const originalMsg = {
+      type: "chatBroadcast",
+      text: "我的工号 Z12345678 是机密",
+      targets: ["claude"],
+      images: [],
+    };
+    // 模拟 background return 的 sensitive_blocked 响应
+    const resp = {
+      ok: false,
+      reason: "sensitive_blocked",
+      hits: [{ rule: "huawei-staff-id", category: "工号", text: "Z12345678", index: 5, length: 9, masked: "<工号>", severity: "block" }],
+      masked: "我的工号 <工号> 是机密",
+      original: "我的工号 Z12345678 是机密",
+    };
+    const handled = window.ChatGatekeeperBridge.handleResp(originalMsg, resp, {
+      textField: "text",
+      onRetry: (newMsg) => { retryFired = true; retryMsg = newMsg; },
+    });
+    await new Promise(r => setTimeout(r, 50));
+    // 模拟用户点"自动打码"
+    document.querySelector('[data-role="mask"]')?.click();
+    await new Promise(r => setTimeout(r, 250));
+    return {
+      handled,
+      retryFired,
+      retryText: retryMsg?.text,
+      retryHasSkip: retryMsg?.skipGatekeeper === true,
+      retryType: retryMsg?.type,
+      retryTargets: retryMsg?.targets,
+    };
+  });
+  check("v4.9.0 ⑬ E2E: bridge.handleResp 返回 true（已处理）",
+    e2eFlow.handled === true, `actual: ${JSON.stringify(e2eFlow)}`);
+  check("v4.9.0 ⑬ E2E: 用户点'自动打码' → onRetry 触发 + 用 masked 文本 + skipGatekeeper:true + 保留 type/targets",
+    e2eFlow.retryFired === true &&
+    e2eFlow.retryText === "我的工号 <工号> 是机密" &&
+    e2eFlow.retryHasSkip === true &&
+    e2eFlow.retryType === "chatBroadcast" &&
+    JSON.stringify(e2eFlow.retryTargets) === JSON.stringify(["claude"]),
+    `actual: ${JSON.stringify(e2eFlow)}`);
+
+  // ── E2E 加入白名单流程 ──
+  const e2eConfirm = await popupPage.evaluate(async () => {
+    await new Promise(r => chrome.storage.local.set({ "gatekeeper.whitelist": {} }, r));
+    let retryMsg = null;
+    const originalMsg = { type: "chatBroadcast", text: "工号 W99999999", targets: [], images: [] };
+    const resp = {
+      ok: false, reason: "sensitive_blocked",
+      hits: [{ rule: "huawei-staff-id", category: "工号", text: "W99999999", index: 3, length: 9, masked: "<工号>", severity: "block" }],
+      masked: "工号 <工号>",
+      original: "工号 W99999999",
+    };
+    window.ChatGatekeeperBridge.handleResp(originalMsg, resp, {
+      textField: "text",
+      onRetry: (m) => { retryMsg = m; },
+    });
+    await new Promise(r => setTimeout(r, 50));
+    // 点"加入白名单"
+    document.querySelector('[data-role="confirm"]')?.click();
+    await new Promise(r => setTimeout(r, 300));
+    // 验证白名单已写
+    const wl = await new Promise(r => chrome.storage.local.get(["gatekeeper.whitelist"], resp => r(resp["gatekeeper.whitelist"] || {})));
+    return {
+      retryText: retryMsg?.text,
+      retryHasSkip: retryMsg?.skipGatekeeper === true,
+      whitelistHasWord: !!wl["W99999999"],
+    };
+  });
+  check("v4.9.0 ⑬ E2E: 点'加入白名单' → 用 original 重发 + skipGatekeeper:true + 白名单已写",
+    e2eConfirm.retryText === "工号 W99999999" &&
+    e2eConfirm.retryHasSkip === true &&
+    e2eConfirm.whitelistHasWord === true,
+    `actual: ${JSON.stringify(e2eConfirm)}`);
 
   // v4.8.52: Tab 模式 debugger 提示
   //   chrome.debugger.attach 会强制显示"AI Arena 已开始调试此浏览器"横条，

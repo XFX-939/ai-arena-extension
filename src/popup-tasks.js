@@ -83,13 +83,16 @@
       // v4.8.38: needsConfirm — 有 AI 在 polling 时让用户决定
       // v4.8.65: insufficient_responses → 弹自定义 modal（重新提取 / 切同时提问）
       const sendOnce = (force) => {
-        chrome.runtime.sendMessage({
+        const msg = {
           type: "debateRound",
           style: state.style,
           guidance: state.guidance,
           concise: state.concise,
           force,
-        }, (resp) => {
+        };
+        chrome.runtime.sendMessage(msg, (resp) => {
+          // v4.9.0: 守门员拦截
+          if (window.ChatGatekeeperBridge?.handleResp(msg, resp, { textField: "guidance" })) return;
           if (resp?.needsConfirm) {
             if (window.confirm(resp.message)) sendOnce(true);
             return;
@@ -283,9 +286,10 @@
     root.querySelector("#rp-btn-ppt-send")?.addEventListener("click", () => {
       const text = ta?.value?.trim();
       if (!text) { alert("prompt 为空，先点 1/2/3 按钮生成"); return; }
-      chrome.runtime.sendMessage({
-        type: "sendPromptToService", service: "chatgpt", text,
-      }, (resp) => {
+      const msg = { type: "sendPromptToService", service: "chatgpt", text };
+      chrome.runtime.sendMessage(msg, (resp) => {
+        // v4.9.0: 守门员拦截（PPT prompt 可能很长，更可能含敏感信息）
+        if (window.ChatGatekeeperBridge?.handleResp(msg, resp, { textField: "text" })) return;
         if (resp && !resp.ok) alert(`发送失败：${resp.error || "未知错误"}\n（请先添加 GPT 参与者并打开 chatgpt.com 标签页）`);
       });
     });

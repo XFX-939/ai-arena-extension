@@ -5,7 +5,8 @@ let lastKnownScreen = { width: 1920, height: 1080, left: 0, top: 0 };
 
 // v4.8.29 F37 混合模式: Tab 模式走 chrome.debugger 持久 attach（黄条不影响 UI），
 // 并列模式走 MAIN world visibility patch（无黄条）— 两套并存按需启用
-importScripts("selectors-config.js", "state-machine.js", "templates-builtin.js", "template-store.js", "debate-engine.js", "cdp-extractor.js", "chat-bus.js", "ppt-prompts.js", "debate-summary-template.js");
+// v4.9.0: 加入 gatekeeper 三个模块（rules → store → engine 顺序，store/engine 依赖 BUILTIN_RULES）
+importScripts("selectors-config.js", "state-machine.js", "templates-builtin.js", "template-store.js", "debate-engine.js", "cdp-extractor.js", "chat-bus.js", "ppt-prompts.js", "debate-summary-template.js", "gatekeeper-rules.js", "gatekeeper-store.js", "gatekeeper-engine.js");
 
 const SERVICES = {
   claude:   { url: "https://claude.ai/new",              name: "Claude" },
@@ -394,13 +395,37 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           if (msg.screen) lastKnownScreen = msg.screen;
           sendResponse(await addParticipant(msg.service)); break;
         case "removeParticipant": sendResponse(await removeParticipant(msg.id)); break;
-        case "broadcast":         sendResponse(await handleBroadcast(msg.text, msg.images)); break;
-        case "debateRound":       sendResponse(await handleDebateRound(msg.style, msg.guidance, msg.concise, msg.force)); break;
-        case "summary":           sendResponse(await handleSummary(msg.judgeId, msg.customInstruction, msg.format)); break;
+        case "broadcast":
+          sendResponse(await guardedSend({
+            text: msg.text || "",
+            msg,
+            handler: () => handleBroadcast(msg.text, msg.images),
+          }));
+          break;
+        case "debateRound":
+          sendResponse(await guardedSend({
+            text: msg.guidance || "",
+            msg,
+            handler: () => handleDebateRound(msg.style, msg.guidance, msg.concise, msg.force),
+          }));
+          break;
+        case "summary":
+          sendResponse(await guardedSend({
+            text: msg.customInstruction || "",
+            msg,
+            handler: () => handleSummary(msg.judgeId, msg.customInstruction, msg.format),
+          }));
+          break;
         case "checkAllCompletion": sendResponse(await checkAllCompletion()); break;
         case "focusTab":          sendResponse(await handleFocusTab(msg.id)); break;
         case "readOneResponse":   sendResponse(await readOneResponse(msg.participantId)); break;
-        case "sendPromptToService": sendResponse(await sendPromptToService(msg.service || "chatgpt", msg.text || "")); break;
+        case "sendPromptToService":
+          sendResponse(await guardedSend({
+            text: msg.text || "",
+            msg,
+            handler: () => sendPromptToService(msg.service || "chatgpt", msg.text || ""),
+          }));
+          break;
         case "exportSession":     sendResponse(exportSession()); break;
         case "getState":          sendResponse(StateMachine.getFullState()); break;
         case "getSelectors":      sendResponse(DEFAULT_SELECTORS[msg.platform] || {}); break;
@@ -447,7 +472,12 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           sendResponse({ ok: true });
           break;
         case "chatBroadcast":
-          sendResponse(await ChatBus.broadcast(msg.text, msg.targets || [], msg.images || [])); break;
+          sendResponse(await guardedSend({
+            text: msg.text || "",
+            msg,
+            handler: () => ChatBus.broadcast(msg.text, msg.targets || [], msg.images || []),
+          }));
+          break;
         case "chatRestoreLog":
           sendResponse({ messages: ChatBus.getLog() }); break;
         case "chatClear":
@@ -1643,3 +1673,29 @@ async function sendMessageWithTimeout(tabId, msg, timeoutMs = 90000) {
 }
 
 function notifyStatus(message) { chrome.runtime.sendMessage({ type: "status", message }).catch(() => {}); }
+
+// v4.9.0: 敏感信息守门员 wrapper — 所有发送 handler 走这里扫一次
+//   { text, handler, msg } → 命中则返回 { ok:false, reason:"sensitive_blocked", hits, masked, original }
+//   不命中或 msg.skipGatekeeper === true → 直接调 handler() return 结果
+//   handler 是不带参数的函数（闭包捕获 msg.* 等）
+async function guardedSend({ text, handler, msg }) {
+  try {
+    if (msg?.skipGatekeeper) return await handler();
+    const Store = self.GatekeeperStore;
+    const Engine = self.GatekeeperEngine;
+    if (!Store || !Engine) return await handler();   // 守门员未加载，降级放行
+    if (!(await Store.isEnabled())) return await handler();
+    if (typeof text !== "string" || !text.trim()) return await handler();
+
+    const hits = await Engine.scan(text);
+    if (!hits.length) return await handler();
+
+    // 命中 → 不走 handler，return reason 给 popup
+    const masked = Engine.maskText(text, hits);
+    try { await Store.bumpStat("hits"); } catch (_) {}
+    return { ok: false, reason: "sensitive_blocked", hits, masked, original: text };
+  } catch (e) {
+    console.warn("[Gatekeeper] guardedSend error, falling back to handler:", e);
+    return await handler();
+  }
+}
