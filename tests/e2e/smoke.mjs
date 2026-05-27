@@ -67,7 +67,7 @@ try {
   // 2) 读 manifest version_name 验证版本同步（直接读源文件）
   const manifest = JSON.parse(fs.readFileSync(path.join(EXT_PATH, "manifest.json"), "utf8"));
   console.log(`[smoke] manifest version: ${manifest.version}, version_name: ${manifest.version_name}`);
-  check("manifest version_name = 4.8.67-beta", manifest.version_name === "4.8.67-beta", `actual: ${manifest.version_name}`);
+  check("manifest version_name = 4.9.0-beta", manifest.version_name === "4.9.0-beta", `actual: ${manifest.version_name}`);
 
   // 3) 打开 sidepanel.html（作为普通 tab），验证 DOM
   const sidepanelPage = await context.newPage();
@@ -75,10 +75,10 @@ try {
   await sidepanelPage.waitForLoadState("domcontentloaded");
 
   const versionBadge = await sidepanelPage.locator(".version").textContent();
-  check("sidepanel version badge", versionBadge === "v4.8.67-beta", `actual: "${versionBadge}"`);
+  check("sidepanel version badge", versionBadge === "v4.9.0-beta", `actual: "${versionBadge}"`);
 
   const footerVersion = await sidepanelPage.locator(".footer").textContent();
-  check("sidepanel footer version", footerVersion?.includes("v4.8.67-beta"), `actual: "${footerVersion?.slice(0, 100)}"`);
+  check("sidepanel footer version", footerVersion?.includes("v4.9.0-beta"), `actual: "${footerVersion?.slice(0, 100)}"`);
 
   const openChatBtn = await sidepanelPage.locator("#btn-open-chat").count();
   check('sidepanel has "🪟 群聊" button', openChatBtn === 1);
@@ -96,7 +96,7 @@ try {
   await popupPage.waitForLoadState("domcontentloaded");
 
   const popupVersion = await popupPage.locator(".chat-version").textContent();
-  check("popup chat-version = v4.8.67-beta", popupVersion === "v4.8.67-beta", `actual: "${popupVersion}"`);
+  check("popup chat-version = v4.9.0-beta", popupVersion === "v4.9.0-beta", `actual: "${popupVersion}"`);
 
   // 图标资产验证（v4.0.11）
   const assetsOk = await popupPage.evaluate(async (extId) => {
@@ -2107,6 +2107,11 @@ try {
     /id:\s*"carrier-cn"/.test(rulesJsV490) &&
     /id:\s*"strategic-keywords"/.test(rulesJsV490),
     "gatekeeper-rules.js 词表不完整");
+  check("v4.9.0 ①+T1-review: BUILTIN_RULES 总数 9 条（防词表误删）",
+    /huawei-internal-domain/.test(rulesJsV490) &&
+    /internal-ip-172/.test(rulesJsV490) &&
+    /internal-ip-192/.test(rulesJsV490),
+    "BUILTIN_RULES 词表条目不齐（应含 internal-ip-172/192 + huawei-internal-domain）");
 
   // ── v4.9.0 ②: gatekeeper-store.js storage 抽象 ──
   const storeJsV490 = fs.readFileSync(path.join(EXT_PATH, "gatekeeper-store.js"), "utf8");
@@ -2326,6 +2331,86 @@ try {
   check("v4.9.0 ⑫b: popup-tasks PPT 发送按钮接 bridge（textField: text）",
     /#rp-btn-ppt-send[\s\S]{0,600}ChatGatekeeperBridge\?\.handleResp\(msg,\s*resp,\s*\{\s*textField:\s*"text"/.test(tasksJsV490),
     "PPT 发送按钮未接 bridge");
+
+  // ── v4.9.0 ⑬ 端到端: 模拟 bridge.handleResp 完整重发流程 ──
+  const e2eFlow = await popupPage.evaluate(async () => {
+    // 清白名单
+    await new Promise(r => chrome.storage.local.set({ "gatekeeper.whitelist": {} }, r));
+    let retryFired = false;
+    let retryMsg = null;
+    const originalMsg = {
+      type: "chatBroadcast",
+      text: "我的工号 Z12345678 是机密",
+      targets: ["claude"],
+      images: [],
+    };
+    // 模拟 background return 的 sensitive_blocked 响应
+    const resp = {
+      ok: false,
+      reason: "sensitive_blocked",
+      hits: [{ rule: "huawei-staff-id", category: "工号", text: "Z12345678", index: 5, length: 9, masked: "<工号>", severity: "block" }],
+      masked: "我的工号 <工号> 是机密",
+      original: "我的工号 Z12345678 是机密",
+    };
+    const handled = window.ChatGatekeeperBridge.handleResp(originalMsg, resp, {
+      textField: "text",
+      onRetry: (newMsg) => { retryFired = true; retryMsg = newMsg; },
+    });
+    await new Promise(r => setTimeout(r, 50));
+    // 模拟用户点"自动打码"
+    document.querySelector('[data-role="mask"]')?.click();
+    await new Promise(r => setTimeout(r, 250));
+    return {
+      handled,
+      retryFired,
+      retryText: retryMsg?.text,
+      retryHasSkip: retryMsg?.skipGatekeeper === true,
+      retryType: retryMsg?.type,
+      retryTargets: retryMsg?.targets,
+    };
+  });
+  check("v4.9.0 ⑬ E2E: bridge.handleResp 返回 true（已处理）",
+    e2eFlow.handled === true, `actual: ${JSON.stringify(e2eFlow)}`);
+  check("v4.9.0 ⑬ E2E: 用户点'自动打码' → onRetry 触发 + 用 masked 文本 + skipGatekeeper:true + 保留 type/targets",
+    e2eFlow.retryFired === true &&
+    e2eFlow.retryText === "我的工号 <工号> 是机密" &&
+    e2eFlow.retryHasSkip === true &&
+    e2eFlow.retryType === "chatBroadcast" &&
+    JSON.stringify(e2eFlow.retryTargets) === JSON.stringify(["claude"]),
+    `actual: ${JSON.stringify(e2eFlow)}`);
+
+  // ── E2E 加入白名单流程 ──
+  const e2eConfirm = await popupPage.evaluate(async () => {
+    await new Promise(r => chrome.storage.local.set({ "gatekeeper.whitelist": {} }, r));
+    let retryMsg = null;
+    const originalMsg = { type: "chatBroadcast", text: "工号 W99999999", targets: [], images: [] };
+    const resp = {
+      ok: false, reason: "sensitive_blocked",
+      hits: [{ rule: "huawei-staff-id", category: "工号", text: "W99999999", index: 3, length: 9, masked: "<工号>", severity: "block" }],
+      masked: "工号 <工号>",
+      original: "工号 W99999999",
+    };
+    window.ChatGatekeeperBridge.handleResp(originalMsg, resp, {
+      textField: "text",
+      onRetry: (m) => { retryMsg = m; },
+    });
+    await new Promise(r => setTimeout(r, 50));
+    // 点"加入白名单"
+    document.querySelector('[data-role="confirm"]')?.click();
+    await new Promise(r => setTimeout(r, 300));
+    // 验证白名单已写
+    const wl = await new Promise(r => chrome.storage.local.get(["gatekeeper.whitelist"], resp => r(resp["gatekeeper.whitelist"] || {})));
+    return {
+      retryText: retryMsg?.text,
+      retryHasSkip: retryMsg?.skipGatekeeper === true,
+      whitelistHasWord: !!wl["W99999999"],
+    };
+  });
+  check("v4.9.0 ⑬ E2E: 点'加入白名单' → 用 original 重发 + skipGatekeeper:true + 白名单已写",
+    e2eConfirm.retryText === "工号 W99999999" &&
+    e2eConfirm.retryHasSkip === true &&
+    e2eConfirm.whitelistHasWord === true,
+    `actual: ${JSON.stringify(e2eConfirm)}`);
 
   // v4.8.52: Tab 模式 debugger 提示
   //   chrome.debugger.attach 会强制显示"AI Arena 已开始调试此浏览器"横条，
