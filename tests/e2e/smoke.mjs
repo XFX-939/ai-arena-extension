@@ -2259,6 +2259,53 @@ try {
     /GatekeeperStore[\s\S]{0,200}addWhitelist\(theHits\.map\(h\s*=>\s*h\.text\)\)/.test(bridgeJsV490),
     "bridge onConfirm 未加白名单");
 
+  // ── v4.9.0 ⑩: popup.html 引入 4 个 gatekeeper 脚本 ──
+  const htmlV490 = fs.readFileSync(path.join(EXT_PATH, "popup.html"), "utf8");
+  check("v4.9.0 ⑩: popup.html 含 gatekeeper-rules/store/engine + bridge 4 个 script",
+    /<script src="gatekeeper-rules\.js"><\/script>/.test(htmlV490) &&
+    /<script src="gatekeeper-store\.js"><\/script>/.test(htmlV490) &&
+    /<script src="gatekeeper-engine\.js"><\/script>/.test(htmlV490) &&
+    /<script src="popup-gatekeeper-bridge\.js"><\/script>/.test(htmlV490),
+    "popup.html 缺 gatekeeper 脚本引入");
+  check("v4.9.0 ⑩: bridge 在 popup-modal 之后引入（依赖顺序对）",
+    /popup-modal\.js[\s\S]*popup-gatekeeper-bridge\.js/.test(htmlV490),
+    "bridge 引入顺序在 popup-modal 之前");
+
+  // 运行时：popup 加载后 4 个全局 API 都可用
+  const gkLoadCheck = await popupPage.evaluate(() => ({
+    hasRules: Array.isArray(window.BUILTIN_RULES),
+    hasStore: typeof window.GatekeeperStore?.isEnabled === "function",
+    hasEngine: typeof window.GatekeeperEngine?.scan === "function",
+    hasBridge: typeof window.ChatGatekeeperBridge?.handleResp === "function",
+  }));
+  check("v4.9.0 ⑩ 运行时: popup 全局含 BUILTIN_RULES / GatekeeperStore / Engine / Bridge",
+    gkLoadCheck.hasRules && gkLoadCheck.hasStore && gkLoadCheck.hasEngine && gkLoadCheck.hasBridge,
+    `actual: ${JSON.stringify(gkLoadCheck)}`);
+
+  // 运行时：scan 真实运行验证（带白名单跳过）
+  const scanRuntime = await popupPage.evaluate(async () => {
+    if (!window.GatekeeperEngine) return { err: "engine 未加载" };
+    // 清白名单先
+    await new Promise(r => chrome.storage.local.set({ "gatekeeper.whitelist": {} }, r));
+    const text1 = "我的工号 Z12345678 邮箱 abc@huawei.com";
+    const hits1 = await window.GatekeeperEngine.scan(text1);
+    const cats = hits1.map(h => h.category).sort();
+    const masked1 = window.GatekeeperEngine.maskText(text1, hits1);
+    // 加白名单后再扫
+    await window.GatekeeperStore.addWhitelist(["Z12345678"]);
+    const hits2 = await window.GatekeeperEngine.scan(text1);
+    return { hits1Count: hits1.length, cats, masked1, hits2Count: hits2.length };
+  });
+  check("v4.9.0 ⑩ 运行时: scan 命中 2 类（工号 + 内部邮箱）+ mask 替换为 <类别>",
+    !scanRuntime.err &&
+    scanRuntime.hits1Count === 2 &&
+    JSON.stringify(scanRuntime.cats) === JSON.stringify(["内部邮箱", "工号"]) &&
+    scanRuntime.masked1 === "我的工号 <工号> 邮箱 <内部邮箱>",
+    `actual: ${JSON.stringify(scanRuntime)}`);
+  check("v4.9.0 ⑩ 运行时: 白名单加入后命中数下降（Z12345678 不再算 hit）",
+    !scanRuntime.err && scanRuntime.hits2Count === 1,
+    `actual: ${JSON.stringify(scanRuntime)}`);
+
   // v4.8.52: Tab 模式 debugger 提示
   //   chrome.debugger.attach 会强制显示"AI Arena 已开始调试此浏览器"横条，
   //   用户点取消会 detach 所有 attach → 后台 AI tab 失反节流 → 流式渲染降到 1 fps。
