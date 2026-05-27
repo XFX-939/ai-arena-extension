@@ -2243,6 +2243,22 @@ try {
     /\.arena-modal-actions\.gk-actions/.test(cssV490),
     "守门员 modal 样式不完整");
 
+  // ── v4.9.0 ⑨: popup-gatekeeper-bridge.js ──
+  const bridgeJsV490 = fs.readFileSync(path.join(EXT_PATH, "popup-gatekeeper-bridge.js"), "utf8");
+  check("v4.9.0 ⑨: bridge 暴露 ChatGatekeeperBridge.handleResp",
+    /window\.ChatGatekeeperBridge\s*=\s*\{[^}]*handleResp/s.test(bridgeJsV490),
+    "bridge handleResp 未暴露");
+  check("v4.9.0 ⑨: handleResp 仅在 reason === sensitive_blocked 时处理",
+    /resp\.reason\s*!==\s*"sensitive_blocked"/.test(bridgeJsV490),
+    "bridge 触发条件不严");
+  check("v4.9.0 ⑨: bridge onMask/onConfirm 用 textField + skipGatekeeper:true 重发",
+    /\[textField\]:\s*newText/.test(bridgeJsV490) &&
+    /skipGatekeeper:\s*true/.test(bridgeJsV490),
+    "bridge 重发协议不符 spec");
+  check("v4.9.0 ⑨: bridge onConfirm 调 GatekeeperStore.addWhitelist",
+    /GatekeeperStore[\s\S]{0,200}addWhitelist\(theHits\.map\(h\s*=>\s*h\.text\)\)/.test(bridgeJsV490),
+    "bridge onConfirm 未加白名单");
+
   // v4.8.52: Tab 模式 debugger 提示
   //   chrome.debugger.attach 会强制显示"AI Arena 已开始调试此浏览器"横条，
   //   用户点取消会 detach 所有 attach → 后台 AI tab 失反节流 → 流式渲染降到 1 fps。
