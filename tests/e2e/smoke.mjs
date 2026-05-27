@@ -2136,6 +2136,12 @@ try {
     /sort\(\(a,\s*b\)\s*=>\s*b\.index\s*-\s*a\.index\)/.test(engineJsV490),
     "engine 行为不符 spec");
 
+  // ── v4.9.0 ④: background.js importScripts 加 3 个 gatekeeper-*.js ──
+  const bgV490 = fs.readFileSync(path.join(EXT_PATH, "background.js"), "utf8");
+  check("v4.9.0 ④: background.js importScripts 含 gatekeeper-rules/store/engine",
+    /importScripts\([^)]*"gatekeeper-rules\.js"[^)]*"gatekeeper-store\.js"[^)]*"gatekeeper-engine\.js"/.test(bgV490),
+    "background.js importScripts 缺 gatekeeper 模块");
+
   // v4.8.52: Tab 模式 debugger 提示
   //   chrome.debugger.attach 会强制显示"AI Arena 已开始调试此浏览器"横条，
   //   用户点取消会 detach 所有 attach → 后台 AI tab 失反节流 → 流式渲染降到 1 fps。
