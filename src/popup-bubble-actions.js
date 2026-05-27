@@ -19,16 +19,7 @@
     const bubble = row.querySelector(".msg-bubble");
     const text = bubble?.innerText?.trim() || "";
 
-    if (act === "summary-toggle") {
-      // v4.4.0: 展开/收起辩论总结 iframe
-      const iframe = row.querySelector(".summary-iframe");
-      if (iframe) {
-        const showing = iframe.style.display !== "none";
-        iframe.style.display = showing ? "none" : "block";
-        btn.textContent = showing ? "▾ 查看完整报告" : "▴ 收起报告";
-      }
-      return;
-    }
+    // v4.8.66: 总结卡 iframe 默认展开，删除展开/收起切换分支
     if (act === "summary-open") {
       // v4.4.0: 用 blob URL 在新标签打开（chrome-extension:// 下可以）
       const html = row._summaryHtml;
