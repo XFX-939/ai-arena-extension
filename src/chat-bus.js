@@ -870,6 +870,8 @@ const ChatBus = (() => {
     rememberBounds,
     // v4.8.63: 暴露 popupWindowId 给 background onRemoved listener 判断是否是 popup
     getPopupWindowId: () => popupWindowId,
+    // v4.8.64: 暴露 pollers Map size 给 background 判断是否延迟 detach（polling 在跑时不立即解 attach）
+    getActivePollerCount: () => pollers.size,
     broadcast,
     notifyRoundStart,
     getLog,

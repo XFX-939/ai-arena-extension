@@ -339,23 +339,48 @@ chrome.tabs.onRemoved.addListener((closedId) => {
   }
 });
 chrome.windows.onRemoved.addListener(async (windowId) => {
-  // v4.8.63: popup 关闭时自动 detach 所有 debugger session
-  //   原因：用户关掉群聊 popup 后 chrome 顶部"AI Arena 已开始调试此浏览器"横条仍然显示
-  //         每个 AI tab 都挂着 debugger session → 体验差
-  //   行为：判断关掉的 window 是 popup → 调 CDPExtractor.detachAll() 解所有 attach（黄条消失）
-  //   恢复：用户重新 openChatPopup 时，Tab 模式下重新 attach（见 chat-bus openChatPopup 修改）
+  // v4.8.63: popup 关闭时自动 detach 所有 debugger session（chrome 顶部黄条消失）
+  // v4.8.64: polling 在跑时延迟 detach — 防"用户关 popup 时正在生成回答 → 后台 AI 失反节流变慢"
+  //   策略：若 pollers 非空，每 1.5s 检查一次；polling 全完成立即 detach；最长 30s 兜底
+  //         期间若 popup 重新打开（getPopupWindowId 不为 null）→ 取消 detach 保留 attach
   let wasPopup = false;
   try { wasPopup = (typeof ChatBus.getPopupWindowId === "function") && (windowId === ChatBus.getPopupWindowId()); } catch (_) {}
   ChatBus.onWindowRemoved(windowId);
-  if (wasPopup && self.CDPExtractor) {
+  if (!wasPopup || !self.CDPExtractor) return;
+
+  const activePollers = (typeof ChatBus.getActivePollerCount === "function") ? ChatBus.getActivePollerCount() : 0;
+  if (activePollers === 0) {
     try {
       await self.CDPExtractor.detachAll();
-      console.log("[F63] popup closed → detached all debugger sessions (chrome 黄条消失)");
+      console.log("[F63] popup closed (no active polling) → detached all debugger sessions");
     } catch (e) {
       console.warn("[F63] detachAll on popup close failed:", e?.message);
     }
+    return;
   }
-});
+
+  // v4.8.64 延迟 detach：等所有 polling 完成或 30s 超时
+  console.log("[F64] popup closed but " + activePollers + " polling still running → defer detach (max 30s)");
+  const DETACH_DEADLINE = Date.now() + 30000;
+  const checkAndMaybeDetach = async () => {
+    if ((typeof ChatBus.getPopupWindowId === "function") && ChatBus.getPopupWindowId() != null) {
+      console.log("[F64] popup reopened during defer window → cancel detach");
+      return;
+    }
+    const pending = (typeof ChatBus.getActivePollerCount === "function") ? ChatBus.getActivePollerCount() : 0;
+    if (pending === 0 || Date.now() >= DETACH_DEADLINE) {
+      try {
+        await self.CDPExtractor.detachAll();
+        console.log("[F64] deferred detach done (pending=" + pending + ", timeout=" + (Date.now() >= DETACH_DEADLINE) + ")");
+      } catch (e) {
+        console.warn("[F64] deferred detach failed:", e?.message);
+      }
+      return;
+    }
+    setTimeout(checkAndMaybeDetach, 1500);
+  };
+  setTimeout(checkAndMaybeDetach, 1500);
+});
 chrome.windows.onBoundsChanged?.addListener((win) => {
   ChatBus.rememberBounds(win.id);
 });
