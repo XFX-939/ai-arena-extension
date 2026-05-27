@@ -140,6 +140,112 @@ async function injectBootstrapToTab(tabId, url, reason) {
   }
 }
 
+// v4.8.46: AI URL → 业务 content scripts 映射（与 manifest content_scripts 对齐）
+//   reload 扩展后 manifest 不会自动重注入，需要主动执行；ping 失败时也按需重注入
+// v4.8.47: 加 service 字段，用于 globalThis flag 检查避免重复注入
+const AI_PATTERN_TO_SCRIPTS = [
+  { re: /^https:\/\/claude\.ai\//, service: "claude", files: ["inject-images.js", "content-claude.js"] },
+  { re: /^https:\/\/gemini\.google\.com\//, service: "gemini", files: ["inject-images.js", "content-gemini.js"] },
+  { re: /^https:\/\/chatgpt\.com\//, service: "chatgpt", files: ["inject-images.js", "content-chatgpt.js"] },
+  { re: /^https:\/\/chat\.deepseek\.com\//, service: "deepseek", files: ["inject-images.js", "content-deepseek.js"] },
+  { re: /^https:\/\/www\.doubao\.com\//, service: "doubao", files: ["inject-images.js", "content-doubao.js"] },
+  { re: /^https:\/\/tongyi\.aliyun\.com\//, service: "qwen", files: ["inject-images.js", "content-qwen.js"] },
+  { re: /^https:\/\/www\.qianwen\.com\//, service: "qwen", files: ["inject-images.js", "content-qwen.js"] },
+  { re: /^https:\/\/kimi\.moonshot\.cn\//, service: "kimi", files: ["inject-images.js", "content-kimi.js"] },
+  { re: /^https:\/\/www\.kimi\.com\//, service: "kimi", files: ["inject-images.js", "content-kimi.js"] },
+  { re: /^https:\/\/yuanbao\.tencent\.com\//, service: "yuanbao", files: ["inject-images.js", "content-yuanbao.js"] },
+  { re: /^https:\/\/grok\.com\//, service: "grok", files: ["inject-images.js", "content-grok.js"] },
+];
+
+function getAiContentScriptsForUrl(url) {
+  if (!url) return null;
+  for (const { re, files } of AI_PATTERN_TO_SCRIPTS) {
+    if (re.test(url)) return files;
+  }
+  return null;
+}
+
+// v4.8.47: 取 service 名（用于 globalThis flag 检查 __AI_ARENA_CS_LOADED_<service>__）
+function getServiceForUrl(url) {
+  if (!url) return null;
+  for (const { re, service } of AI_PATTERN_TO_SCRIPTS) {
+    if (re.test(url)) return service;
+  }
+  return null;
+}
+
+// v4.8.46: 注入业务 content scripts（ISOLATED world），用于 reload 扩展后 AI tab 失联恢复
+//   先 ping 检测，已 ready 就跳过避免双 onMessage listener；失联才注入
+// v4.8.47: ping 失败时不立刻注入 — 先用 globalThis flag 检查 content script 是否已注入（listener
+//   尚未就绪的 race 情况），避免无谓的重复注入。即使重复注入，content scripts 顶部 IIFE guard
+//   也会 early-return，但额外的 executeScript 调用仍有开销 + 日志噪音。
+async function ensureContentScriptInjected(tabId, url) {
+  try {
+    await chrome.tabs.sendMessage(tabId, { action: "ping" });
+    return { ok: true, alreadyReady: true };
+  } catch (_) {
+    // ping 失败 → 进一步判断
+  }
+  // v4.8.47: ping 失败 → 检查 globalThis flag 区分 "未注入" vs "已注入但 listener 未就绪"
+  const svc = getServiceForUrl(url);
+  if (svc) {
+    try {
+      const results = await chrome.scripting.executeScript({
+        target: { tabId },
+        func: (key) => !!globalThis[key],
+        args: [`__AI_ARENA_CS_LOADED_${svc}__`],
+      });
+      if (results?.[0]?.result === true) {
+        // 已注入但 listener 异步未就绪 — 不重复注入，由上层重试 ping
+        return { ok: true, alreadyLoaded: true, listenerNotReady: true };
+      }
+    } catch (_) {
+      // executeScript 都失败说明 tab 状态异常，继续走注入路径让 chrome 报具体错误
+    }
+  }
+  const files = getAiContentScriptsForUrl(url);
+  if (!files) return { ok: false, error: "URL 不匹配 AI 平台" };
+  try {
+    await chrome.scripting.executeScript({ target: { tabId }, files });
+    console.log(`[F46/47] inject content scripts tab=${tabId} files=${files.join(",")}`);
+    return { ok: true, justInjected: true };
+  } catch (e) {
+    const msg = e?.message || String(e);
+    console.warn(`[F46/47] inject fail tab=${tabId}: ${msg}`);
+    return { ok: false, error: msg };
+  }
+}
+
+// v4.8.62: Tab 模式新建 AI tab 后，title 流光闪烁 2.4s 让用户在 tab 栏看到新 tab
+//   chrome 不允许直接给 tab 加动画，只能通过 setTitle 模拟（页面 <title> 元素变化驱动 tab 标签刷新）
+//   注入一次 script，里面用 setInterval 自闪烁，期间 AI 网页可能也在 setTitle（race），可见效果是
+//   闪烁的 emoji prefix 与 page 自带 title 交替显示——用户感知到"这个 tab 在闪/换"，足够定位新 tab
+async function flashNewAiTabTitle(tabId, aiName) {
+  try {
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      func: (name) => {
+        const ICONS = ["✨", "⭐", "🌟", "💫"];
+        const originalTitle = document.title || name;
+        let i = 0;
+        const timer = setInterval(() => {
+          if (i >= 8) {  // 8 次 × 300ms = 2.4s
+            clearInterval(timer);
+            // 不强制还原 title — page 自己会持续 setTitle，让浏览器使用 page 最新的 title
+            return;
+          }
+          document.title = `${ICONS[i % ICONS.length]} ${name} ${ICONS[i % ICONS.length]}`;
+          i++;
+        }, 300);
+      },
+      args: [aiName],
+    });
+  } catch (e) {
+    // tab 可能已关闭 / 注入失败：静默忽略（非关键功能）
+    console.log(`[F62] flash title failed for tab=${tabId}: ${e?.message}`);
+  }
+}
+
 async function injectBootstrapToExistingTabs() {
   // v4.8.30 F38-①: 等 windowMode 真加载完（tab/tiled 影响下面的 CDP 路由）
   try { await _windowModeLoaded; } catch (_) {}
@@ -155,6 +261,11 @@ async function injectBootstrapToExistingTabs() {
         const r = await injectBootstrapToTab(tab.id, tab.url, "startup");
         if (r.ok && !r.skipped) injected++;
         else if (!r.ok) failed++;
+        // v4.8.46: 顺带重注入业务 content scripts（content-{service}.js + inject-images.js）
+        //   解决：reload 扩展后已存在 AI tab 的 content script 失联，
+        //         chrome.tabs.sendMessage 报 "Could not establish connection. Receiving end does not exist"
+        //   ensureContentScriptInjected 内部先 ping，已 ready 则跳过避免双 listener
+        try { await ensureContentScriptInjected(tab.id, tab.url); } catch (_) {}
       }
     } catch (e) {
       console.warn(`[F32+] query fail pattern=${pattern}:`, e?.message);
@@ -227,9 +338,49 @@ chrome.tabs.onRemoved.addListener((closedId) => {
     StateMachine._broadcastStateUpdate();
   }
 });
-chrome.windows.onRemoved.addListener((windowId) => {
+chrome.windows.onRemoved.addListener(async (windowId) => {
+  // v4.8.63: popup 关闭时自动 detach 所有 debugger session（chrome 顶部黄条消失）
+  // v4.8.64: polling 在跑时延迟 detach — 防"用户关 popup 时正在生成回答 → 后台 AI 失反节流变慢"
+  //   策略：若 pollers 非空，每 1.5s 检查一次；polling 全完成立即 detach；最长 30s 兜底
+  //         期间若 popup 重新打开（getPopupWindowId 不为 null）→ 取消 detach 保留 attach
+  let wasPopup = false;
+  try { wasPopup = (typeof ChatBus.getPopupWindowId === "function") && (windowId === ChatBus.getPopupWindowId()); } catch (_) {}
   ChatBus.onWindowRemoved(windowId);
-});
+  if (!wasPopup || !self.CDPExtractor) return;
+
+  const activePollers = (typeof ChatBus.getActivePollerCount === "function") ? ChatBus.getActivePollerCount() : 0;
+  if (activePollers === 0) {
+    try {
+      await self.CDPExtractor.detachAll();
+      console.log("[F63] popup closed (no active polling) → detached all debugger sessions");
+    } catch (e) {
+      console.warn("[F63] detachAll on popup close failed:", e?.message);
+    }
+    return;
+  }
+
+  // v4.8.64 延迟 detach：等所有 polling 完成或 30s 超时
+  console.log("[F64] popup closed but " + activePollers + " polling still running → defer detach (max 30s)");
+  const DETACH_DEADLINE = Date.now() + 30000;
+  const checkAndMaybeDetach = async () => {
+    if ((typeof ChatBus.getPopupWindowId === "function") && ChatBus.getPopupWindowId() != null) {
+      console.log("[F64] popup reopened during defer window → cancel detach");
+      return;
+    }
+    const pending = (typeof ChatBus.getActivePollerCount === "function") ? ChatBus.getActivePollerCount() : 0;
+    if (pending === 0 || Date.now() >= DETACH_DEADLINE) {
+      try {
+        await self.CDPExtractor.detachAll();
+        console.log("[F64] deferred detach done (pending=" + pending + ", timeout=" + (Date.now() >= DETACH_DEADLINE) + ")");
+      } catch (e) {
+        console.warn("[F64] deferred detach failed:", e?.message);
+      }
+      return;
+    }
+    setTimeout(checkAndMaybeDetach, 1500);
+  };
+  setTimeout(checkAndMaybeDetach, 1500);
+});
 chrome.windows.onBoundsChanged?.addListener((win) => {
   ChatBus.rememberBounds(win.id);
 });
@@ -244,7 +395,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           sendResponse(await addParticipant(msg.service)); break;
         case "removeParticipant": sendResponse(await removeParticipant(msg.id)); break;
         case "broadcast":         sendResponse(await handleBroadcast(msg.text, msg.images)); break;
-        case "debateRound":       sendResponse(await handleDebateRound(msg.style, msg.guidance, msg.concise)); break;
+        case "debateRound":       sendResponse(await handleDebateRound(msg.style, msg.guidance, msg.concise, msg.force)); break;
         case "summary":           sendResponse(await handleSummary(msg.judgeId, msg.customInstruction, msg.format)); break;
         case "checkAllCompletion": sendResponse(await checkAllCompletion()); break;
         case "focusTab":          sendResponse(await handleFocusTab(msg.id)); break;
@@ -307,6 +458,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           sendResponse(await ChatBus.reextractOne(msg.participantId)); break;
         case "chatSkipParticipant":
           sendResponse(ChatBus.skipParticipant(msg.participantId, msg.msgId)); break;
+        // v4.8.43: 用户在 popup 编辑下轮回答 → 写 p.response + 标记 userEdited
+        case "setParticipantResponse":
+          sendResponse(StateMachine.setParticipantResponse(msg.id, msg.text, { userEdited: !!msg.userEdited }));
+          break;
 
         // ── 手动操作 ──
         case "sendToOne":
@@ -504,6 +659,8 @@ async function addParticipant(service) {
     const currentWindow = await chrome.windows.getCurrent();
     const tab = await chrome.tabs.create({ url: info.url, windowId: currentWindow.id, active: false });
     tabId = tab.id;
+    // v4.8.62: 新建 AI tab 后 title 闪烁让用户在 tab 栏看到新 tab
+    flashNewAiTabTitle(tabId, `${info.name}-${count}`).catch(() => {});
   }
 
   StateMachine.addParticipant(id, service, tabId, `${info.name}-${count}`);
@@ -569,6 +726,8 @@ async function handleBroadcast(text, images) {
   StateMachine.participants.forEach(p => {
     p.response = null;
     p.responsePreview = null;
+    // v4.8.43: 广播新一题 → 清除用户编辑标记，让 polling 写入新 AI 答案
+    delete p.userEdited;
   });
   StateMachine.save();
   StateMachine._broadcastStateUpdate();
@@ -631,6 +790,8 @@ async function retryInjectParticipant(id) {
   if (!p || !p.tabId) return { ok: false, error: "参与者无效" };
   const text = StateMachine.debateSession.originalQuestion;
   if (!text) return { ok: false, error: "无原始问题可重发（debateSession 为空）" };
+  // v4.8.43: 用户重发 → 清除 userEdited 让新 AI 答案能被 polling 写入
+  try { StateMachine.clearUserEdited?.(id); } catch (_) {}
 
   const pendingMsgId = `m${Date.now()}_retry_${p.id}`;
   const displayText = `🔄 重发原题：${text.length > 40 ? text.slice(0, 40) + "…" : text}`;
@@ -820,7 +981,58 @@ async function sendPromptToService(service, text) {
 
 // ── 辩论（状态机驱动） ──
 
-async function handleDebateRound(style = "free", guidance = "", concise = false) {
+// v4.8.38 + v4.8.39: 辩论前 sanity 检查 — 三类警告合并到一个 needsConfirm
+//   ① polling: 有 AI 正在 polling 中 → p.response 是上一轮的（v4.8.38）
+//   ② too_short: 回答 < 50 字 → 可能 ChatGPT Pro 在思考中被误判为完成（v4.8.39）
+//   ③ same_as_last: 回答与上一轮完全相同 → 可能提取 bug（v4.8.39）
+const DEBATE_TOO_SHORT_THRESHOLD = 50;
+
+function _buildDebateWarnings(responses) {
+  const warnings = [];
+  // ① polling
+  let pollingServices = [];
+  try {
+    pollingServices = ChatBus.getActivePollingServices?.() || [];
+  } catch (_) {}
+  for (const svc of pollingServices) {
+    const p = StateMachine.participants.find(pp => pp.service === svc);
+    if (p) warnings.push({ type: "polling", name: p.name, service: svc });
+  }
+  // ② / ③ 逐个 response 检查（同一 AI 字数过短优先，不再叠加 same_as_last）
+  const lastRound = StateMachine.debateSession.rounds.slice(-1)[0];
+  for (const [id, r] of Object.entries(responses)) {
+    const text = (r.text || "").trim();
+    if (text.length < DEBATE_TOO_SHORT_THRESHOLD) {
+      warnings.push({ type: "too_short", name: r.name, length: text.length });
+      continue;
+    }
+    if (lastRound?.responses?.[id]?.text === r.text) {
+      warnings.push({ type: "same_as_last", name: r.name });
+    }
+  }
+  return warnings;
+}
+
+function _formatDebateWarningMessage(warnings) {
+  const polling = warnings.filter(w => w.type === "polling");
+  const tooShort = warnings.filter(w => w.type === "too_short");
+  const sameAsLast = warnings.filter(w => w.type === "same_as_last");
+  const lines = [];
+  if (polling.length) {
+    lines.push(`⏳ ${polling.length} 个 AI 仍在回答中：${polling.map(w => w.name).join("、")}`);
+  }
+  if (tooShort.length) {
+    lines.push(`⚠ ${tooShort.length} 个 AI 回答过短（< ${DEBATE_TOO_SHORT_THRESHOLD} 字，可能在思考中未输出完）：${tooShort.map(w => `${w.name}(${w.length}字)`).join("、")}`);
+  }
+  if (sameAsLast.length) {
+    lines.push(`⚠ ${sameAsLast.length} 个 AI 回答与上一轮完全相同（可能提取 bug）：${sameAsLast.map(w => w.name).join("、")}`);
+  }
+  lines.push("");
+  lines.push("用当前内容继续辩论？");
+  return lines.join("\n");
+}
+
+async function handleDebateRound(style = "free", guidance = "", concise = false, force = false) {
   if (StateMachine.participants.length < 2) {
     notifyStatus("至少需要 2 个参与者");
     return { ok: false, error: "参与者不足" };
@@ -836,6 +1048,24 @@ async function handleDebateRound(style = "free", guidance = "", concise = false)
   if (Object.keys(responses).length < 2) {
     notifyStatus("至少需要 2 个有效回答");
     return { ok: false, error: "回答不足" };
+  }
+
+  // v4.8.38 + v4.8.39: sanity 检查 — 三类警告合并到一个 needsConfirm
+  if (!force) {
+    const warnings = _buildDebateWarnings(responses);
+    if (warnings.length > 0) {
+      const polling = warnings.filter(w => w.type === "polling");
+      return {
+        ok: false,
+        needsConfirm: true,
+        reason: "suspicious_state",
+        warnings,
+        // 向后兼容字段（v4.8.38 时只有 polling 一类）
+        pollingServices: polling.map(w => w.service),
+        pollingNames: polling.map(w => w.name),
+        message: _formatDebateWarningMessage(warnings),
+      };
+    }
   }
 
   const roundNum = StateMachine.debateSession.rounds.length + 1;
@@ -873,6 +1103,8 @@ async function handleDebateRound(style = "free", guidance = "", concise = false)
   StateMachine.participants.forEach(p => {
     p.response = null;
     p.responsePreview = null;
+    // v4.8.43: 辩论新轮 → 清除用户编辑标记，让 polling 写入新 AI 答案
+    delete p.userEdited;
   });
 
   const sendResults = {};
@@ -1357,13 +1589,30 @@ function overlapArea(a, b) {
 // ── 工具函数 ──
 
 async function waitForContentScript(tabId, maxRetries = 12) {
+  // v4.8.46: ping 失败一次后主动 ensureContentScriptInjected（reload 扩展后 manifest
+  //   不会自动重注 content-{service}.js → "Receiving end does not exist"）
+  // v4.8.47: ensureContentScriptInjected 现在区分 justInjected vs listenerNotReady（race）
+  let triedReinject = false;
   for (let i = 0; i < maxRetries; i++) {
     try {
       await chrome.tabs.sendMessage(tabId, { action: "ping" });
-      // v4.8.19 F32: 不再调 injectVisibilityOverride（已删，manifest content_scripts 提前注入）
       return true;
     } catch (e) {
       if (e.message && (e.message.includes("No tab") || e.message.includes("removed"))) return false;
+      // 第一次失败立刻尝试主动注入；之后只等待
+      if (!triedReinject) {
+        triedReinject = true;
+        try {
+          const tab = await chrome.tabs.get(tabId);
+          if (tab?.url) {
+            const r = await ensureContentScriptInjected(tabId, tab.url);
+            if (r.justInjected || r.listenerNotReady) {
+              await new Promise(r2 => setTimeout(r2, 500));  // 等 listener 注册或就绪
+              continue;  // 立即重试 ping
+            }
+          }
+        } catch (_) {}
+      }
       await new Promise(r => setTimeout(r, 1000));
     }
   }

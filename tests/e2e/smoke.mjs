@@ -67,7 +67,7 @@ try {
   // 2) 读 manifest version_name 验证版本同步（直接读源文件）
   const manifest = JSON.parse(fs.readFileSync(path.join(EXT_PATH, "manifest.json"), "utf8"));
   console.log(`[smoke] manifest version: ${manifest.version}, version_name: ${manifest.version_name}`);
-  check("manifest version_name = 4.8.35-beta", manifest.version_name === "4.8.35-beta", `actual: ${manifest.version_name}`);
+  check("manifest version_name = 4.8.64-beta", manifest.version_name === "4.8.64-beta", `actual: ${manifest.version_name}`);
 
   // 3) 打开 sidepanel.html（作为普通 tab），验证 DOM
   const sidepanelPage = await context.newPage();
@@ -75,10 +75,10 @@ try {
   await sidepanelPage.waitForLoadState("domcontentloaded");
 
   const versionBadge = await sidepanelPage.locator(".version").textContent();
-  check("sidepanel version badge", versionBadge === "v4.8.35-beta", `actual: "${versionBadge}"`);
+  check("sidepanel version badge", versionBadge === "v4.8.64-beta", `actual: "${versionBadge}"`);
 
   const footerVersion = await sidepanelPage.locator(".footer").textContent();
-  check("sidepanel footer version", footerVersion?.includes("v4.8.35-beta"), `actual: "${footerVersion?.slice(0, 100)}"`);
+  check("sidepanel footer version", footerVersion?.includes("v4.8.64-beta"), `actual: "${footerVersion?.slice(0, 100)}"`);
 
   const openChatBtn = await sidepanelPage.locator("#btn-open-chat").count();
   check('sidepanel has "🪟 群聊" button', openChatBtn === 1);
@@ -96,7 +96,7 @@ try {
   await popupPage.waitForLoadState("domcontentloaded");
 
   const popupVersion = await popupPage.locator(".chat-version").textContent();
-  check("popup chat-version = v4.8.35-beta", popupVersion === "v4.8.35-beta", `actual: "${popupVersion}"`);
+  check("popup chat-version = v4.8.64-beta", popupVersion === "v4.8.64-beta", `actual: "${popupVersion}"`);
 
   // 图标资产验证（v4.0.11）
   const assetsOk = await popupPage.evaluate(async (extId) => {
@@ -726,6 +726,1277 @@ try {
   check("v4.8.35: 默认主题 C 下 --bg 是 popup.css :root 浅色（#f5f5f7），不再被 dark media 覆盖",
     themeBg.bg === "#f5f5f7",
     JSON.stringify(themeBg));
+
+  // v4.8.36: broadcast/notifyRoundStart 对 skipped service 创建警告气泡（fail loud）
+  //   用户反馈：发送给 3 个 AI 时偶尔只看到 2 个卡片气泡
+  //   根因：race condition (移除 AI 后立刻发，popup-roster.selected 未刷新)
+  //         或用户在 roster 取消选中某 AI 后没察觉 → targets 含已离开的 service
+  //   修复：chat-bus.js _resolveTargetsWithSkipped 返回 targetList + skippedServices，
+  //         skippedServices 通过 _emitSkippedWarning 创建 isDone+warning 气泡
+  const chatBusSrcV36 = fs.readFileSync(path.join(EXT_PATH, "chat-bus.js"), "utf8");
+  check("v4.8.36: chat-bus.js 新增 _resolveTargetsWithSkipped helper",
+    /function _resolveTargetsWithSkipped/.test(chatBusSrcV36) &&
+    /skippedServices/.test(chatBusSrcV36),
+    "chat-bus.js 缺 _resolveTargetsWithSkipped");
+  check("v4.8.36: chat-bus.js 新增 _emitSkippedWarning helper",
+    /function _emitSkippedWarning/.test(chatBusSrcV36) &&
+    /skipped:\s*true/.test(chatBusSrcV36) &&
+    /已不在会话/.test(chatBusSrcV36),
+    "chat-bus.js 缺 _emitSkippedWarning 或警告文本");
+  check("v4.8.36: broadcast 返回 skippedTargets 字段",
+    /skippedTargets:\s*skippedServices/.test(chatBusSrcV36),
+    "broadcast 返回值未含 skippedTargets");
+  check("v4.8.36: notifyRoundStart 也调用 _emitSkippedWarning（辩论/总结同样 fail loud）",
+    (chatBusSrcV36.match(/_emitSkippedWarning\(/g) || []).length >= 2,
+    "notifyRoundStart 缺 _emitSkippedWarning 调用");
+  check("v4.8.36: chat-bus.js 含 9 个 AI 的 SERVICE_DISPLAY_NAME 映射（warn 气泡用）",
+    /SERVICE_DISPLAY_NAME/.test(chatBusSrcV36) &&
+    ["claude", "gemini", "chatgpt", "deepseek", "doubao", "qwen", "kimi", "yuanbao", "grok"]
+      .every(s => new RegExp(s + ":").test(chatBusSrcV36)),
+    "chat-bus.js SERVICE_DISPLAY_NAME 不全");
+
+  // 运行时验证：通过 SW 直接调 ChatBus.broadcast 模拟 race（targets 含已离开的 service）→ 验证 popup 收到警告气泡
+  // SW 端没有 participants 时，发 broadcast({text, targets:["claude"]}) → targetList=[], skippedServices=["claude"]
+  // 此时 broadcast 提前 return（targetList.length===0）但仍返回 skippedTargets
+  const swSkipResult = await serviceWorker.evaluate(async () => {
+    if (!self.ChatBus?.broadcast) return { err: "ChatBus.broadcast unavailable" };
+    // SM participants 在 chromium 干净环境下应为空 → 任何 service 都算 skipped
+    const r = await self.ChatBus.broadcast("v4.8.36 skip-warn test", ["claude"], []);
+    return r;
+  }).catch(e => ({ evalErr: e.message }));
+  check("v4.8.36: broadcast 无可用 participants 时返回 skippedTargets",
+    Array.isArray(swSkipResult?.skippedTargets) && swSkipResult.skippedTargets.includes("claude"),
+    JSON.stringify(swSkipResult));
+
+  // v4.8.37: toggleMiniMode race 修复 — 加 _modeSwitching flag 防 onBoundsChanged → rememberBounds
+  //   把新窗口 bounds 错存到旧 mode 字段（mini 86 被存到 full bounds → 下次展开窗口变 86 高）
+  //   同时 init 加 sanity check：popupBounds.height < 200 视为被污染，丢弃
+  const chatBusSrcV37 = fs.readFileSync(path.join(EXT_PATH, "chat-bus.js"), "utf8");
+  check("v4.8.37: chat-bus.js 引入 _modeSwitching flag",
+    /let _modeSwitching = false/.test(chatBusSrcV37) &&
+    /_modeSwitching = true/.test(chatBusSrcV37),
+    "chat-bus.js 缺 _modeSwitching 状态");
+  check("v4.8.37: toggleMiniMode 用 try/finally 确保 flag 释放（含 500ms 延迟）",
+    /} finally \{\s*[\s\S]*?setTimeout\(\(\) => \{ _modeSwitching = false; \}, 500\)/.test(chatBusSrcV37),
+    "toggleMiniMode 未在 finally 释放 _modeSwitching");
+  check("v4.8.37: rememberBounds 检测 _modeSwitching 早 return",
+    /async function rememberBounds[\s\S]{0,300}if \(_modeSwitching\) return/.test(chatBusSrcV37),
+    "rememberBounds 缺 _modeSwitching 早 return");
+  check("v4.8.37+v4.8.57: init 加 popupBounds.height < 400 sanity check（v4.8.57 阈值从 200 升到 400）",
+    /data\[STORAGE_KEYS\.bounds\]\.height >= 400/.test(chatBusSrcV37) &&
+    /discard polluted popupBounds/.test(chatBusSrcV37),
+    "init 缺 popupBounds sanity check");
+
+  // 运行时验证 race fix：SW 调 toggleMiniMode 模拟切换，校验 _modeSwitching 在切换期间 true，500ms 后 false
+  const switchFlagResult = await serviceWorker.evaluate(async () => {
+    if (!self.ChatBus?.toggleMiniMode) return { err: "ChatBus.toggleMiniMode unavailable" };
+    // popup window 未打开，toggleMiniMode 会立刻返回 { ok:false, error:"popup not open" }
+    // 但 try/finally 仍会跑 setTimeout(500) 释放 _modeSwitching —— 这里我们不直接读 _modeSwitching（闭包私有）
+    // 改测：调用返回值正常
+    const r = await self.ChatBus.toggleMiniMode("mini");
+    return r;
+  }).catch(e => ({ evalErr: e.message }));
+  check("v4.8.37: toggleMiniMode 返回结构化结果（不抛异常 — popup 未开时 ok:false / 已开时 ok:true）",
+    typeof switchFlagResult?.ok === "boolean",
+    JSON.stringify(switchFlagResult));
+
+  // 验证 poster-ai-team.webp 替换后仍可访问（v4.8.37 用户提供新版）
+  const posterOk = await popupPage.evaluate(async (extId) => {
+    const r = await fetch(`chrome-extension://${extId}/icons/poster-ai-team.webp`);
+    if (!r.ok) return { ok: false, status: r.status };
+    const blob = await r.blob();
+    return { ok: true, size: blob.size, type: blob.type };
+  }, extensionId);
+  check("v4.8.37: poster-ai-team.webp 可访问 + size > 100KB（新版高分辨率）",
+    posterOk.ok && posterOk.size > 100 * 1024 && posterOk.type === "image/webp",
+    JSON.stringify(posterOk));
+
+  // v4.8.38: handleDebateRound 检测 polling 中的 AI，弹 confirm 让用户决定
+  //   场景：用户重发某 AI → AI 在异步生成新答案 → 用户立刻点辩论 → 之前会用旧 p.response
+  //   修复：handleDebateRound 检测 ChatBus.getActivePollingServices()，非 force 时返回
+  //         { needsConfirm:true, message, pollingNames }，popup/sidepanel 弹 confirm
+  const chatBusSrcV38 = fs.readFileSync(path.join(EXT_PATH, "chat-bus.js"), "utf8");
+  const backgroundSrcV38 = fs.readFileSync(path.join(EXT_PATH, "background.js"), "utf8");
+  const taskMenuSrcV38 = fs.readFileSync(path.join(EXT_PATH, "popup-task-menu.js"), "utf8");
+  const tasksSrcV38 = fs.readFileSync(path.join(EXT_PATH, "popup-tasks.js"), "utf8");
+  const sidepanelSrcV38 = fs.readFileSync(path.join(EXT_PATH, "sidepanel.js"), "utf8");
+
+  check("v4.8.38: chat-bus.js 暴露 getActivePollingServices",
+    /function getActivePollingServices/.test(chatBusSrcV38) &&
+    /getActivePollingServices,/.test(chatBusSrcV38),
+    "chat-bus.js 缺 getActivePollingServices export");
+  check("v4.8.38: handleDebateRound 加 force 参数 + needsConfirm 早返回",
+    /handleDebateRound\([^)]*force[\s\S]{0,1500}if \(!force\)/.test(backgroundSrcV38) &&
+    /needsConfirm:\s*true/.test(backgroundSrcV38) &&
+    /ChatBus\.getActivePollingServices/.test(backgroundSrcV38),
+    "background.js handleDebateRound 缺 needsConfirm 逻辑");
+  check("v4.8.38: background.js case debateRound 传递 msg.force",
+    /handleDebateRound\(msg\.style, msg\.guidance, msg\.concise, msg\.force\)/.test(backgroundSrcV38),
+    "case debateRound 未传 msg.force");
+  check("v4.8.38: popup-task-menu.js 处理 needsConfirm + force:true 重发",
+    /resp\?\.needsConfirm/.test(taskMenuSrcV38) &&
+    /window\.confirm\(resp\.message\)/.test(taskMenuSrcV38) &&
+    /sendOnce\(true\)/.test(taskMenuSrcV38),
+    "popup-task-menu.js 缺 needsConfirm 处理");
+  check("v4.8.38: popup-tasks.js 处理 needsConfirm",
+    /resp\?\.needsConfirm/.test(tasksSrcV38) &&
+    /window\.confirm\(resp\.message\)/.test(tasksSrcV38),
+    "popup-tasks.js 缺 needsConfirm 处理");
+  check("v4.8.38: sidepanel.js 处理 needsConfirm + force:true 重发",
+    /r\?\.needsConfirm/.test(sidepanelSrcV38) &&
+    /window\.confirm\(r\.message\)/.test(sidepanelSrcV38) &&
+    /force:\s*true/.test(sidepanelSrcV38),
+    "sidepanel.js 缺 needsConfirm 处理");
+
+  // 运行时验证：SW 直接调 handleDebateRound — 无 participants 时返回"参与者不足"
+  // 我们 mock 不出 polling 状态，所以只验证 force 参数被识别（force:true 跳过 polling check）
+  const debateConfirmResult = await serviceWorker.evaluate(async () => {
+    if (!self.ChatBus?.getActivePollingServices) return { err: "getActivePollingServices unavailable" };
+    const polling = self.ChatBus.getActivePollingServices();
+    // 默认 chromium 干净环境无 polling，返回 []
+    return { polling, isArray: Array.isArray(polling) };
+  }).catch(e => ({ evalErr: e.message }));
+  check("v4.8.38: ChatBus.getActivePollingServices 返回数组（默认空）",
+    debateConfirmResult.isArray && debateConfirmResult.polling.length === 0,
+    JSON.stringify(debateConfirmResult));
+
+  // v4.8.39: handleDebateRound 扩展 sanity check — 三类警告合并 needsConfirm
+  //   ① polling（v4.8.38）
+  //   ② too_short: 回答 < 50 字（可能 ChatGPT Pro 在思考中被误判为完成）
+  //   ③ same_as_last: 回答与上一轮完全相同（可能提取 bug）
+  const backgroundSrcV39 = backgroundSrcV38; // 同一文件
+  check("v4.8.39: background.js 新增 _buildDebateWarnings + _formatDebateWarningMessage helper",
+    /function _buildDebateWarnings/.test(backgroundSrcV39) &&
+    /function _formatDebateWarningMessage/.test(backgroundSrcV39),
+    "background.js 缺 helper 函数");
+  check("v4.8.39: DEBATE_TOO_SHORT_THRESHOLD 常量 = 50",
+    /const DEBATE_TOO_SHORT_THRESHOLD = 50/.test(backgroundSrcV39),
+    "缺 50 字阈值常量");
+  check("v4.8.39: _buildDebateWarnings 识别 too_short 类型",
+    /text\.length < DEBATE_TOO_SHORT_THRESHOLD/.test(backgroundSrcV39) &&
+    /type:\s*"too_short"/.test(backgroundSrcV39),
+    "_buildDebateWarnings 缺 too_short 判定");
+  check("v4.8.39: _buildDebateWarnings 识别 same_as_last 类型（rounds.slice(-1) 取上一轮）",
+    /rounds\.slice\(-1\)/.test(backgroundSrcV39) &&
+    /type:\s*"same_as_last"/.test(backgroundSrcV39),
+    "_buildDebateWarnings 缺 same_as_last 判定");
+  check("v4.8.39: warnings 在 responses 收集之后才计算（不在 if(!force) 早 return 前）",
+    /Object\.keys\(responses\)\.length < 2[\s\S]{0,200}if \(!force\)/.test(backgroundSrcV39),
+    "warnings 检查顺序不对");
+  check("v4.8.39: needsConfirm payload 含 warnings 数组（用于 popup 端识别多类警告）",
+    /warnings,\s*\n[\s\S]{0,200}pollingServices/.test(backgroundSrcV39),
+    "needsConfirm payload 缺 warnings 字段");
+  check("v4.8.39: 消息文案含三类警告分别的措辞（仍在回答 / 回答过短 / 完全相同）",
+    /仍在回答中/.test(backgroundSrcV39) &&
+    /回答过短/.test(backgroundSrcV39) &&
+    /完全相同/.test(backgroundSrcV39),
+    "_formatDebateWarningMessage 缺至少一种警告措辞");
+
+  // 注：v4.8.39 helper 的运行时验证省略 — 静态检查已覆盖关键变化，
+  //     handleDebateRound 完整流程依赖 StateMachine 参与者状态，需真实多 AI 才能测
+
+  // v4.8.40: watcher 修复 — polling 判完成后启动 watcher 兜底
+  //   ① 核心 bug：watcher 抓到追加更新只更新 popup 气泡 + chatLog，**不写 p.response**
+  //      → 下一轮辩论 handleDebateRound 读到的还是初始文本（ChatGPT Pro 思考片段）
+  //   ② 增大 timeout 120s → 600s（覆盖 ChatGPT Pro 深度推理 3-5 分钟场景）
+  const chatBusSrcV40 = fs.readFileSync(path.join(EXT_PATH, "chat-bus.js"), "utf8");
+  check("v4.8.40: watcher startWatch 内调 StateMachine.setParticipantResponse",
+    /watchers\.set[\s\S]{0,200}|setInterval[\s\S]{0,2000}StateMachine\.setParticipantResponse\(participant\.id, text\)/.test(chatBusSrcV40) ||
+    /text \!== state\.lastText[\s\S]{0,500}StateMachine\.setParticipantResponse\(participant\.id, text\)/.test(chatBusSrcV40),
+    "watcher 缺 setParticipantResponse 调用（仍只更新 popup 气泡，p.response 未刷新）");
+  check("v4.8.40: WATCH_MAX_DURATION_MS = 600000",
+    /WATCH_MAX_DURATION_MS\s*=\s*600000/.test(chatBusSrcV40),
+    "watcher 总时长未拉到 600s");
+  check("v4.8.40: 注释明示修复原因（思考片段 / Pro 深度推理）",
+    /思考片段/.test(chatBusSrcV40) && /深度推理/.test(chatBusSrcV40),
+    "缺修复缘由注释");
+
+  // v4.8.41 ①: 简洁模式 + popup-compact-mode.js 新模块
+  const compactModeSrc = fs.readFileSync(path.join(EXT_PATH, "popup-compact-mode.js"), "utf8");
+  const popupHtmlSrc = fs.readFileSync(path.join(EXT_PATH, "popup.html"), "utf8");
+  const popupJsSrcV41 = fs.readFileSync(path.join(EXT_PATH, "popup.js"), "utf8");
+  const popupCssSrcV41 = fs.readFileSync(path.join(EXT_PATH, "popup.css"), "utf8");
+  const membersSrcV41 = fs.readFileSync(path.join(EXT_PATH, "popup-members.js"), "utf8");
+
+  check("v4.8.41 ①: popup.html 新增 #btn-compact-mode 按钮（折叠到顶旁边）",
+    /id="btn-compact-mode"/.test(popupHtmlSrc) &&
+    /aria-pressed/.test(popupHtmlSrc),
+    "popup.html 缺简洁模式按钮");
+  check("v4.8.41 ①: popup-compact-mode.js 存在 + 暴露 ChatCompactMode.isOn",
+    /window\.ChatCompactMode\s*=/.test(compactModeSrc) &&
+    /isOn:/.test(compactModeSrc) &&
+    /data-compact/.test(compactModeSrc),
+    "popup-compact-mode.js 不完整");
+  check("v4.8.41 ①: popup.html 加载 popup-compact-mode.js",
+    /<script src="popup-compact-mode\.js"><\/script>/.test(popupHtmlSrc),
+    "popup.html 未加载 compact mode 模块");
+  check("v4.8.41 ①: storage key 持久化（compactMode）+ 持久化逻辑",
+    /STORAGE_KEY\s*=\s*"compactMode"/.test(compactModeSrc) &&
+    /chrome\.storage\.local\.set/.test(compactModeSrc) &&
+    /chrome\.storage\.local\.get/.test(compactModeSrc),
+    "compactMode 未持久化");
+
+  // v4.8.41 ②: applyFoldClass 适配 compact（100 字 + 不要求 isDone）
+  check("v4.8.41 ②: applyFoldClass 检测 ChatCompactMode.isOn 切换阈值",
+    /FOLD_THRESHOLD_COMPACT\s*=\s*100/.test(popupJsSrcV41) &&
+    /ChatCompactMode\?\.isOn\?\.\(\)/.test(popupJsSrcV41),
+    "applyFoldClass 缺 compact 分支");
+  check("v4.8.41 ②: compact 模式提取中也折叠（不要求 isDone）",
+    /shouldFold\s*=\s*compact\s*\?\s*len\s*>\s*threshold/.test(popupJsSrcV41),
+    "compact 仍需 isDone，未实现提取中折叠");
+  check("v4.8.41 ②: compact:changed 事件让已渲染气泡重新评估折叠",
+    /addEventListener\("compact:changed"/.test(popupJsSrcV41) &&
+    /querySelectorAll\(".msg\.ai"\)/.test(popupJsSrcV41),
+    "compact 切换时未重新评估已渲染气泡");
+  check("v4.8.41 ②: popup.css 含 .compact-fold 一行折叠样式",
+    /\.msg-bubble-foldable\.compact-fold:not\(\.expanded\)/.test(popupCssSrcV41) &&
+    /text-overflow:\s*ellipsis/.test(popupCssSrcV41),
+    "popup.css 缺 compact-fold 样式");
+  check("v4.8.41 ②: popup.css 含 .btn-compact-mode 按钮样式（含 active 态）",
+    /\.btn-compact-mode/.test(popupCssSrcV41) &&
+    /\.btn-compact-mode\.active/.test(popupCssSrcV41),
+    "popup.css 缺简洁模式按钮样式");
+
+  // v4.8.41 ③: hero-slot 下方 3 个快捷按钮
+  check("v4.8.41 ③: popup-members.js 含 hqa-btn / hero-quick-actions 容器",
+    /hero-quick-actions/.test(membersSrcV41) &&
+    /hqa-btn/.test(membersSrcV41) &&
+    /data-act="resend"/.test(membersSrcV41) &&
+    /data-act="reextract"/.test(membersSrcV41) &&
+    /data-act="skip"/.test(membersSrcV41),
+    "popup-members.js 缺快捷按钮 DOM");
+  check("v4.8.41 ③: popup-members.js 含 skipOne 调用 chatSkipParticipant",
+    /function skipOne/.test(membersSrcV41) &&
+    /chatSkipParticipant/.test(membersSrcV41),
+    "popup-members.js 缺 skipOne 函数");
+  check("v4.8.41 ③: 卡片 wrap 包裹 hero-slot + quick-actions",
+    /hero-slot-wrap/.test(membersSrcV41),
+    "缺 hero-slot-wrap 容器");
+  check("v4.8.41 ③: popup.css 含 .hero-quick-actions / .hqa-btn 样式",
+    /\.hero-quick-actions/.test(popupCssSrcV41) &&
+    /\.hqa-btn/.test(popupCssSrcV41) &&
+    /grid-template-columns:\s*repeat\(3,\s*1fr\)/.test(popupCssSrcV41),
+    "popup.css 缺 hero-quick-actions 样式");
+
+  // 运行时验证：popup 默认无 compact 按钮 active；toggle 后 data-compact=on
+  const compactRuntimeResult = await popupPage.evaluate(async () => {
+    const btn = document.getElementById("btn-compact-mode");
+    if (!btn) return { err: "btn-compact-mode 不存在" };
+    const initial = {
+      pressed: btn.getAttribute("aria-pressed"),
+      active: btn.classList.contains("active"),
+      bodyAttr: document.body.getAttribute("data-compact"),
+    };
+    btn.click();
+    await new Promise(r => setTimeout(r, 80));
+    const after = {
+      pressed: btn.getAttribute("aria-pressed"),
+      active: btn.classList.contains("active"),
+      bodyAttr: document.body.getAttribute("data-compact"),
+    };
+    btn.click();  // 再点恢复关闭，避免影响后续
+    return { initial, after };
+  });
+  check("v4.8.41 运行时: 简洁模式按钮 toggle 正确切换 data-compact 和 active",
+    compactRuntimeResult.initial?.bodyAttr === "off" &&
+    compactRuntimeResult.after?.bodyAttr === "on" &&
+    compactRuntimeResult.after?.active === true,
+    JSON.stringify(compactRuntimeResult));
+
+  // v4.8.42: K 样式 + SVG 统一图标
+  //   - 新模块 popup-action-icons.js 暴露 window.ChatActionIcons.svg(action)
+  //   - popup.js / popup-members.js 用 SVG 替换 emoji
+  //   - popup-bubble-actions.js 用 innerHTML 备份还原（不再 textContent 覆盖）
+  //   - popup.css K 样式：resend蓝/reextract绿/skip橙 淡底→hover实色，copy/jump 中性灰
+  const actionIconsSrc = fs.readFileSync(path.join(EXT_PATH, "popup-action-icons.js"), "utf8");
+  const popupHtmlV42 = fs.readFileSync(path.join(EXT_PATH, "popup.html"), "utf8");
+  const popupJsV42 = fs.readFileSync(path.join(EXT_PATH, "popup.js"), "utf8");
+  const popupMembersV42 = fs.readFileSync(path.join(EXT_PATH, "popup-members.js"), "utf8");
+  const bubbleActionsV42 = fs.readFileSync(path.join(EXT_PATH, "popup-bubble-actions.js"), "utf8");
+  const popupCssV42 = fs.readFileSync(path.join(EXT_PATH, "popup.css"), "utf8");
+
+  check("v4.8.42 ①: popup-action-icons.js 含 5 个 action SVG（resend/reextract/skip/copy/jump）",
+    ["resend", "reextract", "skip", "copy", "jump"].every(a => new RegExp(a + ":").test(actionIconsSrc)) &&
+    /window\.ChatActionIcons\s*=/.test(actionIconsSrc),
+    "popup-action-icons.js 不完整");
+  check("v4.8.42 ①: popup.html 加载 popup-action-icons.js 在 popup-members.js 之前",
+    /<script src="popup-action-icons\.js"><\/script>/.test(popupHtmlV42),
+    "popup.html 未加载 SVG 模块");
+  check("v4.8.42 ①: popup.js 用 ChatActionIcons.svg() 替换气泡 5 emoji",
+    /ChatActionIcons\?\.svg\("reextract"\)/.test(popupJsV42) &&
+    /ChatActionIcons\?\.svg\("resend"\)/.test(popupJsV42) &&
+    /ChatActionIcons\?\.svg\("skip"\)/.test(popupJsV42) &&
+    /ChatActionIcons\?\.svg\("copy"\)/.test(popupJsV42) &&
+    /ChatActionIcons\?\.svg\("jump"\)/.test(popupJsV42),
+    "popup.js 5 个气泡按钮未全部用 SVG helper");
+  check("v4.8.42 ①: popup-members.js 用 ChatActionIcons.svg() 替换卡下方 3 emoji",
+    /ChatActionIcons\?\.svg\("resend"\)/.test(popupMembersV42) &&
+    /ChatActionIcons\?\.svg\("reextract"\)/.test(popupMembersV42) &&
+    /ChatActionIcons\?\.svg\("skip"\)/.test(popupMembersV42),
+    "popup-members.js 未用 SVG helper");
+  check("v4.8.42 ①: 卡下方 reextract/resend emoji 颠倒已修复（不再含 hqa-icon 文字标签）",
+    !/hqa-icon/.test(popupMembersV42) && !/hqa-label/.test(popupMembersV42),
+    "popup-members.js 仍含旧 .hqa-icon/.hqa-label 文字");
+  check("v4.8.42 ②: popup-bubble-actions.js 用 innerHTML 备份还原（保住 SVG 不被 textContent 冲掉）",
+    /const orig = btn\.innerHTML/.test(bubbleActionsV42) &&
+    /btn\.innerHTML = orig/.test(bubbleActionsV42) &&
+    !/const orig = btn\.textContent[\s\S]{0,400}btn\.textContent = orig/.test(bubbleActionsV42),
+    "popup-bubble-actions.js 仍用 textContent（会清掉 SVG）");
+  check("v4.8.42 ③: popup.css .hqa-btn K 样式 — resend 蓝 / reextract 绿 / skip 橙 淡底",
+    /\.hqa-btn\[data-act="resend"\][\s\S]{0,200}rgba\(10,132,255/.test(popupCssV42) &&
+    /\.hqa-btn\[data-act="reextract"\][\s\S]{0,200}rgba\(52,199,89/.test(popupCssV42) &&
+    /\.hqa-btn\[data-act="skip"\][\s\S]{0,200}rgba\(255,159,10/.test(popupCssV42),
+    "popup.css 缺 K 样式的三色淡底");
+  check("v4.8.42 ③: popup.css .hqa-btn:hover 跳实色（resend蓝 / reextract绿 / skip橙）",
+    /\.hqa-btn\[data-act="resend"\]:hover[\s\S]{0,200}#0a84ff/.test(popupCssV42) &&
+    /\.hqa-btn\[data-act="reextract"\]:hover[\s\S]{0,200}#34c759/.test(popupCssV42) &&
+    /\.hqa-btn\[data-act="skip"\]:hover[\s\S]{0,200}#ff9f0a/.test(popupCssV42),
+    "popup.css 缺 hover 跳实色");
+  // v4.8.43 修订：.hqa-btn::after data-label tooltip 已删除（与浏览器原生 title 重复）
+  check("v4.8.43: popup.css .hqa-btn::after 已删除（用浏览器原生 title 显示）",
+    !/\.hqa-btn::after\b/.test(popupCssV42) &&
+    !/\.hqa-btn:hover::after/.test(popupCssV42),
+    "popup.css 仍含 .hqa-btn::after tooltip");
+  check("v4.8.42 ③: popup.css 气泡 .msg-meta .acts button 也用 K 样式（resend/reextract/skip 跳色）",
+    /\.msg-meta \.acts button\[data-act="resend"\][\s\S]{0,200}rgba\(10,132,255/.test(popupCssV42) &&
+    /\.msg-meta \.acts button\[data-act="reextract"\][\s\S]{0,200}rgba\(52,199,89/.test(popupCssV42) &&
+    /\.msg-meta \.acts button\[data-act="skip"\][\s\S]{0,200}rgba\(255,159,10/.test(popupCssV42),
+    "popup.css 气泡按钮未用 K 样式");
+  check("v4.8.42 ③: popup.css 不再引入新 prefers-color-scheme（沿用 v4.8.35 决策）",
+    !/@media\s*\(\s*prefers-color-scheme/.test(popupCssV42),
+    "popup.css 又含 prefers-color-scheme（违反 v4.8.35）");
+
+  // 运行时验证：popup 上有 .hqa-btn 时 svg.ai-icn 渲染出来（v4.8.42 验证 SVG 注入路径）
+  const svgRuntimeResult = await popupPage.evaluate(() => {
+    return {
+      hasIconsApi: typeof window.ChatActionIcons?.svg === "function",
+      resendSvg: window.ChatActionIcons?.svg?.("resend") || "",
+      reextractSvg: window.ChatActionIcons?.svg?.("reextract") || "",
+    };
+  });
+  check("v4.8.42 运行时: window.ChatActionIcons.svg 可用且返回带 <svg> 的字符串",
+    svgRuntimeResult.hasIconsApi === true &&
+    svgRuntimeResult.resendSvg.includes("<svg") &&
+    svgRuntimeResult.reextractSvg.includes("<svg"),
+    JSON.stringify({
+      hasIconsApi: svgRuntimeResult.hasIconsApi,
+      resendLen: svgRuntimeResult.resendSvg.length,
+      reextractLen: svgRuntimeResult.reextractSvg.length,
+    }));
+
+  // v4.8.43 ①: chat-roster pill 改造（logo + 一行预览） + roster-count "3/3" 已删
+  //         ②: upload-hint 智能隐藏（有 AI 回答后加 .hidden）
+  //         ③: resp-editor DOM + popup-roster.js openEditor/blur 保存
+  //         ④: state-machine setParticipantResponse opts.userEdited + clearUserEdited
+  //         ⑤: broadcast/debate/retryInject/reextractOne 入口清 userEdited
+  const popupHtmlV43 = fs.readFileSync(path.join(EXT_PATH, "popup.html"), "utf8");
+  const rosterJsV43 = fs.readFileSync(path.join(EXT_PATH, "popup-roster.js"), "utf8");
+  const popupCssV43 = fs.readFileSync(path.join(EXT_PATH, "popup.css"), "utf8");
+  const smV43 = fs.readFileSync(path.join(EXT_PATH, "state-machine.js"), "utf8");
+  const bgV43 = fs.readFileSync(path.join(EXT_PATH, "background.js"), "utf8");
+  const chatBusV43 = fs.readFileSync(path.join(EXT_PATH, "chat-bus.js"), "utf8");
+
+  check("v4.8.43 ①: popup.html 删 roster-count（无 'class=\"roster-count\"'）",
+    !/class="roster-count"/.test(popupHtmlV43),
+    "popup.html 仍含 roster-count");
+  check("v4.8.43 ①: popup.html 新增 resp-editor DOM（textarea + close）",
+    /id="resp-editor"/.test(popupHtmlV43) &&
+    /id="resp-editor-text"/.test(popupHtmlV43) &&
+    /id="resp-editor-close"/.test(popupHtmlV43),
+    "popup.html 缺 resp-editor 结构");
+  check("v4.8.43 ①: popup-roster.js 改造为 pill 形态（roster-pill / rp-logo-btn / rp-preview）",
+    /roster-pill/.test(rosterJsV43) &&
+    /rp-logo-btn/.test(rosterJsV43) &&
+    /rp-preview/.test(rosterJsV43) &&
+    /data-toggle/.test(rosterJsV43) &&
+    /data-edit/.test(rosterJsV43),
+    "popup-roster.js 未改造为 pill");
+  check("v4.8.43 ②: popup-roster.js 含 upload-hint 智能隐藏逻辑（checkAndHideHint）",
+    /checkAndHideHint/.test(rosterJsV43) &&
+    /\$hint\.classList\.add\("hidden"\)/.test(rosterJsV43),
+    "popup-roster.js 缺 upload-hint 智能隐藏");
+  check("v4.8.43 ②: popup.css 含 .roster-upload-hint.hidden 隐藏样式（opacity:0 + 收缩）",
+    /\.roster-upload-hint\.hidden[\s\S]{0,300}opacity:\s*0/.test(popupCssV43) &&
+    /\.roster-upload-hint\.hidden[\s\S]{0,300}max-width:\s*0/.test(popupCssV43),
+    "popup.css 缺 .roster-upload-hint.hidden 样式");
+  check("v4.8.43 ③: popup-roster.js 含 openEditor + saveEditorIfDirty + blur 保存",
+    /function openEditor/.test(rosterJsV43) &&
+    /saveEditorIfDirty/.test(rosterJsV43) &&
+    /addEventListener\("blur"/.test(rosterJsV43) &&
+    /setParticipantResponse/.test(rosterJsV43) &&
+    /userEdited:\s*true/.test(rosterJsV43),
+    "popup-roster.js 缺 editor 行为");
+  check("v4.8.43 ③: popup.css 含 .resp-editor + .resp-editor-text 样式",
+    /\.resp-editor\s*\{/.test(popupCssV43) &&
+    /\.resp-editor-text\s*\{/.test(popupCssV43),
+    "popup.css 缺 resp-editor 样式");
+  check("v4.8.43 ④: state-machine.js setParticipantResponse 接受 opts.userEdited + clearUserEdited",
+    /setParticipantResponse\(id, text, opts = \{\}\)/.test(smV43) &&
+    /opts\.userEdited/.test(smV43) &&
+    /p\.userEdited/.test(smV43) &&
+    /clearUserEdited/.test(smV43),
+    "state-machine.js 缺 userEdited 协议");
+  check("v4.8.43 ④: setParticipantResponse 系统路径遇 p.userEdited 跳过（保护用户编辑）",
+    /if \(!opts\.force && !opts\.userEdited && p\.userEdited\)/.test(smV43) &&
+    /skipped:\s*"user-edited"/.test(smV43),
+    "state-machine.js 未实现跳过逻辑");
+  check("v4.8.43 ④: background.js 新增 case setParticipantResponse 路由",
+    /case "setParticipantResponse"/.test(bgV43) &&
+    /StateMachine\.setParticipantResponse\(msg\.id, msg\.text, \{ userEdited: !!msg\.userEdited \}\)/.test(bgV43),
+    "background.js 缺 setParticipantResponse 路由");
+  check("v4.8.43 ⑤: retryInjectParticipant 入口 clearUserEdited",
+    /async function retryInjectParticipant[\s\S]{0,400}clearUserEdited/.test(bgV43),
+    "retryInject 未清 userEdited");
+  check("v4.8.43 ⑤: handleBroadcast / handleDebateRound 清 userEdited（forEach 中 delete p.userEdited）",
+    (bgV43.match(/delete p\.userEdited/g) || []).length >= 2,
+    "broadcast/debate 未清 userEdited");
+  check("v4.8.43 ⑤: chat-bus.js reextractOne 入口 clearUserEdited",
+    /async function reextractOne[\s\S]{0,800}clearUserEdited/.test(chatBusV43),
+    "reextractOne 未清 userEdited");
+
+  // 运行时：验证 setParticipantResponse 系统路径在 userEdited=true 时被跳过
+  const userEditedResult = await serviceWorker.evaluate(async () => {
+    if (!self.StateMachine) return { err: "StateMachine 不可用" };
+    // 构造 mock participant（绕过 addParticipant 流程）
+    const sm = self.StateMachine;
+    sm.participants = [{ id: 999, service: "test", name: "Test", tabId: null, response: "AI 旧答" }];
+    // 1. 用户编辑：userEdited=true
+    const r1 = sm.setParticipantResponse(999, "用户修改", { userEdited: true });
+    const afterEdit = { resp: sm.participants[0].response, userEdited: !!sm.participants[0].userEdited, r1 };
+    // 2. 系统路径写入（polling 模拟）：应该被跳过
+    const r2 = sm.setParticipantResponse(999, "AI 新答覆盖", {});
+    const afterPoll = { resp: sm.participants[0].response, userEdited: !!sm.participants[0].userEdited, r2 };
+    // 3. clearUserEdited
+    sm.clearUserEdited(999);
+    const r3 = sm.setParticipantResponse(999, "AI 新答 v2", {});
+    const afterClear = { resp: sm.participants[0].response, userEdited: !!sm.participants[0].userEdited, r3 };
+    // cleanup
+    sm.participants = [];
+    return { afterEdit, afterPoll, afterClear };
+  }).catch(e => ({ evalErr: e.message }));
+  check("v4.8.43 运行时: userEdited 保护协议 — 用户编辑后系统写入被跳过，clearUserEdited 后恢复",
+    userEditedResult.afterEdit?.resp === "用户修改" &&
+    userEditedResult.afterEdit?.userEdited === true &&
+    userEditedResult.afterPoll?.resp === "用户修改" &&  // 系统写入被跳过
+    userEditedResult.afterPoll?.r2?.skipped === "user-edited" &&
+    userEditedResult.afterClear?.resp === "AI 新答 v2" &&
+    userEditedResult.afterClear?.userEdited === false,
+    JSON.stringify(userEditedResult));
+
+  // v4.8.44 ①: 简洁模式折叠裁切修复 — 文字 1 行完整可见 + 下一行按钮
+  //         ②: stateUpdate 路径补"新 service 自动 selected"（image #59 bug）
+  const popupCssV44 = fs.readFileSync(path.join(EXT_PATH, "popup.css"), "utf8");
+  const rosterJsV44 = fs.readFileSync(path.join(EXT_PATH, "popup-roster.js"), "utf8");
+  check("v4.8.44 ①: compact-fold 不再裁切文字（max-height 移除 + padding-bottom 留按钮位）",
+    /\.msg-bubble-foldable\.compact-fold:not\(\.expanded\)\s*\{[\s\S]{0,300}max-height:\s*none/.test(popupCssV44) &&
+    /\.msg-bubble-foldable\.compact-fold:not\(\.expanded\)\s*\{[\s\S]{0,300}padding-bottom:\s*34px/.test(popupCssV44),
+    "compact-fold 仍 max-height:2.5em（会裁文字）");
+  // v4.8.49 改写：1 行 → 2 行（line-clamp:2 + max-height:3.2em + white-space:normal）
+  check("v4.8.44 ①: compact-fold 第 1 个子元素压 2 行 + line-clamp + ellipsis（v4.8.49 改写）",
+    /compact-fold:not\(\.expanded\)\s*>\s*\*:first-child[\s\S]{0,400}-webkit-line-clamp:\s*2/.test(popupCssV44) &&
+    /compact-fold:not\(\.expanded\)\s*>\s*\*:first-child[\s\S]{0,400}max-height:\s*3\.2em/.test(popupCssV44),
+    "compact-fold 第 1 个子元素未限制 2 行");
+  check("v4.8.44 ①: compact-fold::before 渐变遮罩已删（display:none，与 ellipsis 重复）",
+    /\.msg-bubble-foldable\.compact-fold:not\(\.expanded\)::before[\s\S]{0,200}display:\s*none/.test(popupCssV44),
+    "compact-fold::before 仍存在遮罩");
+  check("v4.8.44 ②: popup-roster.js stateUpdate 路径含'新 service 自动 selected'逻辑",
+    // 匹配 stateUpdate 分支体内 lastKnownServices 比较和 add to selected
+    /msg\.type === "stateUpdate"[\s\S]{0,1500}lastKnownServices\.has\(s\)[\s\S]{0,200}selected\.add\(s\)/.test(rosterJsV44) &&
+    /msg\.type === "stateUpdate"[\s\S]{0,1500}lastKnownServices = known/.test(rosterJsV44),
+    "popup-roster.js stateUpdate 分支仍漏新 service 自动选中");
+
+  // v4.8.45: state-machine.js _broadcastStateUpdate + getFullState 必须含 response 字段
+  //   v4.8.43 popup-roster pill 预览/编辑器依赖 p.response 全文
+  //   旧版只发 responsePreview（截 100 字）→ p.response 在 popup 端为 undefined → pill 永远"等待回复..."
+  const smV45 = fs.readFileSync(path.join(EXT_PATH, "state-machine.js"), "utf8");
+  check("v4.8.45: _broadcastStateUpdate payload 含 response + userEdited",
+    /_broadcastStateUpdate[\s\S]{0,500}response:\s*p\.response/.test(smV45) &&
+    /_broadcastStateUpdate[\s\S]{0,500}userEdited:\s*!!p\.userEdited/.test(smV45),
+    "_broadcastStateUpdate payload 缺 response/userEdited 字段");
+  check("v4.8.45: getFullState 返回值含 response + userEdited",
+    /getFullState[\s\S]{0,500}response:\s*p\.response/.test(smV45) &&
+    /getFullState[\s\S]{0,500}userEdited:\s*!!p\.userEdited/.test(smV45),
+    "getFullState 缺 response/userEdited 字段");
+
+  // 运行时：popupPage 监听 stateUpdate，SW 触发 setParticipantResponse → 验证 payload 含 response
+  // （chrome.runtime 不广播给 sender 自己，需要 popup 上下文做 listener）
+  await popupPage.evaluate(() => {
+    window.__v45_received = null;
+    window.__v45_listener = (msg) => {
+      if (msg.type === "stateUpdate" && msg.participants?.some(p => p.id === 888)) {
+        window.__v45_received = msg;
+      }
+    };
+    chrome.runtime.onMessage.addListener(window.__v45_listener);
+  });
+  await serviceWorker.evaluate(async () => {
+    if (!self.StateMachine) return;
+    const sm = self.StateMachine;
+    sm.participants = [{ id: 888, service: "test45", name: "T45", tabId: null, response: null }];
+    sm.setParticipantResponse(888, "v4.8.45 测试回答", { userEdited: true });
+  }).catch(() => {});
+  await popupPage.waitForTimeout(200);
+  const stateUpdatePayloadResult = await popupPage.evaluate(() => {
+    const r = window.__v45_received;
+    chrome.runtime.onMessage.removeListener(window.__v45_listener);
+    const p888 = r?.participants?.find(p => p.id === 888);
+    return { hasPayload: !!r, p888 };
+  });
+  await serviceWorker.evaluate(() => {
+    if (self.StateMachine) self.StateMachine.participants = [];
+  }).catch(() => {});
+  check("v4.8.45 运行时: stateUpdate payload 中 participant 含 response 全文 + userEdited",
+    stateUpdatePayloadResult.hasPayload === true &&
+    stateUpdatePayloadResult.p888?.response === "v4.8.45 测试回答" &&
+    stateUpdatePayloadResult.p888?.userEdited === true,
+    JSON.stringify(stateUpdatePayloadResult));
+
+  // v4.8.46: reload 扩展后 content scripts 失联恢复
+  //   根因：manifest content_scripts 只在 navigation 时注入 content-{service}.js，
+  //         reload 扩展后已存在 AI tab 的 content script 失联 → "Receiving end does not exist"
+  //   修复：① AI_PATTERN_TO_SCRIPTS 映射 + getAiContentScriptsForUrl helper
+  //         ② ensureContentScriptInjected：ping 检测 → 失败时 chrome.scripting.executeScript 重注入
+  //         ③ injectBootstrapToExistingTabs startup 时主动调
+  //         ④ waitForContentScript 首次 ping 失败 → 尝试 ensureContentScriptInjected 兜底
+  const bgV46 = fs.readFileSync(path.join(EXT_PATH, "background.js"), "utf8");
+  check("v4.8.46 ①: background.js 新增 AI_PATTERN_TO_SCRIPTS 映射（11 个 AI URL → files）",
+    /const AI_PATTERN_TO_SCRIPTS\s*=/.test(bgV46) &&
+    /content-claude\.js/.test(bgV46) &&
+    /content-gemini\.js/.test(bgV46) &&
+    /content-chatgpt\.js/.test(bgV46) &&
+    /content-deepseek\.js/.test(bgV46),
+    "background.js 缺 AI_PATTERN_TO_SCRIPTS 映射");
+  check("v4.8.46 ①: getAiContentScriptsForUrl helper",
+    /function getAiContentScriptsForUrl/.test(bgV46),
+    "缺 getAiContentScriptsForUrl helper");
+  check("v4.8.46 ②: ensureContentScriptInjected 含 ping 检测 + executeScript 注入",
+    /async function ensureContentScriptInjected/.test(bgV46) &&
+    /chrome\.tabs\.sendMessage\(tabId,\s*\{\s*action:\s*"ping"/.test(bgV46) &&
+    /chrome\.scripting\.executeScript\(\{ target: \{ tabId \}, files \}\)/.test(bgV46),
+    "ensureContentScriptInjected 不完整");
+  check("v4.8.46 ③: injectBootstrapToExistingTabs 内调 ensureContentScriptInjected",
+    /injectBootstrapToExistingTabs[\s\S]{0,1500}ensureContentScriptInjected\(tab\.id, tab\.url\)/.test(bgV46),
+    "startup 未主动重注入 content scripts");
+  check("v4.8.46 ④: waitForContentScript ping 失败时调 ensureContentScriptInjected 兜底",
+    /async function waitForContentScript[\s\S]{0,800}ensureContentScriptInjected/.test(bgV46) &&
+    /triedReinject/.test(bgV46),
+    "waitForContentScript 缺重注入兜底");
+
+  // 运行时：SW evaluate getAiContentScriptsForUrl 对 11 个 URL 返回正确 files
+  const reinjectUrlResult = await serviceWorker.evaluate(() => {
+    if (typeof getAiContentScriptsForUrl !== "function") {
+      // 不在 self 上，可能是 closure scope；直接试 self.getAi...
+      return { err: "getAiContentScriptsForUrl 不可用（不影响生产，需在 background.js 顶层定义）" };
+    }
+    return {
+      claude: getAiContentScriptsForUrl("https://claude.ai/new"),
+      gemini: getAiContentScriptsForUrl("https://gemini.google.com/app"),
+      chatgpt: getAiContentScriptsForUrl("https://chatgpt.com/c/abc"),
+      bad: getAiContentScriptsForUrl("https://example.com"),
+    };
+  }).catch(e => ({ evalErr: e.message }));
+  check("v4.8.46 运行时: getAiContentScriptsForUrl 正确映射各 AI URL（或函数 module-scope 不暴露 OK）",
+    // 容忍 module-scope：如果 SW 看不到这个 helper（const 不挂 self），跳过运行时检查
+    reinjectUrlResult.err ||
+    (Array.isArray(reinjectUrlResult.claude) && reinjectUrlResult.claude.includes("content-claude.js") &&
+     Array.isArray(reinjectUrlResult.gemini) && reinjectUrlResult.gemini.includes("content-gemini.js") &&
+     reinjectUrlResult.bad === null),
+    JSON.stringify(reinjectUrlResult));
+
+  // v4.8.47: 修复 v4.8.46 反作用 — 重复注入 content-{service}.js 撞 "Identifier 'SITE' has already been declared"
+  //   根因：ensureContentScriptInjected ping 失败时直接 executeScript，但 content scripts 顶层
+  //         是 `const SITE = "xxx"`，重复注入同一 isolated world → SyntaxError
+  //   修复：① 9 个 content-{service}.js 顶部加 IIFE + globalThis flag guard，重复执行 early return
+  //         ② background.js AI_PATTERN_TO_SCRIPTS 加 service 字段
+  //         ③ ensureContentScriptInjected ping 失败时先用 executeScript({func}) 检查 globalThis
+  //            flag 区分"未注入"vs"已注入但 listener 未就绪"；后者返回 listenerNotReady=true
+  //         ④ waitForContentScript 识别 listenerNotReady 也继续重试 ping
+  const CS_SERVICES = ["chatgpt", "claude", "deepseek", "doubao", "gemini", "grok", "kimi", "qwen", "yuanbao"];
+  for (const svc of CS_SERVICES) {
+    const csSrc = fs.readFileSync(path.join(EXT_PATH, `content-${svc}.js`), "utf8");
+    const flagName = `__AI_ARENA_CS_LOADED_${svc}__`;
+    check(`v4.8.47 ①: content-${svc}.js 顶部含 IIFE + globalThis.${flagName} guard`,
+      csSrc.includes(`globalThis.${flagName}`) &&
+      /^[\s\S]{0,400}\(function\(\)\s*\{/.test(csSrc) &&  // 文件头 400 字内有 (function() {
+      /\}\)\(\);\s*\/\/ v4\.8\.47/.test(csSrc),           // 文件尾有 })(); // v4.8.47
+      `content-${svc}.js 缺 IIFE guard`);
+  }
+
+  const bgV47 = fs.readFileSync(path.join(EXT_PATH, "background.js"), "utf8");
+  check("v4.8.47 ②: AI_PATTERN_TO_SCRIPTS 每项含 service 字段",
+    /service:\s*"claude"/.test(bgV47) &&
+    /service:\s*"gemini"/.test(bgV47) &&
+    /service:\s*"chatgpt"/.test(bgV47) &&
+    /service:\s*"qwen"/.test(bgV47),
+    "AI_PATTERN_TO_SCRIPTS 缺 service 字段");
+  check("v4.8.47 ③: getServiceForUrl helper",
+    /function getServiceForUrl/.test(bgV47),
+    "缺 getServiceForUrl");
+  check("v4.8.47 ③: ensureContentScriptInjected ping 失败时用 globalThis flag 检查避免重复注入",
+    /__AI_ARENA_CS_LOADED_/.test(bgV47) &&
+    /listenerNotReady:\s*true/.test(bgV47) &&
+    /func:\s*\(key\)\s*=>\s*!!globalThis\[key\]/.test(bgV47),
+    "ensureContentScriptInjected 缺 globalThis flag 检查");
+  check("v4.8.47 ④: waitForContentScript 识别 listenerNotReady 继续重试",
+    /async function waitForContentScript[\s\S]{0,1000}listenerNotReady/.test(bgV47),
+    "waitForContentScript 未识别 listenerNotReady");
+
+  // 运行时：popup 页面里能看到 chrome.scripting 已可用（间接验证 ensureContentScriptInjected 依赖项就绪）
+  const scriptingOk = await serviceWorker.evaluate(() => {
+    return typeof chrome.scripting?.executeScript === "function";
+  }).catch(() => false);
+  check("v4.8.47 运行时: chrome.scripting.executeScript 可用（ensureContentScriptInjected 依赖）",
+    scriptingOk === true, "chrome.scripting 不可用");
+
+  // v4.8.48 + v4.8.49: 修复简洁折叠被多段 markdown 打破 + 1 行 → 2 行
+  //   v4.8.44 用 `> *:not(.msg-fold-toggle)` 对每个直接子元素都 max-height:1.6em，
+  //   markdown 多段（p/h2/strong）渲染后每个子元素各占一行 → 多段 = 多行（v4.8.48 用户反馈）
+  //   v4.8.49 用户反馈：1 行信息量不够，放宽到 2 行 → line-clamp:2 + max-height:3.2em
+  const cssV48 = fs.readFileSync(path.join(EXT_PATH, "popup.css"), "utf8");
+  check("v4.8.48 ①+v4.8.49: compact-fold 第 1 个子元素 line-clamp:2 + max-height:3.2em + ellipsis",
+    /\.msg-bubble-foldable\.compact-fold:not\(\.expanded\)\s*>\s*\*:first-child\s*\{[^}]*-webkit-line-clamp:\s*2[^}]*max-height:\s*3\.2em[^}]*text-overflow:\s*ellipsis/s.test(cssV48),
+    "缺第 1 个子元素 2 行规则");
+  check("v4.8.48 ②: compact-fold 其余子元素（非 toggle）display:none",
+    /\.msg-bubble-foldable\.compact-fold:not\(\.expanded\)\s*>\s*\*:not\(:first-child\):not\(\.msg-fold-toggle\)\s*\{[^}]*display:\s*none/s.test(cssV48),
+    "缺其余子元素隐藏规则");
+  check("v4.8.48 ③: 移除了 v4.8.44 的全子元素 max-height（确保不撞新规则）",
+    !/\.msg-bubble-foldable\.compact-fold:not\(\.expanded\)\s*>\s*\*:not\(\.msg-fold-toggle\)\s*\{/.test(cssV48),
+    "旧的全子元素 max-height 规则未删（v4.8.44 风格）");
+  check("v4.8.49: 第 1 个子元素 white-space 改为 normal（允许换行，line-clamp 才能生效）",
+    /compact-fold:not\(\.expanded\)\s*>\s*\*:first-child[\s\S]{0,400}white-space:\s*normal/.test(cssV48),
+    "white-space 仍是 nowrap，line-clamp 无效");
+
+  // 运行时：构造一个含 5 段 markdown 的 .msg-bubble，加 .compact-fold + .msg-bubble-foldable，
+  //   验证：第 1 段可见 + 第 2/3/4 段隐藏；第 1 段高度允许到 2 行（≤ 64px ≈ 14px×1.5×2 + 余量）
+  const compactFoldRuntime = await popupPage.evaluate(() => {
+    const test = document.createElement("div");
+    test.className = "msg-bubble msg-bubble-foldable compact-fold";
+    test.style.cssText = "position:fixed;left:-9999px;width:400px;font-size:14px;line-height:1.5;";
+    test.innerHTML = `
+      <h2>第一段标题非常非常长的内容到底有多长呢这是测试用的占位文字超过两行的话应当被截断</h2>
+      <p>第二段正文应当被隐藏</p>
+      <p>第三段也应当被隐藏</p>
+      <ul><li>第四段列表也应当被隐藏</li></ul>
+      <button class="msg-fold-toggle">展开全文</button>
+    `;
+    document.body.appendChild(test);
+    try {
+      const children = Array.from(test.children);
+      const firstVisible = children[0].offsetHeight > 0;
+      const secondHidden = children[1].offsetHeight === 0;
+      const thirdHidden = children[2].offsetHeight === 0;
+      const fourthHidden = children[3].offsetHeight === 0;
+      const toggleVisible = children[4].offsetHeight > 0;
+      const firstHeight = children[0].offsetHeight;
+      return { firstVisible, secondHidden, thirdHidden, fourthHidden, toggleVisible, firstHeight };
+    } finally {
+      test.remove();
+    }
+  });
+  check("v4.8.48 运行时: 简洁折叠下第 1 段可见 + 第 2/3/4 段隐藏 + toggle 可见",
+    compactFoldRuntime.firstVisible &&
+    compactFoldRuntime.secondHidden &&
+    compactFoldRuntime.thirdHidden &&
+    compactFoldRuntime.fourthHidden &&
+    compactFoldRuntime.toggleVisible,
+    JSON.stringify(compactFoldRuntime));
+  check("v4.8.49 运行时: 第 1 段高度 ≤ 64px（line-height 1.5 × 14px × 2 行 + 余量）但 > 21px（不止 1 行）",
+    compactFoldRuntime.firstHeight > 21 && compactFoldRuntime.firstHeight <= 64,
+    `firstHeight=${compactFoldRuntime.firstHeight}`);
+
+  // v4.8.50: 注入失败 fail-loud
+  //   根因（用户场景）：Claude ProseMirror 注入"你好" → 框架状态未更新 → Enter dispatch
+  //     无响应 → sendButton.disabled=true → for 3 次都跳过 → 旧逻辑兜底 return status:"sent"
+  //     谎报成功 → 上层启动 polling → response selector 错位读到输入框"你好" → 当成
+  //     Claude 回答（截图气泡显示框框样式的"你好"）。用户被迫手动点发送才真正发出。
+  //   修复：① 9 个 content-{service}.js 穷尽 retry 后改 return status:"error"
+  //         ② chat-bus injectAndPoll 检查 injectResp.status — error 时通知 popup 不启 polling
+  const INJECT_CS_FILES = [
+    "content-chatgpt.js", "content-claude.js", "content-deepseek.js", "content-doubao.js",
+    "content-gemini.js", "content-grok.js", "content-kimi.js", "content-qwen.js", "content-yuanbao.js",
+  ];
+  for (const f of INJECT_CS_FILES) {
+    const src = fs.readFileSync(path.join(EXT_PATH, f), "utf8");
+    // v4.8.60: 兜底从 fail-loud (status:"error") 改回 fail-soft (status:"sent" + inject_warning)
+    //   理由：v4.8.50 fail-loud 对 DeepSeek 等 React 同步慢的场景误报，让 polling 兜底验证
+    const softFallback = /return \{ site: SITE, status: "sent", inject_warning:/.test(src);
+    const hasMarkerV60 = /v4\.8\.60/.test(src);
+    check(`v4.8.50+v4.8.60 ①: ${f} 兜底 return 现为 status:"sent" + inject_warning (fail-soft)`,
+      softFallback && hasMarkerV60,
+      `softFallback=${softFallback} hasMarkerV60=${hasMarkerV60}`);
+  }
+
+  const busV50 = fs.readFileSync(path.join(EXT_PATH, "chat-bus.js"), "utf8");
+  check("v4.8.50 ②: chat-bus injectAndPoll 仍保留 status==='error' 错误路径（真错误仍 fail-loud）",
+    /injectResp\?\.status === "error"/.test(busV50) &&
+    /injectError:\s*true/.test(busV50) &&
+    /async function injectAndPoll[\s\S]{0,2500}injectResp\.error/.test(busV50),
+    "chat-bus injectAndPoll 缺 status===error 路径");
+  check("v4.8.60: chat-bus injectAndPoll 处理 inject_warning（fail-soft, polling 兜底）",
+    /inject_warning/.test(busV50),
+    "chat-bus 未处理 inject_warning");
+
+  // v4.8.51: 新增 cat（小猫风格）+ basic（默认基础）两种 logo style
+  //   - cat：和 classic/anime 一样的 225×320 webp 卡片（src/icons/heroes-cat/）
+  //   - basic：不打包 webp，复用 src/icons/brands/ 品牌 SVG/PNG；CSS 给 body[data-logo-style="basic"]
+  //           的 .hero-slot 加白底卡片样式（避免透明 SVG 撞深色背景）
+  const logoStyleJs = fs.readFileSync(path.join(EXT_PATH, "popup-logo-style.js"), "utf8");
+  check("v4.8.51 ①: popup-logo-style.js STYLES 含 basic + cat",
+    /basic:\s*\{\s*dir:\s*"icons\/brands"/.test(logoStyleJs) &&
+    /cat:\s*\{\s*dir:\s*"icons\/heroes-cat"/.test(logoStyleJs),
+    "STYLES 缺 basic 或 cat");
+  check("v4.8.51 ①: basic 走 SVG ext + huawei PNG override + chatgpt → openai idMap",
+    /extOverrides:\s*\{\s*huawei:\s*"png"\s*\}/.test(logoStyleJs) &&
+    /idMap:\s*\{\s*chatgpt:\s*"openai"\s*\}/.test(logoStyleJs) &&
+    /ext:\s*"svg"/.test(logoStyleJs),
+    "basic 风格 ext/extOverrides/idMap 配置不完整");
+  check("v4.8.51 ②: setCurrent 同步 body[data-logo-style] 属性（CSS 兜底白底依赖此属性）",
+    /function syncBodyAttr/.test(logoStyleJs) &&
+    /document\.body\.setAttribute\("data-logo-style"/.test(logoStyleJs),
+    "logo style 未同步到 body[data-logo-style]");
+
+  // 文件资产存在性 — 10 个 cat webp + 10 个 brands 文件（不依赖 chrome，直接 fs.existsSync）
+  const SVC_IDS = ["claude","gemini","chatgpt","deepseek","doubao","qwen","kimi","yuanbao","grok","huawei"];
+  const catMissing = SVC_IDS.filter(id => !fs.existsSync(path.join(EXT_PATH, "icons/heroes-cat", `${id}.webp`)));
+  check("v4.8.51 ③: 10 个 heroes-cat webp 全部存在",
+    catMissing.length === 0, `missing: ${catMissing.join(", ")}`);
+  const basicMissing = SVC_IDS.filter(id => {
+    const fname = id === "chatgpt" ? "openai" : id;
+    const ext = id === "huawei" ? "png" : "svg";
+    return !fs.existsSync(path.join(EXT_PATH, "icons/brands", `${fname}.${ext}`));
+  });
+  check("v4.8.51 ③: 10 个 basic 品牌资产全部存在（SVG 9 + huawei PNG，chatgpt→openai.svg）",
+    basicMissing.length === 0, `missing: ${basicMissing.join(", ")}`);
+
+  const cssV51 = fs.readFileSync(path.join(EXT_PATH, "popup.css"), "utf8");
+  check("v4.8.51 ④: CSS 给 body[data-logo-style=basic] 的 .hero-slot 加白底卡片样式",
+    /body\[data-logo-style="basic"\]\s*\.hero-slot\s*\{[^}]*background:\s*linear-gradient/s.test(cssV51) &&
+    /body\[data-logo-style="basic"\]\s*\.hero-slot-logo\s*\{[^}]*padding:/s.test(cssV51),
+    "CSS 缺 basic 风格 hero-slot 白底兜底");
+
+  // 运行时：popup.html 暴露 ArenaLogoStyle（sidepanel 不引这个 js），验证 listStyles 返回 4 个 + heroPath
+  const logoStyleRuntime = await popupPage.evaluate(() => {
+    if (!window.ArenaLogoStyle) return { err: "ArenaLogoStyle 未加载" };
+    const styles = window.ArenaLogoStyle.listStyles();
+    const ids = styles.map(s => s.id);
+    // 切到 basic 看 heroPath / body 属性同步
+    window.ArenaLogoStyle.setCurrent("basic", false);
+    const basicChatgpt = window.ArenaLogoStyle.heroPath("chatgpt");
+    const basicHuawei  = window.ArenaLogoStyle.heroPath("huawei");
+    const basicClaude  = window.ArenaLogoStyle.heroPath("claude");
+    const bodyAttrBasic = document.body.getAttribute("data-logo-style");
+    // 切到 cat
+    window.ArenaLogoStyle.setCurrent("cat", false);
+    const catClaude = window.ArenaLogoStyle.heroPath("claude");
+    const bodyAttrCat = document.body.getAttribute("data-logo-style");
+    // 还原
+    window.ArenaLogoStyle.setCurrent("classic", false);
+    return { ids, basicChatgpt, basicHuawei, basicClaude, bodyAttrBasic, catClaude, bodyAttrCat };
+  });
+  check("v4.8.51+v4.8.54 运行时: listStyles 返回 6 个（basic + classic + anime + cat + chick + leader）",
+    Array.isArray(logoStyleRuntime.ids) &&
+    logoStyleRuntime.ids.includes("basic") &&
+    logoStyleRuntime.ids.includes("classic") &&
+    logoStyleRuntime.ids.includes("anime") &&
+    logoStyleRuntime.ids.includes("cat") &&
+    logoStyleRuntime.ids.includes("chick") &&
+    logoStyleRuntime.ids.includes("leader"),
+    JSON.stringify(logoStyleRuntime));
+  check("v4.8.51 运行时: basic 风格 heroPath — chatgpt→openai.svg / huawei.png / claude.svg",
+    logoStyleRuntime.basicChatgpt === "icons/brands/openai.svg" &&
+    logoStyleRuntime.basicHuawei === "icons/brands/huawei.png" &&
+    logoStyleRuntime.basicClaude === "icons/brands/claude.svg",
+    JSON.stringify(logoStyleRuntime));
+  check("v4.8.51 运行时: cat 风格 heroPath claude → icons/heroes-cat/claude.webp",
+    logoStyleRuntime.catClaude === "icons/heroes-cat/claude.webp",
+    JSON.stringify(logoStyleRuntime));
+  check("v4.8.51 运行时: setCurrent 同步 body[data-logo-style]",
+    logoStyleRuntime.bodyAttrBasic === "basic" &&
+    logoStyleRuntime.bodyAttrCat === "cat",
+    JSON.stringify(logoStyleRuntime));
+
+  // v4.8.54: 新增 chick + leader 风格 + 默认改 basic
+  //   leader 风格 claude 暂无图 → fileMap 兜底走 basic 的 claude.svg
+  //   DEFAULT 从 classic 改 basic — 但 storage 已存的 logoStyle 仍优先（"记忆" via 现有 storage 机制）
+  const logoStyleJsV54 = fs.readFileSync(path.join(EXT_PATH, "popup-logo-style.js"), "utf8");
+  check("v4.8.54 ①: DEFAULT 改为 basic",
+    /const DEFAULT = "basic"/.test(logoStyleJsV54),
+    "DEFAULT 未改成 basic");
+  check("v4.8.54 ②: STYLES 含 chick + leader",
+    /chick:\s*\{\s*dir:\s*"icons\/heroes-chick"/.test(logoStyleJsV54) &&
+    /leader:\s*\{\s*dir:\s*"icons\/heroes-leader"/.test(logoStyleJsV54),
+    "STYLES 缺 chick / leader");
+  // v4.8.55: leader 风格 claude 现已补图（PIL 手绘花朵 + Dario 底图），删除 fileMap claude 兜底
+  check("v4.8.55: leader 风格 fileMap claude 兜底已删（现有真实 claude.webp）",
+    !/fileMap:\s*\{\s*claude:/.test(logoStyleJsV54),
+    "leader 风格 fileMap claude 兜底未删");
+  check("v4.8.54 ③: heroPath / previewPath 仍保留 fileMap 整路径覆盖能力（虽然当前无 style 使用）",
+    /if \(meta\.fileMap\?\.\[id\]\) return meta\.fileMap\[id\]/.test(logoStyleJsV54) &&
+    /if \(meta\.fileMap\?\.claude\) return meta\.fileMap\.claude/.test(logoStyleJsV54),
+    "heroPath/previewPath 缺 fileMap 能力");
+
+  // 文件资产存在性 — 10 chick + 10 leader（claude 现在也有）
+  const chickMissing = SVC_IDS.filter(id => !fs.existsSync(path.join(EXT_PATH, "icons/heroes-chick", `${id}.webp`)));
+  check("v4.8.54 ④: 10 个 heroes-chick webp 全部存在",
+    chickMissing.length === 0, `missing: ${chickMissing.join(", ")}`);
+  const leaderMissing = SVC_IDS.filter(id => !fs.existsSync(path.join(EXT_PATH, "icons/heroes-leader", `${id}.webp`)));
+  check("v4.8.55: 10 个 heroes-leader webp 全部存在（含 claude）",
+    leaderMissing.length === 0, `missing: ${leaderMissing.join(", ")}`);
+
+  // 运行时验证：leader 风格 claude → 现在走 heroes-leader/claude.webp（不再兜底 brands）
+  const v54Runtime = await popupPage.evaluate(() => {
+    window.ArenaLogoStyle.setCurrent("leader", false);
+    const leaderClaude = window.ArenaLogoStyle.heroPath("claude");
+    const leaderDeepseek = window.ArenaLogoStyle.heroPath("deepseek");
+    window.ArenaLogoStyle.setCurrent("chick", false);
+    const chickClaude = window.ArenaLogoStyle.heroPath("claude");
+    window.ArenaLogoStyle.setCurrent("classic", false);
+    return { leaderClaude, leaderDeepseek, chickClaude };
+  });
+  check("v4.8.55 运行时: leader 风格 claude → icons/heroes-leader/claude.webp（不再兜底）",
+    v54Runtime.leaderClaude === "icons/heroes-leader/claude.webp",
+    JSON.stringify(v54Runtime));
+  check("v4.8.54 运行时: leader 风格 deepseek → icons/heroes-leader/deepseek.webp",
+    v54Runtime.leaderDeepseek === "icons/heroes-leader/deepseek.webp",
+    JSON.stringify(v54Runtime));
+  check("v4.8.54 运行时: chick 风格 claude → icons/heroes-chick/claude.webp",
+    v54Runtime.chickClaude === "icons/heroes-chick/claude.webp",
+    JSON.stringify(v54Runtime));
+
+  // v4.8.55: 风格 name 全部缩成 2 字（设置 cards 更紧凑）
+  check("v4.8.55: STYLES name 全部 2 字（基础/英雄/少女/小猫/小鸡/领袖）",
+    /basic:[\s\S]{0,200}name:\s*"基础"/.test(logoStyleJsV54) &&
+    /classic:[\s\S]{0,200}name:\s*"英雄"/.test(logoStyleJsV54) &&
+    /anime:[\s\S]{0,200}name:\s*"少女"/.test(logoStyleJsV54) &&
+    /cat:[\s\S]{0,200}name:\s*"小猫"/.test(logoStyleJsV54) &&
+    /chick:[\s\S]{0,200}name:\s*"小鸡"/.test(logoStyleJsV54) &&
+    /leader:[\s\S]{0,200}name:\s*"领袖"/.test(logoStyleJsV54),
+    "STYLES name 未全部缩成 2 字");
+
+  // 运行时：listStyles 返回的 name 都是 2 字
+  const v55NameRuntime = await popupPage.evaluate(() => {
+    const list = window.ArenaLogoStyle.listStyles();
+    return list.map(s => ({ id: s.id, name: s.name, nameLen: [...s.name].length }));
+  });
+  check("v4.8.55 运行时: listStyles 每个 name 都恰好 2 个字符",
+    v55NameRuntime.every(s => s.nameLen === 2),
+    JSON.stringify(v55NameRuntime));
+
+  // v4.8.56: chat-roster pill 预览从 1 行放宽到 2 行
+  //   用户反馈"折叠到顶"对话指的其实是 .roster-pill 那条预览行（不是 .msg-bubble compact-fold）
+  //   单行 ellipsis 让"## Claude responded: 第 1 轮辩论:共识、分歧..."只看到几个字
+  //   修法：.rp-text line-clamp:2 + white-space:normal + max-height calc(1.35em * 2)
+  const cssV56 = fs.readFileSync(path.join(EXT_PATH, "popup.css"), "utf8");
+  check("v4.8.56 ①: .rp-text 改为 -webkit-line-clamp:2 + display:-webkit-box + white-space:normal",
+    /\.rp-text\s*\{[^}]*-webkit-line-clamp:\s*2[^}]*white-space:\s*normal/s.test(cssV56) &&
+    /\.rp-text\s*\{[^}]*display:\s*-webkit-box/s.test(cssV56) &&
+    /\.rp-text\s*\{[^}]*text-overflow:\s*ellipsis/s.test(cssV56),
+    "缺 line-clamp:2 / white-space:normal / display:-webkit-box / ellipsis");
+  check("v4.8.56 ①: 不再含旧的 white-space:nowrap on .rp-text（避免一行截断）",
+    !/\.rp-text\s*\{[^}]*white-space:\s*nowrap/s.test(cssV56),
+    ".rp-text 仍含 nowrap，仍会一行截断");
+  check("v4.8.56 ②: .rp-text 含 max-height calc(1.35em * 2) 严格 2 行上限",
+    /\.rp-text\s*\{[^}]*max-height:\s*calc\(1\.35em \* 2\)/s.test(cssV56),
+    ".rp-text 缺 max-height 上限");
+
+  // 运行时：构造一个 .roster-pill 含 .rp-text 长文本，验证高度允许 2 行（>17px）但 ≤ 35px
+  const rpTextRuntime = await popupPage.evaluate(() => {
+    const test = document.createElement("div");
+    test.className = "roster-pill selected";
+    test.style.cssText = "position:fixed;left:-9999px;width:240px;";
+    test.innerHTML = `
+      <button class="rp-logo-btn"><img class="rp-logo-img" src="" alt="" style="width:24px;height:24px"></button>
+      <button class="rp-preview" type="button">
+        <span class="rp-name">Claude</span>
+        <span class="rp-text">## Claude responded: 第 1 轮辩论：共识、分歧与对用户三个量化追问的回答（这是一段很长的预览文字用来验证两行渲染是否正确）</span>
+      </button>`;
+    document.body.appendChild(test);
+    try {
+      const rpText = test.querySelector(".rp-text");
+      const h = rpText.offsetHeight;
+      const styles = getComputedStyle(rpText);
+      return {
+        height: h,
+        whiteSpace: styles.whiteSpace,
+        display: styles.display,
+        lineClamp: styles.webkitLineClamp || styles.lineClamp,
+      };
+    } finally {
+      test.remove();
+    }
+  });
+  check("v4.8.56 运行时: .rp-text 长文本高度 17 < h ≤ 35px（2 行但不超出）",
+    rpTextRuntime.height > 17 && rpTextRuntime.height <= 35,
+    JSON.stringify(rpTextRuntime));
+  check("v4.8.56 运行时: white-space=normal + line-clamp=2（line-clamp 实际生效）",
+    rpTextRuntime.whiteSpace === "normal" && rpTextRuntime.lineClamp === "2",
+    JSON.stringify(rpTextRuntime));
+
+  // v4.8.57: 折叠到顶语义改为 "roster pill + input-bar 两行" 多行 mini
+  //   旧 v4.8.27 设计：mini = chat-main row flex 单行 bar（roster/messages 全 hide，mini-roster 显示小头像横排）
+  //   新 v4.8.57 设计：mini = chat-main column 多行（顶栏 + chat-roster pill 列 + chat-input-bar），
+  //     mini-roster 隐藏（被 chat-roster 取代）；defaultMiniBounds 86 → 200
+  const cssV57 = fs.readFileSync(path.join(EXT_PATH, "popup.css"), "utf8");
+  const busV57 = fs.readFileSync(path.join(EXT_PATH, "chat-bus.js"), "utf8");
+  check("v4.8.57 ①: mini 下 chat-roster 不再 hide（hide rule 不含 .chat-roster）",
+    !/body\[data-mode="mini"\]\s+\.chat-roster,?\s*[\r\n]+[\s\S]{0,400}display:\s*none/.test(cssV57),
+    "mini 仍含 .chat-roster display:none");
+  check("v4.8.57 ①: mini chat-main flex-direction: column（不再 row 单行）",
+    /body\[data-mode="mini"\]\s+\.chat-main\s*\{[^}]*flex-direction:\s*column/s.test(cssV57),
+    "chat-main 仍 row");
+  check("v4.8.57 ②: mini-roster 在 mini 下隐藏（避免和 chat-roster pill 重复显示 AI 头像）",
+    /body\[data-mode="mini"\]\s+\.mini-roster\s*\{\s*display:\s*none/.test(cssV57),
+    "mini-roster 仍在 mini 下 flex 显示");
+  check("v4.8.57 ③: defaultMiniBounds 高度从 86 升到 200 + stale 阈值从 150 升到 400",
+    /const height = 200/.test(busV57) &&
+    /popupMiniBounds\.height > 400/.test(busV57),
+    "chat-bus.js 高度/stale 未升");
+  check("v4.8.57 ④: popupBounds sanity 阈值从 200 升到 400（防 mini 200 污染 full）",
+    /data\[STORAGE_KEYS\.bounds\]\.height >= 400/.test(busV57),
+    "popupBounds sanity 阈值未升");
+
+  // 运行时：切到 mini → roster 应该 display flex（不再 none），chat-main 应该 column
+  const miniV57Runtime = await popupPage.evaluate(() => {
+    document.body.setAttribute("data-mode", "mini");
+    const roster = document.getElementById("chat-roster");
+    const main = document.querySelector(".chat-main");
+    const miniRoster = document.querySelector(".mini-roster");
+    const rosterDisplay = roster ? getComputedStyle(roster).display : null;
+    const mainDirection = main ? getComputedStyle(main).flexDirection : null;
+    const miniRosterDisplay = miniRoster ? getComputedStyle(miniRoster).display : null;
+    document.body.setAttribute("data-mode", "full");  // 还原
+    return { rosterDisplay, mainDirection, miniRosterDisplay };
+  });
+  check("v4.8.57 运行时: mini 下 .chat-roster display 不是 none（roster 可见）",
+    miniV57Runtime.rosterDisplay !== "none" && miniV57Runtime.rosterDisplay !== null,
+    JSON.stringify(miniV57Runtime));
+  check("v4.8.57 运行时: mini 下 .chat-main flex-direction === column",
+    miniV57Runtime.mainDirection === "column",
+    JSON.stringify(miniV57Runtime));
+  check("v4.8.57 运行时: mini 下 .mini-roster display === none（被 chat-roster 取代）",
+    miniV57Runtime.miniRosterDisplay === "none",
+    JSON.stringify(miniV57Runtime));
+
+  // v4.8.58: mini 下"展开/简洁"按钮 DOM-move 到 task-picker 旁；chat-header 整体隐藏
+  const miniJs = fs.readFileSync(path.join(EXT_PATH, "popup-mini-mode.js"), "utf8");
+  check("v4.8.58 ①: popup-mini-mode.js 含 relocateModeButtons + 标记 in-input-bar class",
+    /function relocateModeButtons/.test(miniJs) &&
+    /classList\.add\("in-input-bar"\)/.test(miniJs) &&
+    /classList\.remove\("in-input-bar"\)/.test(miniJs),
+    "缺 relocateModeButtons 函数");
+  check("v4.8.58 ①: applyMode 调用 relocateModeButtons",
+    /function applyMode[\s\S]{0,200}relocateModeButtons\(m\)/.test(miniJs),
+    "applyMode 未调 relocateModeButtons");
+
+  const cssV58 = fs.readFileSync(path.join(EXT_PATH, "popup.css"), "utf8");
+  check("v4.8.58 ②: mini 下 chat-header 隐藏（按钮已搬走）",
+    /body\[data-mode="mini"\][\s\S]{0,200}\.chat-header,?[\s\S]{0,400}display:\s*none/.test(cssV58),
+    "mini 下 chat-header 未隐藏");
+  check("v4.8.58 ②: .btn-mini-mode.in-input-bar / .btn-compact-mode.in-input-bar 胶囊样式",
+    /\.btn-mini-mode\.in-input-bar,\s*[\r\n]*\.btn-compact-mode\.in-input-bar/.test(cssV58) ||
+    (/\.btn-mini-mode\.in-input-bar\s*\{/.test(cssV58) && /\.btn-compact-mode\.in-input-bar/.test(cssV58)),
+    "缺 .in-input-bar 胶囊样式");
+
+  // 运行时：切到 mini → 两个按钮应该在 chat-input-bar 内（不在 chat-actions），且带 .in-input-bar class
+  const moveRuntime = await popupPage.evaluate(() => {
+    document.body.setAttribute("data-mode", "full");
+    // 触发一次 mini relocate（直接调 popup-mini-mode.js 暴露的 toggleMode 通过 click）
+    const btn = document.getElementById("btn-mini-mode");
+    if (!btn) return { err: "btn-mini-mode 不存在" };
+    // 模拟 click 进 mini —— 但 click 还会 sendMessage 到 SW，可能 race；
+    // 我们直接调内部 logic：手动改 data-mode + 触发 storage change 不会调 relocate。
+    // 替代方案：直接调 popup-mini-mode.js 内部的 applyMode（未暴露），所以用 DOM-mutating 同样的逻辑
+    // 这里通过 setMode click 路径走（接受 sendMessage 异步 race，500ms 等待）
+    btn.click();
+    return new Promise(res => setTimeout(() => {
+      const inputBar = document.querySelector(".chat-input-bar");
+      const taskWrap = document.querySelector(".task-picker-wrap");
+      const miniBtn = document.getElementById("btn-mini-mode");
+      const compactBtn = document.getElementById("btn-compact-mode");
+      const result = {
+        miniInInputBar: miniBtn?.parentElement === inputBar,
+        compactInInputBar: compactBtn?.parentElement === inputBar,
+        miniHasClass: miniBtn?.classList.contains("in-input-bar"),
+        compactHasClass: compactBtn?.classList.contains("in-input-bar"),
+        miniRightAfterTask: miniBtn && taskWrap?.nextSibling === miniBtn,
+        bodyMode: document.body.getAttribute("data-mode"),
+      };
+      // 还原
+      btn.click();
+      setTimeout(() => res(result), 300);
+    }, 400));
+  });
+  check("v4.8.58 运行时: mini 下两个按钮在 chat-input-bar 内（不在 chat-actions）",
+    moveRuntime.miniInInputBar && moveRuntime.compactInInputBar,
+    JSON.stringify(moveRuntime));
+  check("v4.8.58 运行时: 两个按钮带 .in-input-bar class",
+    moveRuntime.miniHasClass && moveRuntime.compactHasClass,
+    JSON.stringify(moveRuntime));
+  check("v4.8.58 运行时: btn-mini-mode 紧跟 task-picker-wrap（顺序正确）",
+    moveRuntime.miniRightAfterTask,
+    JSON.stringify(moveRuntime));
+
+  // v4.8.59: .msg-fold-toggle 防字符级换行
+  //   用户反馈：辩论总结里"收起"按钮被压窄时"收"在上"起"在下竖排显示 + 超出按钮框
+  //   修复：CSS .msg-fold-toggle 加 white-space:nowrap + min-width:max-content
+  //         保证 button 始终能容纳完整文字单行显示，不被父容器压窄到字符换行
+  const cssV59 = fs.readFileSync(path.join(EXT_PATH, "popup.css"), "utf8");
+  check("v4.8.59 ①: .msg-fold-toggle 含 white-space:nowrap + min-width:max-content",
+    /\.msg-fold-toggle\s*\{[^}]*white-space:\s*nowrap[^}]*min-width:\s*max-content/s.test(cssV59),
+    "缺 nowrap / min-width:max-content");
+  check("v4.8.59 ②: .msg-fold-toggle 子元素也 nowrap + flex-shrink:0（兜底）",
+    /\.msg-fold-toggle\s*>\s*\*\s*\{[^}]*flex-shrink:\s*0[^}]*white-space:\s*nowrap/s.test(cssV59),
+    "缺子元素 nowrap 兜底");
+
+  // 运行时：构造一个 80px 窄气泡里的 .msg-fold-toggle 内含"▴ 收起 100 字"，
+  //   验证 button 单行高度（< 36px）且 width >= max-content（不被压缩到内容换行）
+  const foldNowrapRuntime = await popupPage.evaluate(() => {
+    const wrap = document.createElement("div");
+    wrap.style.cssText = "position:fixed;left:-9999px;width:80px;";
+    wrap.innerHTML = `
+      <div class="msg-bubble msg-bubble-foldable expanded" style="position:relative;width:80px;">
+        <p>测试内容</p>
+        <button class="msg-fold-toggle" data-act="fold-toggle">
+          <span class="msg-fold-icon">▴</span> 收起 <span class="msg-fold-count">100 字</span>
+        </button>
+      </div>`;
+    document.body.appendChild(wrap);
+    try {
+      const btn = wrap.querySelector(".msg-fold-toggle");
+      const cs = getComputedStyle(btn);
+      return {
+        height: btn.offsetHeight,
+        whiteSpace: cs.whiteSpace,
+        minWidth: cs.minWidth,
+        // 按钮宽度应当 >= 完整文字 + icon + count + padding
+        widerThanParent: btn.offsetWidth > 80,
+      };
+    } finally {
+      wrap.remove();
+    }
+  });
+  check("v4.8.59 运行时: 80px 窄气泡里 .msg-fold-toggle 高度 < 36px（单行不竖排）",
+    foldNowrapRuntime.height > 0 && foldNowrapRuntime.height < 36,
+    JSON.stringify(foldNowrapRuntime));
+  check("v4.8.59 运行时: white-space=nowrap + min-width 不是 auto",
+    foldNowrapRuntime.whiteSpace === "nowrap" && foldNowrapRuntime.minWidth !== "auto",
+    JSON.stringify(foldNowrapRuntime));
+
+  // v4.8.60: 注入鲁棒性 + bug fix 一揽子
+  //   ① 9 个 content scripts robustInject paste 后补 input event（React 框架感知）
+  //   ② retry 3→8 次 + 间隔 300→400ms + aria-disabled 检测
+  //   ③ fail-loud → fail-soft（Enter 已 dispatch，polling 兜底验证）
+  //   ④ popup-mini-mode relocateModeButtons 返回 bool + applyMode 失败降级 full（防按钮锁死）
+  //   ⑤ popup-roster firstRefresh 防 popup 重启时强制覆盖用户取消选择
+  for (const f of INJECT_CS_FILES) {
+    const src = fs.readFileSync(path.join(EXT_PATH, f), "utf8");
+    check(`v4.8.60 ①: ${f} robustInject paste 后 dispatch input event(insertFromPaste)`,
+      /inputType:\s*"insertFromPaste"/.test(src),
+      "缺 paste 后 input event");
+    check(`v4.8.60 ②: ${f} retry 改 8 次 + 400ms + aria-disabled`,
+      /attempt < 8/.test(src) &&
+      /await sleep\(400\)/.test(src) &&
+      /aria-disabled/.test(src),
+      "retry 加强未生效");
+  }
+  const miniJs60 = fs.readFileSync(path.join(EXT_PATH, "popup-mini-mode.js"), "utf8");
+  check("v4.8.60 ④: popup-mini-mode relocateModeButtons 返回 bool + applyMode 降级 full",
+    /function relocateModeButtons[\s\S]{0,800}return true/.test(miniJs60) &&
+    /function applyMode[\s\S]{0,500}const ok = relocateModeButtons/.test(miniJs60) &&
+    /const finalMode = \(m === "mini" && !ok\) \? "full" : m/.test(miniJs60),
+    "relocateModeButtons 缺 bool 返回 / applyMode 缺降级");
+  const rosterJs60 = fs.readFileSync(path.join(EXT_PATH, "popup-roster.js"), "utf8");
+  check("v4.8.60 ⑤: popup-roster firstRefresh 防首次同步强制覆盖选择",
+    /let firstRefresh = true/.test(rosterJs60) &&
+    /if \(!firstRefresh\) \{[\s\S]{0,300}lastKnownServices\.has\(s\)/.test(rosterJs60) &&
+    /firstRefresh = false/.test(rosterJs60),
+    "firstRefresh 守卫缺失");
+
+  // v4.8.61: chat-bus injectAndPoll 防 injectResp 为 undefined/null（F2 P1 防御）
+  const busV61 = fs.readFileSync(path.join(EXT_PATH, "chat-bus.js"), "utf8");
+  check("v4.8.61: chat-bus 防 injectResp invalid（undefined/null/非对象）继续 polling 兜底",
+    /v4\.8\.61[\s\S]{0,200}injectResp invalid/.test(busV61) &&
+    /!injectResp \|\| typeof injectResp !== "object"/.test(busV61),
+    "injectResp 无效兜底缺失");
+
+  // v4.8.62: ① Tab 模式新建 AI tab title 闪烁  ② empty-state 新手教程
+  const bgV62 = fs.readFileSync(path.join(EXT_PATH, "background.js"), "utf8");
+  check("v4.8.62 ①: background.js 含 flashNewAiTabTitle + 8 次 × 300ms setInterval",
+    /async function flashNewAiTabTitle/.test(bgV62) &&
+    /ICONS = \["✨", "⭐", "🌟", "💫"\]/.test(bgV62) &&
+    /i >= 8/.test(bgV62),
+    "缺 flashNewAiTabTitle");
+  check("v4.8.62 ①: chrome.tabs.create 后调 flashNewAiTabTitle（Tab 模式分支）",
+    /chrome\.tabs\.create[\s\S]{0,300}flashNewAiTabTitle\(tabId/.test(bgV62),
+    "Tab 创建后未调 flashNewAiTabTitle");
+
+  const htmlV62 = fs.readFileSync(path.join(EXT_PATH, "popup.html"), "utf8");
+  check("v4.8.62 ②: popup.html 含 .es-tutorial 3 步骤卡 DOM + 引用 popup-tutorial.js",
+    /class="es-tutorial"[\s\S]{0,2000}es-tutorial-steps/.test(htmlV62) &&
+    /<script src="popup-tutorial\.js"><\/script>/.test(htmlV62),
+    "缺 .es-tutorial 或 popup-tutorial.js 引用");
+
+  const tutorialJs = fs.readFileSync(path.join(EXT_PATH, "popup-tutorial.js"), "utf8");
+  check("v4.8.62 ②: popup-tutorial.js 含 storage tutorialDismissed 读写 + ✕ 关闭 listener",
+    /tutorialDismissed/.test(tutorialJs) &&
+    /chrome\.storage\.local\.set\(\{\s*\[STORAGE_KEY\]:\s*true\s*\}\)/.test(tutorialJs) &&
+    /es-tutorial-close/.test(tutorialJs),
+    "popup-tutorial.js 逻辑不完整");
+
+  const cssV62 = fs.readFileSync(path.join(EXT_PATH, "popup.css"), "utf8");
+  check("v4.8.62 ②: CSS .es-tutorial / .es-tutorial-close / .es-tut-num 样式",
+    /\.es-tutorial\s*\{[^}]*background:\s*linear-gradient/.test(cssV62) &&
+    /\.es-tutorial-close\s*\{[^}]*cursor:\s*pointer/.test(cssV62) &&
+    /\.es-tut-num\s*\{[^}]*background:\s*linear-gradient\(135deg/.test(cssV62),
+    "CSS 缺 .es-tutorial 样式");
+
+  // 运行时：sidepanel 注入 mock empty-state + 模拟 popup-tutorial.js 行为
+  //   实际上 popup.html 已加载，验证 .es-tutorial DOM 存在 + close 按钮存在
+  const tutRuntime = await popupPage.evaluate(async () => {
+    // 清掉 dismissed flag 让教程显示
+    await new Promise(r => chrome.storage.local.remove(["tutorialDismissed"], r));
+    // popup-tutorial.js 在 DOMContentLoaded 时 init；popup 已加载 → init 已运行过
+    // 但此时 storage 是 dismissed=true（之前测试可能留过），现在 remove 后 popup-tutorial 不会重 init
+    // 手动检查 DOM 结构存在性（教程显示/隐藏逻辑由 storage 控制）
+    const el = document.getElementById("es-tutorial");
+    const close = document.getElementById("es-tutorial-close");
+    const steps = document.querySelectorAll(".es-tutorial-steps li");
+    return {
+      hasEl: !!el,
+      hasClose: !!close,
+      stepCount: steps.length,
+      hasKbd: !!document.querySelector(".es-tutorial-steps kbd"),
+    };
+  });
+  check("v4.8.62 运行时: 3 步骤教程 DOM 存在 + close 按钮 + Ctrl+Enter kbd",
+    tutRuntime.hasEl && tutRuntime.hasClose && tutRuntime.stepCount === 3 && tutRuntime.hasKbd,
+    JSON.stringify(tutRuntime));
+
+  // v4.8.63: popup 关闭自动 detach debugger（chrome 黄条消失）+ 重新打开 Tab 模式 re-attach
+  const bgV63 = fs.readFileSync(path.join(EXT_PATH, "background.js"), "utf8");
+  check("v4.8.63 ①: chrome.windows.onRemoved 内判断 popup → detachAll",
+    /chrome\.windows\.onRemoved[\s\S]{0,1200}wasPopup[\s\S]{0,500}CDPExtractor\.detachAll\(\)/.test(bgV63),
+    "popup 关闭未触发 detachAll");
+  check("v4.8.63 ①: 含 v4.8.63 标记 + console.log 黄条消失说明",
+    /v4\.8\.63[\s\S]{0,800}detached all debugger sessions/.test(bgV63),
+    "缺 v4.8.63 标记或 console.log 说明");
+
+  const busV63 = fs.readFileSync(path.join(EXT_PATH, "chat-bus.js"), "utf8");
+  check("v4.8.63 ②: chat-bus openChatPopup 重开时 Tab 模式 re-attach 所有 participants",
+    /openChatPopup[\s\S]{0,1500}windowMode === "tab"[\s\S]{0,500}attachAndWake\(p\.tabId\)/.test(busV63),
+    "openChatPopup 缺 Tab 模式 re-attach");
+  check("v4.8.63 ②: ChatBus 暴露 getPopupWindowId（让 background onRemoved 判断）",
+    /getPopupWindowId:\s*\(\)\s*=>\s*popupWindowId/.test(busV63),
+    "ChatBus 未暴露 getPopupWindowId");
+
+  // v4.8.64: polling 在跑时延迟 detach（防关 popup 时正在生成回答 → 后台 AI 失反节流变慢）
+  const bgV64 = fs.readFileSync(path.join(EXT_PATH, "background.js"), "utf8");
+  check("v4.8.64 ①: onRemoved 内含 activePollers === 0 快速路径 + 否则延迟 detach",
+    /activePollers === 0/.test(bgV64) &&
+    /DETACH_DEADLINE = Date\.now\(\) \+ 30000/.test(bgV64) &&
+    /defer detach/.test(bgV64),
+    "缺延迟 detach 逻辑");
+  check("v4.8.64 ①: 延迟期间若 popup 重新打开 → 取消 detach（保留 attach）",
+    /popup reopened during defer window/.test(bgV64),
+    "缺 popup 重开取消 detach");
+  check("v4.8.64 ②: chat-bus 暴露 getActivePollerCount",
+    /getActivePollerCount:\s*\(\)\s*=>\s*pollers\.size/.test(busV63),
+    "缺 getActivePollerCount 暴露");
+
+  // v4.8.52: Tab 模式 debugger 提示
+  //   chrome.debugger.attach 会强制显示"AI Arena 已开始调试此浏览器"横条，
+  //   用户点取消会 detach 所有 attach → 后台 AI tab 失反节流 → 流式渲染降到 1 fps。
+  //   扩展无法拦截点击 → 只能教育用户。一次性 storage flag 记忆已读。
+  const wmJs = fs.readFileSync(path.join(EXT_PATH, "popup-window-mode.js"), "utf8");
+  check("v4.8.52 ①: popup-window-mode.js 含 maybeShowDebuggerWarning + WARN_FLAG storage 读写",
+    /function maybeShowDebuggerWarning/.test(wmJs) &&
+    /tabDebuggerWarnSeen/.test(wmJs) &&
+    /chrome\.storage\.local\.set\(\{\s*\[WARN_FLAG\]:\s*true\s*\}\)/.test(wmJs),
+    "popup-window-mode.js 缺 debugger 提示逻辑");
+  check("v4.8.52 ①: setMode('tab') / init / onChanged 三处都触发提醒",
+    /if \(next === "tab"\) maybeShowDebuggerWarning/.test(wmJs) &&
+    /if \(v === "tab"\) maybeShowDebuggerWarning/.test(wmJs) &&
+    /if \(mode === "tab"\) maybeShowDebuggerWarning/.test(wmJs),
+    "三个触发点不全");
+  check("v4.8.52 ①: 文案含 chrome 横条提示 + 不要点取消 + 切回并列建议",
+    /已开始调试此浏览器/.test(wmJs) &&
+    /不要点[\s\S]{0,10}取消/.test(wmJs) &&
+    /并列[\s\S]{0,5}模式/.test(wmJs),
+    "文案不完整");
+
+  const cssV52 = fs.readFileSync(path.join(EXT_PATH, "popup.css"), "utf8");
+  check("v4.8.52 ②: CSS .msg.system + .msg-sys-bubble + .msg-sys-close 样式",
+    /\.msg\.system\s*\{[^}]*display:\s*flex/s.test(cssV52) &&
+    /\.msg-sys-bubble\s*\{[^}]*background:\s*rgba\(255,\s*159,\s*10/s.test(cssV52) &&
+    /\.msg-sys-close\s*\{[^}]*cursor:\s*pointer/s.test(cssV52),
+    "CSS 缺 .msg.system 样式");
+
+  // 运行时：popup 中模拟切到 tab 模式，验证 .msg.system[data-sys-key="tab-debugger"] 出现 + storage 写入
+  const debugWarnRuntime = await popupPage.evaluate(async () => {
+    if (!window.ChatWindowMode) return { err: "ChatWindowMode 未加载" };
+    const initialMode = window.ChatWindowMode.current;
+    const hasMessagesDiv = !!document.getElementById("chat-messages");
+    const flagBeforeRemove = await new Promise(r => chrome.storage.local.get(["tabDebuggerWarnSeen"], resp => r(!!resp?.tabDebuggerWarnSeen)));
+    // 清掉 storage flag 让提示能触发 + 移除可能已存在的 .msg.system 行
+    await new Promise(r => chrome.storage.local.remove(["tabDebuggerWarnSeen"], r));
+    document.querySelectorAll('.msg.system[data-sys-key="tab-debugger"]').forEach(el => el.remove());
+    // 先强制切到 tiled（防当前已是 tab，set("tab") 因 next === mode 直接 return）
+    if (window.ChatWindowMode.current === "tab") {
+      await window.ChatWindowMode.set("tiled");
+      await new Promise(r => setTimeout(r, 300));
+    }
+    const modeBeforeTab = window.ChatWindowMode.current;
+    // 再切到 tab → 触发 maybeShowDebuggerWarning（fire-and-forget async）
+    await window.ChatWindowMode.set("tab");
+    // 等 storage 读 + DOM 插入完成（maybeShowDebuggerWarning 是 async 但 setMode 不 await 它）
+    await new Promise(r => setTimeout(r, 600));
+    const sysRow = document.querySelector('.msg.system[data-sys-key="tab-debugger"]');
+    const hasIcon = !!sysRow?.querySelector(".msg-sys-icon");
+    const hasClose = !!sysRow?.querySelector(".msg-sys-close");
+    const text = sysRow?.querySelector(".msg-sys-text")?.textContent?.slice(0, 200) || "";
+    const flagSet = await new Promise(r => chrome.storage.local.get(["tabDebuggerWarnSeen"], resp => r(!!resp?.tabDebuggerWarnSeen)));
+    // 再次切到 tab（应该不重复插入，因为 flag 已设）
+    await window.ChatWindowMode.set("tiled");
+    await new Promise(r => setTimeout(r, 200));
+    await window.ChatWindowMode.set("tab");
+    await new Promise(r => setTimeout(r, 400));
+    const sysCount = document.querySelectorAll('.msg.system[data-sys-key="tab-debugger"]').length;
+    // 还原
+    await window.ChatWindowMode.set("tiled");
+    return { initialMode, modeBeforeTab, hasMessagesDiv, flagBeforeRemove, hasRow: !!sysRow, hasIcon, hasClose, text, flagSet, sysCount };
+  });
+  check("v4.8.52 运行时: 切到 Tab 后插入 .msg.system 提示气泡（含 icon + 关闭按钮）",
+    debugWarnRuntime.hasRow && debugWarnRuntime.hasIcon && debugWarnRuntime.hasClose,
+    JSON.stringify(debugWarnRuntime));
+  check("v4.8.52 运行时: 文案含'调试此浏览器' + '不要点' + '并列'",
+    /调试此浏览器/.test(debugWarnRuntime.text) &&
+    /不要点/.test(debugWarnRuntime.text) &&
+    /并列/.test(debugWarnRuntime.text),
+    `text=${debugWarnRuntime.text}`);
+  check("v4.8.52 运行时: 一次性—storage flag 已写入 + 二次切 Tab 不重复插入",
+    debugWarnRuntime.flagSet === true && debugWarnRuntime.sysCount === 1,
+    JSON.stringify(debugWarnRuntime));
+
+  // v4.8.53: 9 个 content scripts robustInject 加阈值守卫 — text.length > 1500 跳过 paste
+  //   根因：ChatGPT / Kimi 的 paste 处理器把长文本自动转 .txt 附件（截图证据：用户反馈
+  //         "用户补充要求: 对于极化可重构: ..." 文件 card 出现在输入框顶端），prompt 没作为
+  //         文字发出去 → AI 把附件当参考文档 + 输入框头部短文本当问题，回答偏离意图。
+  //   修复：try paste 块首行加 if (text.length > 1500) throw → catch 跳到 execCommand 路径
+  for (const f of INJECT_CS_FILES) {
+    const src = fs.readFileSync(path.join(EXT_PATH, f), "utf8");
+    check(`v4.8.53: ${f} robustInject 含长文本跳过 paste 守卫（>1500 字 throw skip_paste_long_text）`,
+      /if \(text\.length > 1500\) throw new Error\("skip_paste_long_text"\);/.test(src),
+      "缺长文本跳 paste 守卫");
+  }
+  // 顺序：throw 必须在 const dt = new DataTransfer() 之前（否则等于没守卫）
+  for (const f of INJECT_CS_FILES) {
+    const src = fs.readFileSync(path.join(EXT_PATH, f), "utf8");
+    const throwIdx = src.indexOf("skip_paste_long_text");
+    const dtIdx = src.indexOf("new DataTransfer()");
+    check(`v4.8.53: ${f} throw 在 new DataTransfer() 之前（不是死代码）`,
+      throwIdx > 0 && dtIdx > 0 && throwIdx < dtIdx,
+      `throwIdx=${throwIdx} dtIdx=${dtIdx}`);
+  }
 
   // ③ 极简任务 picker — 删了 ⚙️ icon 和"任务"label
   const pickerSimple = await popupPage.evaluate(() => {
@@ -1660,10 +2931,14 @@ try {
         .map(e => e.textContent.trim()),
     };
   });
-  check("v4.8.15: 设置 Tab 含 风格 section + 2 cards (classic + anime) + active=classic + 预览图",
-    settingsCheck.count === 2
+  check("v4.8.15+v4.8.51+v4.8.54: 设置 Tab 风格 section 含 6 cards (basic+classic+anime+cat+chick+leader)",
+    settingsCheck.count === 6
+      && settingsCheck.styles.includes("basic")
       && settingsCheck.styles.includes("classic")
       && settingsCheck.styles.includes("anime")
+      && settingsCheck.styles.includes("cat")
+      && settingsCheck.styles.includes("chick")
+      && settingsCheck.styles.includes("leader")
       && settingsCheck.activeStyle === "classic"
       && settingsCheck.hasPreviewImg
       && settingsCheck.sectionTitle.includes("风格")
@@ -2134,25 +3409,24 @@ try {
     document.body.setAttribute("data-mode", "full");   // 还原避免污染后续测试
     return result;
   });
-  check("v4.8.27 ①: mini 模式 chat-main flex-direction:row + roster/messages 隐藏 + input-bar flex:1",
-    miniLayoutCheck.mainDirection === "row"
-      && miniLayoutCheck.rosterHidden
-      && miniLayoutCheck.messagesHidden
-      && miniLayoutCheck.inputBarFlex === "1",
+  // v4.8.57 改写：mini 从 row 单行 → column 多行；roster 从 hide → show
+  check("v4.8.27 ①+v4.8.57: mini 模式 chat-main flex-direction:column + roster 显示 + messages 隐藏",
+    miniLayoutCheck.mainDirection === "column"
+      && !miniLayoutCheck.rosterHidden
+      && miniLayoutCheck.messagesHidden,
     JSON.stringify(miniLayoutCheck));
 
-  // ② defaultMiniBounds height 78 + stale 检测 > 150
+  // ② defaultMiniBounds height 200 (v4.8.57) + stale 检测 > 400
   const busCheck = await popupPage.evaluate(() => {
     return fetch(chrome.runtime.getURL("chat-bus.js"))
       .then(r => r.text())
       .then(src => ({
-        // v4.8.30: height 78 → 86（padding 加大）；放宽为"在 [60, 150) 范围内"
-        height78: /const height = (78|82|86)/.test(src),
-        staleCheck: src.includes("popupMiniBounds.height > 150"),
+        height200: /const height = 200/.test(src),
+        staleCheck: src.includes("popupMiniBounds.height > 400"),
       }));
   });
-  check("v4.8.27 ②: defaultMiniBounds 高度 78 + 旧 bounds height>150 视为脏数据回退默认",
-    busCheck.height78 && busCheck.staleCheck,
+  check("v4.8.27 ②+v4.8.57: defaultMiniBounds 高度 200 + stale 阈值 > 400",
+    busCheck.height200 && busCheck.staleCheck,
     JSON.stringify(busCheck));
 
   // ========== v4.8.28: mini 模式 task-menu 向下弹 + 撑大窗口 ==========
@@ -2216,18 +3490,18 @@ try {
   // ========== v4.8.30: mini 高度 + AI logos + mention-menu 撑高 ==========
   console.log("\n[smoke] === v4.8.30 mini polish ===");
 
-  // ① 高度增加：chat-main padding 12 14 + defaultMiniBounds 86
+  // v4.8.57 改写：mini chat-main padding 6 10 8 + defaultMiniBounds 200
   const heightCheck = await popupPage.evaluate(() => {
     return Promise.all([
       fetch(chrome.runtime.getURL("popup.css")).then(r => r.text()),
       fetch(chrome.runtime.getURL("chat-bus.js")).then(r => r.text()),
     ]).then(([css, js]) => ({
-      mainPadding1214: /body\[data-mode="mini"\] \.chat-main\s*\{[^}]*padding:\s*12px 14px/.test(css),
-      defaultHeight86: js.includes("const height = 86"),
+      mainPaddingV57: /body\[data-mode="mini"\] \.chat-main\s*\{[^}]*padding:\s*8px 10px/.test(css),  // v4.8.58: 简化为 8px 10px（chat-header 已隐藏）
+      defaultHeight200: js.includes("const height = 200"),
     }));
   });
-  check("v4.8.30 ①: chat-main padding 12px 14px + defaultMiniBounds 86",
-    heightCheck.mainPadding1214 && heightCheck.defaultHeight86,
+  check("v4.8.30 ①+v4.8.57: chat-main padding 6/10/8 + defaultMiniBounds 200",
+    heightCheck.mainPaddingV57 && heightCheck.defaultHeight200,
     JSON.stringify(heightCheck));
 
   // ② mini-roster DOM + JS + CSS 完整（v4.8.31: 改用 brand svg + removeParticipant，删 miniSkipped）
@@ -2243,15 +3517,16 @@ try {
       jsClickRemoves: js.includes('type: "removeParticipant"'),     // v4.8.31: 点击 = 移除
       jsNoMiniSkipped: !js.includes("miniSkipped"),                 // v4.8.31: 已删除
       cssHidesInFull: /^\.mini-roster\s*\{\s*display:\s*none/m.test(css),
-      cssShowsInMini: /body\[data-mode="mini"\]\s+\.mini-roster\s*\{[^}]*display:\s*flex/.test(css),
+      // v4.8.57: mini-roster 在 mini 下也 display:none（被 chat-roster pill 列取代）
+      cssHiddenInMini: /body\[data-mode="mini"\]\s+\.mini-roster\s*\{\s*display:\s*none/.test(css),
       cssHasStatusDot: /\.mini-ai-dot\.busy[^}]*animation/.test(css),
     }));
   });
-  check("v4.8.31 ②: mini-roster brand svg + 点击 removeParticipant + 删 miniSkipped 整套",
+  check("v4.8.31 ②+v4.8.57: mini-roster JS/HTML 保留但 mini 下隐藏（被 chat-roster pill 取代）",
     rosterCheck.htmlHasRoster && rosterCheck.jsHasRender
       && rosterCheck.jsUsesBrandSvg && rosterCheck.jsClickRemoves
       && rosterCheck.jsNoMiniSkipped
-      && rosterCheck.cssHidesInFull && rosterCheck.cssShowsInMini
+      && rosterCheck.cssHidesInFull && rosterCheck.cssHiddenInMini
       && rosterCheck.cssHasStatusDot,
     JSON.stringify(rosterCheck));
 

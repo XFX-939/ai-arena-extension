@@ -86,7 +86,7 @@
     row.innerHTML = `
       <div class="msg-body">
         <div class="msg-meta me-meta">
-          <span class="acts"><button data-act="copy" title="复制">📋</button></span>
+          <span class="acts"><button data-act="copy" title="复制">${window.ChatActionIcons?.svg("copy") || "📋"}</button></span>
           <span class="stat done"><span class="pip"></span>已发送</span>
           <span class="time">${escapeHtml(ts)}</span>
           <span class="name">我 · Huawei</span>
@@ -122,11 +122,11 @@
           <span class="time">${escapeHtml(ts)}</span>
           <span class="stat ${statClass}"><span class="pip"></span>${statText}</span>
           <span class="acts">
-            <button data-act="reextract" title="重新提取">🔄</button>
-            <button data-act="resend" title="重新发送">📤</button>
-            <button data-act="skip" title="跳过本轮（避免卡住流程）">⏭</button>
-            <button data-act="copy" title="复制">📋</button>
-            <button data-act="jump" title="跳原页">↗</button>
+            <button data-act="reextract" title="重新提取">${window.ChatActionIcons?.svg("reextract") || "🔄"}</button>
+            <button data-act="resend" title="重新发送">${window.ChatActionIcons?.svg("resend") || "📤"}</button>
+            <button data-act="skip" title="跳过本轮（避免卡住流程）">${window.ChatActionIcons?.svg("skip") || "⏭"}</button>
+            <button data-act="copy" title="复制">${window.ChatActionIcons?.svg("copy") || "📋"}</button>
+            <button data-act="jump" title="跳原页">${window.ChatActionIcons?.svg("jump") || "↗"}</button>
           </span>
         </div>
         <div class="msg-bubble">${isTyping ? `<span class="msg-typing"><span></span><span></span><span></span></span>` : renderMarkdown(initialText)}</div>
@@ -143,23 +143,44 @@
   }
 
   // v4.3.6: AI 长文折叠（>800 字且已完成时显示"展开全文"按钮）
+  // v4.8.41: 简洁模式（ChatCompactMode.isOn() === true）下阈值改 100 + 提取中即折叠
   const FOLD_THRESHOLD = 800;
+  const FOLD_THRESHOLD_COMPACT = 100;
   function applyFoldClass(bubble, text, isDone) {
     if (!bubble) return;
     // 移除旧 toggle
     bubble.querySelectorAll(".msg-fold-toggle").forEach(el => el.remove());
-    if (!isDone || (text || "").length <= FOLD_THRESHOLD) {
-      bubble.classList.remove("msg-bubble-foldable", "expanded");
+    const compact = window.ChatCompactMode?.isOn?.() === true;
+    const threshold = compact ? FOLD_THRESHOLD_COMPACT : FOLD_THRESHOLD;
+    const len = (text || "").length;
+    // 简洁模式：提取中也折叠（不要求 isDone）；非简洁：仅完成后折叠
+    const shouldFold = compact ? len > threshold : (isDone && len > threshold);
+    if (!shouldFold) {
+      bubble.classList.remove("msg-bubble-foldable", "expanded", "compact-fold");
       return;
     }
     bubble.classList.add("msg-bubble-foldable");
-    bubble.classList.remove("expanded");  // 完成时默认折叠
+    if (compact) bubble.classList.add("compact-fold");
+    else bubble.classList.remove("compact-fold");
+    bubble.classList.remove("expanded");  // 默认折叠
     const btn = document.createElement("button");
     btn.className = "msg-fold-toggle";
     btn.dataset.act = "fold-toggle";
-    btn.innerHTML = `<span class="msg-fold-icon">▾</span> 展开全文 <span class="msg-fold-count">${(text || "").length} 字</span>`;
+    btn.innerHTML = `<span class="msg-fold-icon">▾</span> 展开全文 <span class="msg-fold-count">${len} 字</span>`;
     bubble.appendChild(btn);
   }
+
+  // v4.8.41: compact mode 切换时，对所有已渲染气泡重新评估折叠状态
+  document.addEventListener("compact:changed", () => {
+    document.querySelectorAll(".msg.ai").forEach(row => {
+      const bubble = row.querySelector(".msg-bubble");
+      if (!bubble) return;
+      const stat = row.querySelector(".msg-meta .stat");
+      const isDone = !!stat?.classList?.contains("done");
+      const text = bubble.innerText || bubble.textContent || "";
+      applyFoldClass(bubble, text, isDone);
+    });
+  });
 
   function updateAIBubble(msgId, participantId, text, isDone, hasRichContent, richTypes) {
     const row = bubbleByKey.get(`${msgId}-${participantId}`);

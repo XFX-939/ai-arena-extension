@@ -23,7 +23,15 @@ const ChatBus = (() => {
       STORAGE_KEYS.miniBounds, STORAGE_KEYS.mode,
     ]);
     if (Array.isArray(data[STORAGE_KEYS.log])) chatLog.push(...data[STORAGE_KEYS.log].slice(-MAX_LOG));
-    if (data[STORAGE_KEYS.bounds]) popupBounds = data[STORAGE_KEYS.bounds];
+    // v4.8.37: sanity check — 清理 toggleMiniMode race 留下的污染数据
+    //   popupBounds.height 应为 full 模式合理值；< 400 视为被 mini 大小污染 → 丢弃
+    //   （v4.8.57: 阈值从 200 升到 400 — 因 mini default 升到 200，旧 >= 200 已无法区分污染）
+    if (data[STORAGE_KEYS.bounds] && data[STORAGE_KEYS.bounds].height >= 400) {
+      popupBounds = data[STORAGE_KEYS.bounds];
+    } else if (data[STORAGE_KEYS.bounds]) {
+      console.log("[chat-bus] v4.8.57 sanity: discard polluted popupBounds height=", data[STORAGE_KEYS.bounds].height);
+      await chrome.storage.local.remove(STORAGE_KEYS.bounds).catch(() => {});
+    }
     if (data[STORAGE_KEYS.miniBounds]) popupMiniBounds = data[STORAGE_KEYS.miniBounds];
     if (data[STORAGE_KEYS.mode] === "mini" || data[STORAGE_KEYS.mode] === "full") {
       popupMode = data[STORAGE_KEYS.mode];
@@ -47,6 +55,22 @@ const ChatBus = (() => {
       ...bounds,
     });
     popupWindowId = w.id;
+    // v4.8.63: popup 重新打开后，若 Tab 模式则重新 attach 所有 AI tabs（恢复反节流）
+    //   v4.8.63 改动：popup 关闭时 detach 所有 debugger（黄条消失），重开时按需 re-attach
+    //   场景：用户关掉群聊歇一会 → 重新打开 → 自动恢复 Tab 模式的后台 AI 反节流
+    if (windowMode === "tab" && self.CDPExtractor && StateMachine?.participants?.length) {
+      // fire-and-forget — popup 已 ready 返回，不阻塞用户感知
+      (async () => {
+        let attached = 0;
+        for (const p of StateMachine.participants) {
+          if (p.tabId) {
+            const r = await self.CDPExtractor.attachAndWake(p.tabId).catch(() => null);
+            if (r?.ok) attached++;
+          }
+        }
+        console.log(`[F63] popup reopened in Tab mode → re-attached ${attached}/${StateMachine.participants.length} AI tabs`);
+      })();
+    }
     return { ok: true, reused: false, windowId: w.id };
   }
 
@@ -89,7 +113,8 @@ const ChatBus = (() => {
       }
       const width = Math.min(900, Math.round(display.workArea.width * 0.7));
       // v4.8.27: 60→78 / v4.8.30: 78→86（padding 16→24 + 控件底部不贴边 + AI logos）
-      const height = 86;
+      // v4.8.57: 86→200 — mini 改成多行（顶栏 + roster pill 2 行 + input-bar），需要更高
+      const height = 200;
       return {
         left: display.workArea.left + Math.round((display.workArea.width - width) / 2),
         top: display.workArea.top,
@@ -102,44 +127,57 @@ const ChatBus = (() => {
   }
 
   // v4.8.15 F30: mini 模式 toggle — 由 popup-mini-mode.js 通过 miniModeToggle 消息触发
+  // v4.8.37: 加 _modeSwitching flag 防 race —
+  //   chrome.windows.update 触发的 onBoundsChanged 会异步调 rememberBounds，
+  //   它读 popupMode 决定存哪个字段。如果切换中 popupMode 还是旧值，新 bounds
+  //   会错存到旧 mode 字段（如 mini 大小 86 被记成 full bounds → 下次展开窗口变 86 高）。
+  //   修复：切换期间 rememberBounds 跳过；切换结束 500ms 后才允许记录。
+  let _modeSwitching = false;
   async function toggleMiniMode(mode) {
     const next = mode === "mini" ? "mini" : "full";
     if (popupWindowId == null) return { ok: false, error: "popup not open" };
-    // 切换前先把当前模式的 bounds 记下来
+    _modeSwitching = true;
     try {
-      const w = await chrome.windows.get(popupWindowId);
-      const curBounds = { left: w.left, top: w.top, width: w.width, height: w.height };
-      if (popupMode === "full") {
-        popupBounds = curBounds;
-        await chrome.storage.local.set({ [STORAGE_KEYS.bounds]: popupBounds });
+      // 切换前先把当前模式的 bounds 记下来
+      try {
+        const w = await chrome.windows.get(popupWindowId);
+        const curBounds = { left: w.left, top: w.top, width: w.width, height: w.height };
+        if (popupMode === "full") {
+          popupBounds = curBounds;
+          await chrome.storage.local.set({ [STORAGE_KEYS.bounds]: popupBounds });
+        } else {
+          popupMiniBounds = curBounds;
+          await chrome.storage.local.set({ [STORAGE_KEYS.miniBounds]: popupMiniBounds });
+        }
+      } catch {}
+      // 切到目标 bounds
+      let target;
+      if (next === "mini") {
+        // v4.8.27: 旧 mini 默认 60；v4.8.57: 多行设计后默认 200。
+        //   stale 阈值 > 400 — 用户曾把 mini 拉到 400+ 视为脏数据（不该比预期 default 高那么多），回退默认。
+        //   也兼容 v4.8.56 之前老用户存的 86/100 等小值（< 400 都视为有效，但实际 chrome 会自动撑到能装下内容）
+        const stale = popupMiniBounds && popupMiniBounds.height > 400;
+        target = (!stale && popupMiniBounds) || await defaultMiniBounds();
       } else {
-        popupMiniBounds = curBounds;
-        await chrome.storage.local.set({ [STORAGE_KEYS.miniBounds]: popupMiniBounds });
+        target = popupBounds || await defaultBounds();
       }
-    } catch {}
-    // 切到目标 bounds
-    let target;
-    if (next === "mini") {
-      // v4.8.27: 旧版 mini 默认高度 60，但实际经常被 Chrome 撑到 200+ 用户也未必拉低；
-      //          新版 row flex 一行 78px 足够，若持久化的 height > 150 认为是脏数据，回退默认
-      const stale = popupMiniBounds && popupMiniBounds.height > 150;
-      target = (!stale && popupMiniBounds) || await defaultMiniBounds();
-    } else {
-      target = popupBounds || await defaultBounds();
+      try {
+        await chrome.windows.update(popupWindowId, {
+          state: "normal", focused: true,
+          left: target.left, top: target.top,
+          width: target.width, height: target.height,
+        });
+      } catch (e) {
+        return { ok: false, error: e?.message || String(e) };
+      }
+      popupMode = next;
+      await chrome.storage.local.set({ [STORAGE_KEYS.mode]: popupMode });
+      // v4.8.19 F32: 已无 CDP attach，无需 detachAll
+      return { ok: true, mode: popupMode, bounds: target };
+    } finally {
+      // v4.8.37: 延迟 500ms 释放，确保 chrome update 触发的 onBoundsChanged 已派发完毕
+      setTimeout(() => { _modeSwitching = false; }, 500);
     }
-    try {
-      await chrome.windows.update(popupWindowId, {
-        state: "normal", focused: true,
-        left: target.left, top: target.top,
-        width: target.width, height: target.height,
-      });
-    } catch (e) {
-      return { ok: false, error: e?.message || String(e) };
-    }
-    popupMode = next;
-    await chrome.storage.local.set({ [STORAGE_KEYS.mode]: popupMode });
-    // v4.8.19 F32: 已无 CDP attach，无需 detachAll
-    return { ok: true, mode: popupMode, bounds: target };
   }
 
   function getPopupMode() { return popupMode; }
@@ -212,6 +250,9 @@ const ChatBus = (() => {
   // v4.8.15 F30: rememberBounds 按当前 mode 存到对应字段（不污染另一套）
   async function rememberBounds(windowId) {
     if (windowId !== popupWindowId) return;
+    // v4.8.37: mode 切换期间跳过 — 防 chrome.windows.update 触发的 onBoundsChanged
+    //   在 popupMode 还是旧值时记录新 bounds，导致 mini 大小被存到 full bounds（或反之）
+    if (_modeSwitching) return;
     // v4.8.28: mini menu 撑高期间不写 mini bounds（撑高的 340 不是用户想要的）
     if (popupMode === "mini" && _miniMenuPrevHeight != null) return;
     try {
@@ -244,7 +285,10 @@ const ChatBus = (() => {
   // 让 watcher 跑满 60s 确保覆盖审核延迟 / 工具调用结果回传等晚到追加场景
   const watchers = new Map();  // service → { intervalId, msgId, lastText, startTs }
   const WATCH_INTERVAL_MS = 3000;
-  const WATCH_MAX_DURATION_MS = 120000;  // 120s 总兜底（v4.6.11 从 60s 拉到 120s 覆盖更多审核延迟场景）
+  // v4.8.40: 拉到 600s — ChatGPT Pro 深度推理可能 3-5 分钟，watcher 必须覆盖到追加阶段
+  //   副作用：watcher 期间 SW 保活（每 3s 一次 setInterval 触发，避免 30s idle 回收 → 反而是正面）
+  //   单 slot 限制 + 下一轮启动时清旧 watcher 保证不累积
+  const WATCH_MAX_DURATION_MS = 600000;  // 600s 总兜底（v4.8.40 从 120s 拉到 600s）
   const WATCH_MAX_SLOTS = 1;  // 只保留最新一轮防累积
 
   // v4.6.7 F17: 不再依赖 popupWindowId 做 silent return — MV3 SW 30s 空闲被回收时
@@ -273,17 +317,49 @@ const ChatBus = (() => {
     chrome.storage.local.set({ [STORAGE_KEYS.log]: chatLog }).catch(() => {});
   }
 
+  // v4.8.36: 用户期望的 service 列表 → 实际可用列表 + 丢失列表
+  //   targets 为空 → 默认全员，无丢失；
+  //   targets 非空 → filter 后比较，丢失的 service 用于警告气泡（silent failure → fail loud）
+  //   场景：移除 AI 后立刻发消息时 popup-roster.selected 尚未刷新；或 roster 选中了已离开的 service
+  function _resolveTargetsWithSkipped(targets) {
+    const allParticipants = StateMachine.participants || [];
+    if (!targets?.length) {
+      return { targetList: allParticipants, skippedServices: [] };
+    }
+    const availableServices = new Set(allParticipants.map(p => p.service));
+    const targetList = allParticipants.filter(p => targets.includes(p.service));
+    const skippedServices = targets.filter(s => !availableServices.has(s));
+    return { targetList, skippedServices };
+  }
+
+  // v4.8.36: 9 个 AI 的展示名（用于警告气泡 — 该 service 已不在 StateMachine.participants）
+  const SERVICE_DISPLAY_NAME = {
+    claude: "Claude", gemini: "Gemini", chatgpt: "ChatGPT",
+    deepseek: "DeepSeek", doubao: "豆包", qwen: "通义千问",
+    kimi: "Kimi", yuanbao: "元宝", grok: "Grok",
+  };
+
+  function _emitSkippedWarning(msgId, skippedServices) {
+    for (const svc of skippedServices) {
+      const name = SERVICE_DISPLAY_NAME[svc] || svc;
+      sendToPopup({
+        type: "chatStreamUpdate", role: "ai", msgId,
+        participantId: svc,
+        text: `⚠ ${name} 已不在会话，本轮跳过 — 请检查参与者列表`,
+        isDone: true,
+        skipped: true,
+      });
+    }
+  }
+
   async function broadcast(text, targets, images) {
     if (!text?.trim()) return { ok: false, error: "empty text" };
 
-    // 决定目标参与者
-    const allParticipants = StateMachine.participants || [];
-    const targetList = targets?.length
-      ? allParticipants.filter(p => targets.includes(p.service))
-      : allParticipants;
+    // 决定目标参与者 + skipped 列表（v4.8.36 fail loud）
+    const { targetList, skippedServices } = _resolveTargetsWithSkipped(targets);
 
     if (!targetList.length) {
-      return { ok: false, error: "无可用参与者" };
+      return { ok: false, error: "无可用参与者", skippedTargets: skippedServices };
     }
 
     // v4.5.4 F3: 同步 StateMachine — 否则 originalQuestion/p.response/lastSent/flowState 全是旧值，
@@ -323,7 +399,13 @@ const ChatBus = (() => {
       });
       injectAndPoll(p, msgId, text);
     }
-    return { ok: true, msgId, targets: targetList.map(p => p.service) };
+    // v4.8.36: 对已离开的 service 创建警告气泡（fail loud）
+    _emitSkippedWarning(msgId, skippedServices);
+    return {
+      ok: true, msgId,
+      targets: targetList.map(p => p.service),
+      skippedTargets: skippedServices,
+    };
   }
 
   // 外部触发的轮次（辩论 / 总结 / 手动发送）：不再 inject（外部已 inject），只显示用户气泡+启动 polling
@@ -331,11 +413,9 @@ const ChatBus = (() => {
   // participantServices = 受影响的参与者 service id 列表（如 ["claude","gemini","chatgpt"]）
   // presetMsgId = v4.6.13 F20: 外部预生成 msgId（用于辩论 pending 占位 → 正式状态复用同气泡）
   function notifyRoundStart(displayText, participantServices, presetMsgId) {
-    const allParticipants = StateMachine.participants || [];
-    const targetList = participantServices?.length
-      ? allParticipants.filter(p => participantServices.includes(p.service))
-      : allParticipants;
-    if (!targetList.length) return { ok: false, error: "无目标参与者" };
+    // v4.8.36: 复用 _resolveTargetsWithSkipped，对辩论/总结路径同样 fail loud
+    const { targetList, skippedServices } = _resolveTargetsWithSkipped(participantServices);
+    if (!targetList.length) return { ok: false, error: "无目标参与者", skippedTargets: skippedServices };
 
     const msgId = presetMsgId || newMsgId();
     pushLog({ role: "user", msgId, text: displayText, ts: Date.now() });
@@ -362,7 +442,9 @@ const ChatBus = (() => {
       state.intervalId = setInterval(() => pollOnce(p, state), POLL_INTERVAL_MS);
       pollers.set(p.service, state);
     }
-    return { ok: true, msgId };
+    // v4.8.36: 对已离开的 service 创建警告气泡
+    _emitSkippedWarning(msgId, skippedServices);
+    return { ok: true, msgId, skippedTargets: skippedServices };
   }
 
   // v4.8.19 F32: 完全废弃 chrome.debugger 路线
@@ -374,8 +456,13 @@ const ChatBus = (() => {
 
   async function injectAndPoll(participant, msgId, text) {
     const { tabId, service } = participant;
+    // v4.8.50: 必须检查 content script 返回的 status — 旧逻辑只接 throw 异常，
+    //   但 content script 在 "穷尽 retry 后" 仍可能 return { status: "sent" } 谎报，
+    //   导致上层无感、polling 一直读到旧/错位内容（用户场景：Claude ProseMirror 注入失败
+    //   但 status=sent → polling 误读输入框 "你好" 为回答）。现在 status==='error' 也走错误路径。
+    let injectResp;
     try {
-      await chrome.tabs.sendMessage(tabId, { action: "inject", text });
+      injectResp = await chrome.tabs.sendMessage(tabId, { action: "inject", text });
     } catch (e) {
       sendToPopup({
         type: "chatStreamUpdate", role: "ai", msgId,
@@ -383,6 +470,32 @@ const ChatBus = (() => {
         isDone: true,
       });
       return;
+    }
+    if (injectResp?.status === "error") {
+      const errMsg = injectResp.error || "未知错误";
+      const fullText = `⚠ ${participant.name} 注入失败: ${errMsg}（请手动在 ${participant.name} 页面发送或点击 🔄 重试）`;
+      sendToPopup({
+        type: "chatStreamUpdate", role: "ai", msgId,
+        participantId: service, text: fullText, isDone: true, injectError: true,
+      });
+      pushLog({
+        role: "ai", msgId, participantId: service,
+        text: fullText, ts: Date.now(), injectError: true,
+      });
+      return;
+    }
+    // v4.8.61: 防御 — injectResp 为 undefined / null（content script 没 sendResponse 或返回非对象）
+    //   不当作成功也不当作 error，记 warn 后继续 polling 兜底（empty timeout 45s 兜底真错误）
+    if (!injectResp || typeof injectResp !== "object") {
+      console.warn(`[chat-bus] v4.8.61 injectResp invalid for ${service}:`, injectResp, "— continuing with polling fallback");
+    }
+    // v4.8.60: 处理 inject_warning（fail-soft）—— inject 完成但 button 状态可疑，仍启动 polling 兜底验证
+    //   场景：Enter 已 dispatch 但 React state 同步慢，button 检测显示 disabled。Enter 可能已触发 AI 发送。
+    //   行为：发一个非阻断的 status 提示（不 isDone，让 polling 接管，empty timeout 45s 才真正报错）
+    if (injectResp?.inject_warning) {
+      console.warn(`[chat-bus] v4.8.60 inject_warning for ${service}: ${injectResp.inject_warning}`);
+      // 不发 popup notification（避免提早惊扰用户，让 polling 安静兜底）
+      // 仅记日志方便后续 diagnose
     }
     // 启动 polling
     if (pollers.has(service)) {
@@ -590,6 +703,11 @@ const ChatBus = (() => {
         // 文本比上次长且非残留 → 追加更新（用同 msgId 让 popup updateAIBubble 直接覆盖气泡）
         if (text && text.length > state.lastText.length && text !== state.lastText) {
           state.lastText = text;
+          // v4.8.40 核心修复：watcher 必须写 p.response，否则下一轮辩论 handleDebateRound
+          //   读 p.response 还是 polling 完成时的初始文本（ChatGPT Pro 思考片段），
+          //   导致辩论用旧的思考做上下文。setParticipantResponse 同时更新
+          //   lastAcceptedByPid（下次 polling sanity check 基准）。
+          try { StateMachine.setParticipantResponse(participant.id, text); } catch (_) {}
           sendToPopup({
             type: "chatStreamUpdate", role: "ai", msgId: state.msgId,
             participantId: service, text, isDone: true,
@@ -601,7 +719,7 @@ const ChatBus = (() => {
             text, ts: Date.now(), watcherUpdate: true,
           });
         }
-        // v4.6.10: 文本不变也不停 watcher，继续跑满 60s 覆盖晚到追加
+        // v4.6.10: 文本不变也不停 watcher，继续跑满总兜底时长覆盖晚到追加
       } catch (_) {
         // tab 失效 / content script 失联 → 停 watcher
         clearInterval(state.intervalId);
@@ -662,6 +780,8 @@ const ChatBus = (() => {
     const p = list.find(x => x.id === participantId)
            || list.find(x => x.service === participantId);
     if (!p || !p.tabId) return { ok: false, error: "未找到参与者" };
+    // v4.8.43: 用户主动点重新提取 → 清除 userEdited 让新 AI 内容能被写入
+    try { StateMachine.clearUserEdited?.(p.id); } catch (_) {}
 
     const msgId = `manual_${Date.now()}`;
     // 立刻推 loading 占位（用同 msgId，成功 / 失败时覆盖更新）
@@ -736,12 +856,22 @@ const ChatBus = (() => {
     }
   }
 
+  // v4.8.38: 暴露当前正在 polling 的 service 列表（handleDebateRound 用来检测
+  //   "有 AI 正在回答中"，避免用旧 p.response 启动下一轮辩论）
+  function getActivePollingServices() {
+    return [...pollers.keys()];
+  }
+
   return {
     init,
     openChatPopup,
     focusPopup,
     onWindowRemoved,
     rememberBounds,
+    // v4.8.63: 暴露 popupWindowId 给 background onRemoved listener 判断是否是 popup
+    getPopupWindowId: () => popupWindowId,
+    // v4.8.64: 暴露 pollers Map size 给 background 判断是否延迟 detach（polling 在跑时不立即解 attach）
+    getActivePollerCount: () => pollers.size,
     broadcast,
     notifyRoundStart,
     getLog,
@@ -754,6 +884,7 @@ const ChatBus = (() => {
     toggleMiniMode,  // v4.8.15 F30
     getPopupMode,    // v4.8.15 F30
     miniMenuExpand,  // v4.8.28
+    getActivePollingServices,  // v4.8.38
     // setMiniSkippedServices 在 v4.8.31 删除（mini 点击改 removeParticipant）
   };
 })();

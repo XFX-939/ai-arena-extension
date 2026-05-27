@@ -29,11 +29,13 @@
         <img class="chat-icon" src="icons/icon48.png" alt="">
         <span class="chat-name">AI Arena</span>
         <span class="chat-subtitle">群聊</span>
-        <span class="chat-version">v4.8.35-beta</span>
+        <span class="chat-version">v4.8.64-beta</span>
       </div>
       <div class="chat-actions">
         <!-- v4.8.15 F30: 折叠到顶 — mini bar 模式触发器 -->
         <button class="btn-mini-mode" id="btn-mini-mode" type="button" title="折叠到顶部一行 / 展开恢复">⇲ 折叠到顶</button>
+        <!-- v4.8.41: 简洁模式 — 长回答超 100 字自动折叠为一行（提取中即生效）-->
+        <button class="btn-compact-mode" id="btn-compact-mode" type="button" aria-pressed="false" title="简洁模式 — 长回答超 100 字自动折叠为一行">⊟ 简洁</button>
         <div class="hdr-mode-toggle" id="hdr-mode-toggle" role="group" aria-label="AI 窗口布局">
           <button type="button" class="hdr-mode-btn" data-mode="tab" title="所有 AI 同窗口不同标签页">Tab</button>
           <button type="button" class="hdr-mode-btn" data-mode="tiled" title="每个 AI 独立窗口并列">并列</button>
@@ -92,15 +94,45 @@
           </div>
           <div class="es-pitch-cta">→ 在右侧添加至少 2 个 AI 选手开始</div>
         </div>
+        <!-- v4.8.62: 新手教程 3 步骤卡（首次显示，点 ✕ 后写 storage tutorialDismissed 不再出现）-->
+        <div class="es-tutorial" id="es-tutorial" hidden>
+          <button class="es-tutorial-close" id="es-tutorial-close" type="button" title="不再显示">✕</button>
+          <div class="es-tutorial-title">3 步上手</div>
+          <ol class="es-tutorial-steps">
+            <li>
+              <span class="es-tut-num">1</span>
+              <div><strong>选 AI</strong>：右侧成员栏点 Logo（Claude / DeepSeek / 通义 等），至少 2 个</div>
+            </li>
+            <li>
+              <span class="es-tut-num">2</span>
+              <div><strong>发消息</strong>：底部输入框输入问题 → <kbd>Ctrl+Enter</kbd> 同时发给所有 AI</div>
+            </li>
+            <li>
+              <span class="es-tut-num">3</span>
+              <div><strong>切模式</strong>：点底部 <em>同时提问 ▾</em> → 选 <em>⚔️ 辩论</em> / <em>📋 总结</em> / <em>📊 PPT</em></div>
+            </li>
+          </ol>
+        </div>
       </div>
     </main>
+    <!-- v4.8.43: chat-roster 改造 — pill 形态（logo + 一行预览），点 logo toggle 参与，点预览编辑 p.response -->
     <div class="chat-roster" id="chat-roster">
       <span class="roster-label">下轮发言</span>
       <div class="roster-items" id="roster-items"></div>
-      <span class="roster-upload-hint" title="文件上传需直接到 AI 网页操作 (避免敏感文件经过插件中转)">
+      <span class="roster-upload-hint" id="roster-upload-hint" title="文件上传需直接到 AI 网页操作 (避免敏感文件经过插件中转)">
         🔒 为保证信息安全，文件上传请手动到对应 AI 窗口操作
       </span>
-      <span class="roster-count" id="roster-count">0 / 0</span>
+      <!-- v4.8.43: 删除 roster-count "3/3"（无信息量）-->
+    </div>
+    <!-- v4.8.43: 编辑器面板 — 点击某 pill 的预览区时显示，blur 自动保存到 p.response -->
+    <div class="resp-editor" id="resp-editor" hidden>
+      <div class="resp-editor-head">
+        <img class="resp-editor-logo" id="resp-editor-logo" alt="">
+        <span class="resp-editor-name" id="resp-editor-name"></span>
+        <span class="resp-editor-meta">编辑下轮发言内容（失焦自动保存，覆盖 AI 后续刷新）</span>
+        <button class="resp-editor-close" id="resp-editor-close" type="button" title="收起">✕</button>
+      </div>
+      <textarea class="resp-editor-text" id="resp-editor-text" placeholder="等待 AI 回答…"></textarea>
     </div>
     <footer class="chat-input-bar">
       <div class="task-picker-wrap">
@@ -227,6 +259,7 @@
   </div>
   <div class="tpl-toast" id="tpl-toast"></div>
   <script src="popup-logo-style.js"></script>
+  <script src="popup-action-icons.js"></script>
   <script src="popup-arena-badge.js"></script>
   <script src="popup-mini-roster.js"></script>
   <script src="popup-markdown.js"></script>
@@ -248,5 +281,7 @@
   <script src="popup-task-menu.js"></script>
   <script src="popup.js"></script>
   <script src="popup-mini-mode.js"></script>
+  <script src="popup-compact-mode.js"></script>
+  <script src="popup-tutorial.js"></script>
 </body>
 </html>

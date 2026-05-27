@@ -1,4 +1,12 @@
 // AI Arena — Content Script for chatgpt.com
+// v4.8.47: IIFE + globalThis guard 防御重复注入（reload 扩展 / ensureContentScriptInjected 多次触发时不撞 const SITE 重复声明）
+(function() {
+if (globalThis.__AI_ARENA_CS_LOADED_chatgpt__) {
+  console.log("[content-chatgpt] already loaded, skip duplicate injection");
+  return;
+}
+globalThis.__AI_ARENA_CS_LOADED_chatgpt__ = true;
+
 const SITE = "chatgpt";
 
 // 选择器配置（启动时从 background 获取）
@@ -132,10 +140,18 @@ async function robustInject(el, text) {
   await sleep(100);
 
   try {
+    // v4.8.53: 长文本（>1500 字）跳过 paste — ChatGPT / Kimi 的 paste 处理器会把长文本
+    //   自动转成 .txt 附件（截图证据：用户反馈"用户补充要求: 对于极化可重构: ..." 文件 card），
+    //   导致 prompt 没作为文字发出去。throw 跳到 catch{} 走 execCommand insertText 路径。
+    if (text.length > 1500) throw new Error("skip_paste_long_text");
     const dt = new DataTransfer();
     dt.setData("text/plain", text);
     el.dispatchEvent(new ClipboardEvent("paste", { clipboardData: dt, bubbles: true, cancelable: true }));
-    await sleep(200);
+    await sleep(150);
+    // v4.8.60: paste 是合成事件不会自动触发 input event，手动补一次让 React/ProseMirror 框架感知变化
+    //   （DeepSeek/Kimi 等 React 框架靠 input event 检测变化 → 没接到 → button 仍 disabled）
+    try { el.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertFromPaste", data: text })); } catch (_) {}
+    await sleep(50);
     if (el.innerText.trim().length > 0) return;
   } catch {}
 
@@ -143,7 +159,10 @@ async function robustInject(el, text) {
     el.focus();
     document.execCommand("selectAll", false, null);
     document.execCommand("insertText", false, text);
-    await sleep(200);
+    await sleep(150);
+    // v4.8.60: execCommand insertText 在某些浏览器版本下不自动触发 input event，补一次
+    try { el.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: text })); } catch (_) {}
+    await sleep(50);
     if (el.innerText.trim().length > 0) return;
   } catch {}
 
@@ -179,10 +198,13 @@ async function injectAndSend(text) {
     const remaining = (el.tagName === "TEXTAREA" ? el.value : el.innerText).trim();
     if (remaining.length < text.length * 0.3) return { site: SITE, status: "sent" };
 
-    for (let attempt = 0; attempt < 3; attempt++) {
-      await sleep(300);
+    // v4.8.60: fallback retry 加强 — 3 次 300ms → 8 次 400ms；附带 input event + aria-disabled 检测
+    for (let attempt = 0; attempt < 8; attempt++) {
+      await sleep(400);
+      try { el.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: "" })); } catch (_) {}
       const btn = findSendButton();
-      if (btn && !btn.disabled) {
+      const disabled = btn && (btn.disabled || btn.getAttribute("aria-disabled") === "true");
+      if (btn && !disabled) {
         btn.click();
         await sleep(800);
         if (isLoginBlocked()) return { site: SITE, status: "error", error: "需要登录或关闭登录弹窗" };
@@ -191,7 +213,8 @@ async function injectAndSend(text) {
     }
 
     if (isLoginBlocked()) return { site: SITE, status: "error", error: "需要登录或关闭登录弹窗" };
-    return { site: SITE, status: "sent" };
+    // v4.8.60: fail-soft 替代 v4.8.50 fail-loud — Enter 可能已触发发送（input 残留只是 React 异步清空慢），polling 兜底验证
+    return { site: SITE, status: "sent", inject_warning: "button stayed disabled after 8 retries — polling will verify" };
   } catch (e) {
     return { site: SITE, status: "error", error: e.message };
   }
@@ -260,3 +283,5 @@ function detectRichContent() {
 }
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+})();  // v4.8.47 IIFE 防御重复注入 END

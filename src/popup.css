@@ -1100,6 +1100,42 @@ body[data-mode="mini"] .mention-menu {
   overflow: hidden;
   padding-bottom: 40px;  /* 给 toggle 按钮留位 */
 }
+/* v4.8.41 + v4.8.44 + v4.8.48 + v4.8.49 修复: 简洁模式 — 2 行文字 + 下一行展开按钮
+   v4.8.48：只显示第 1 个 markdown 子元素 + 其余隐藏（避免多段 markdown 把折叠撑成多行）
+   v4.8.49：从严格 1 行放宽到最多 2 行（用户反馈：1 行信息量不够）
+   用 line-clamp:2 + max-height:3.2em（line-height 1.5 × 2 行 + 余量）
+   第 3 行起 ellipsis 截断；white-space 改为 normal 让文字自然换行（line-clamp 才能生效）*/
+.msg-bubble-foldable.compact-fold:not(.expanded) {
+  max-height: none;
+  padding-bottom: 34px;  /* 给底部 absolute 按钮（≈30px 高）腾位 */
+  display: block;
+  position: relative;
+}
+/* 第 1 个子元素：最多 2 行 + ellipsis */
+.msg-bubble-foldable.compact-fold:not(.expanded) > *:first-child {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;          /* 标准属性（部分浏览器支持） */
+  max-height: 3.2em;      /* line-height 1.5 × 2 行 + 余量 = 严格不超过 2 行 */
+  overflow: hidden;
+  white-space: normal;    /* 必须允许换行，line-clamp 才能在第 2 行后截断 */
+  text-overflow: ellipsis;
+  margin: 0;
+}
+/* 其余子元素（除 toggle 按钮）全部隐藏 — 保证简洁模式不被多段 markdown 撑高 */
+.msg-bubble-foldable.compact-fold:not(.expanded) > *:not(:first-child):not(.msg-fold-toggle) {
+  display: none;
+}
+.msg-bubble-foldable.compact-fold:not(.expanded)::before {
+  display: none;  /* 渐变遮罩不需要 — 已用 ellipsis */
+}
+.msg-bubble-foldable.compact-fold:not(.expanded) .msg-fold-toggle {
+  padding: 5px 12px;
+  font-size: 11px;
+  border-top: 1px solid var(--border);
+  background: transparent;
+}
 .msg-bubble-foldable:not(.expanded)::before {
   content: "";
   position: absolute;
@@ -1130,6 +1166,15 @@ body[data-mode="mini"] .mention-menu {
   align-items: center;
   justify-content: center;
   gap: 6px;
+  /* v4.8.59: 防止按钮被父容器压窄时中文"收起" / "展开全文"字符级换行（竖排显示问题）
+     nowrap 强制单行；min-width:max-content 保证按钮宽度 ≥ 完整文字宽度，不会被压成竖向 */
+  white-space: nowrap;
+  min-width: max-content;
+}
+/* v4.8.59: 同样兜底子元素 — 防 .msg-fold-icon / .msg-fold-count 被压换行 */
+.msg-fold-toggle > * {
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 .msg-fold-toggle:hover { background: rgba(10,132,255,0.06); }
 .msg-bubble-foldable.expanded .msg-fold-toggle {
@@ -1210,16 +1255,35 @@ body[data-mode="mini"] .mention-menu {
   0%, 100% { transform: scale(1); opacity: 1; }
   50% { transform: scale(1.4); opacity: 0.5; }
 }
-.msg-meta .acts { margin-left: auto; display: flex; gap: 1px; opacity: 0; transition: opacity 0.15s; }
+.msg-meta .acts { margin-left: auto; display: flex; gap: 4px; opacity: 0; transition: opacity 0.15s; }
 .msg:hover .msg-meta .acts { opacity: 1; }
+/* v4.8.42 K样式: 气泡 5 按钮 — resend/reextract/skip 跳色，copy/jump 中性灰
+   配色用 rgba(0,0,0,X) 黑色透明叠层，对浅/深主题都中性（不依赖 prefers-color-scheme） */
 .msg-meta .acts button {
-  background: transparent; border: none;
+  width: 22px; height: 22px;
+  background: rgba(127,127,127,0.12);
+  border: none; border-radius: 5px;
   color: var(--ink-soft); cursor: pointer;
-  padding: 1px 5px; border-radius: 4px;
-  font-size: 10.5px;
-  transition: all 0.12s;
+  padding: 0;
+  display: flex; align-items: center; justify-content: center;
+  transition: all 0.15s;
+  position: relative;
 }
-.msg-meta .acts button:hover { background: rgba(0,0,0,0.05); color: var(--ink); }
+.msg-meta .acts button .ai-icn { width: 13px; height: 13px; }
+.msg-meta .acts button[data-act="resend"]    { background: rgba(10,132,255,0.12); color: #0a84ff; }
+.msg-meta .acts button[data-act="reextract"] { background: rgba(52,199,89,0.14);  color: #34c759; }
+.msg-meta .acts button[data-act="skip"]      { background: rgba(255,159,10,0.14); color: #ff9f0a; }
+.msg-meta .acts button:hover {
+  transform: scale(1.08);
+  filter: saturate(1.2);
+}
+.msg-meta .acts button[data-act="resend"]:hover    { background: #0a84ff; color: #fff; }
+.msg-meta .acts button[data-act="reextract"]:hover { background: #34c759; color: #fff; }
+.msg-meta .acts button[data-act="skip"]:hover      { background: #ff9f0a; color: #fff; }
+.msg-meta .acts button[data-act="copy"]:hover,
+.msg-meta .acts button[data-act="jump"]:hover {
+  background: rgba(127,127,127,0.24); color: var(--ink);
+}
 .me-meta { flex-direction: row-reverse; }
 .me-meta .acts { margin-left: 0; margin-right: auto; }
 
@@ -1254,36 +1318,102 @@ body[data-mode="mini"] .mention-menu {
   0%, 100% { opacity: 1; }
   50%      { opacity: 0.3; }
 }
-.roster-items { display: flex; gap: 8px; align-items: center; }
-.roster-item {
-  width: 28px; height: 28px; border-radius: 7px;
-  cursor: pointer; background: #fff;
-  display: flex; align-items: center; justify-content: center;
+/* v4.8.43: roster 改造为 pill 横排 — [logo + 一行预览]，flex 自适应等宽 */
+.roster-items { display: flex; gap: 6px; align-items: center; flex: 1; min-width: 0; }
+.rp-empty {
+  font-size: 11px; color: var(--ink-soft); font-style: italic;
+}
+.roster-pill {
+  display: flex; align-items: center;
+  background: rgba(127,127,127,0.08);
+  border-radius: 14px;
+  padding: 2px;
+  gap: 4px;
+  flex: 1; min-width: 0;
+  transition: all 0.15s;
   position: relative;
-  transition: all 0.18s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.roster-pill.selected {
+  background: rgba(94,234,212,0.10);
+  box-shadow: inset 0 0 0 1px rgba(94,234,212,0.30);
+}
+.roster-pill.unselected { opacity: 0.42; filter: grayscale(0.6); }
+.roster-pill:hover { transform: translateY(-1px); }
+.rp-logo-btn {
+  width: 26px; height: 26px;
+  border: none; background: #fff;
+  border-radius: 50%;
+  cursor: pointer;
   padding: 3px;
+  position: relative;
+  flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  transition: all 0.15s;
+  box-shadow: 0 0 0 1px rgba(0,0,0,0.06);
 }
-.roster-item img { width: 100%; height: 100%; object-fit: contain; }
-.roster-item.selected {
-  box-shadow: 0 0 0 2px var(--accent), 0 4px 10px rgba(10,132,255,0.35);
-  transform: translateY(-1px);
+.rp-logo-btn:hover {
+  transform: scale(1.06);
+  box-shadow: 0 0 0 2px var(--accent);
 }
-.roster-item.unselected { opacity: 0.32; filter: grayscale(0.7); }
-.roster-item:hover { transform: translateY(-2px); }
-.roster-item .check {
-  position: absolute; right: -4px; top: -4px;
-  width: 13px; height: 13px;
-  background: var(--accent); border-radius: 50%;
-  color: #fff; font-size: 8px;
+.rp-logo-img { width: 100%; height: 100%; object-fit: contain; display: block; }
+.rp-check {
+  position: absolute; right: -3px; bottom: -3px;
+  width: 12px; height: 12px;
+  background: #34c759;
+  border-radius: 50%;
+  color: #fff; font-size: 8px; font-weight: 700;
   display: flex; align-items: center; justify-content: center;
   border: 2px solid var(--card);
+  line-height: 1;
+}
+.rp-preview {
+  flex: 1; min-width: 0;
+  display: flex; align-items: center;
+  gap: 6px;
+  padding: 4px 8px 4px 4px;
+  background: transparent; border: none;
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+  border-radius: 10px;
+  transition: background 0.12s;
+}
+.rp-preview:hover { background: rgba(0,0,0,0.04); }
+.rp-name {
+  font-size: 11px; font-weight: 700;
+  color: var(--ink);
+  flex-shrink: 0;
+  max-width: 56px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+/* v4.8.56: pill 预览从严格 1 行放宽到最多 2 行（line-clamp:2 + 允许换行）
+   原 white-space:nowrap + ellipsis 把"## Claude responded: 第 1 轮辩论..."只显示一小段
+   现在 line-clamp:2 让较长 markdown 标题展示完整两行 + 第 3 行起 ellipsis */
+.rp-text {
+  flex: 1; min-width: 0;
+  font-size: 11.5px;
+  line-height: 1.35;
+  color: var(--ink);
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: normal;
+  /* 严格高度上限：line-height 1.35 × 2 行 × 11.5px ≈ 31px + 余量 */
+  max-height: calc(1.35em * 2);
+  word-break: break-word;
+}
+.rp-preview.empty .rp-text { color: var(--ink-soft); font-style: italic; }
+.rp-edited {
+  font-size: 11px;
+  color: #ff9f0a;
+  flex-shrink: 0;
   font-weight: 700;
 }
-.roster-count {
-  color: var(--ink-soft); font-size: 10.5px;
-  font-family: "SF Mono",monospace;
-}
-/* v4.7.2: 文件上传安全提示 — roster 下轮发言 AI 图标右侧，自动跟主题 */
+
+/* v4.7.2: 文件上传安全提示 — v4.8.43 改为可智能隐藏（.hidden） */
 .roster-upload-hint {
   margin-left: auto;
   color: var(--ink-soft);
@@ -1298,11 +1428,79 @@ body[data-mode="mini"] .mention-menu {
   overflow: hidden;
   text-overflow: ellipsis;
   max-width: 360px;
+  transition: opacity 0.3s, max-width 0.3s, padding 0.3s, border-width 0.3s;
 }
 .roster-upload-hint:hover {
   border-color: var(--accent);
   color: var(--accent);
 }
+.roster-upload-hint.hidden {
+  opacity: 0;
+  max-width: 0;
+  padding: 0;
+  border-width: 0;
+  margin: 0;
+  pointer-events: none;
+}
+
+/* v4.8.43: 下方编辑器面板 — 点击某 pill 的预览区时显示 */
+.resp-editor {
+  background: var(--card);
+  border-top: 1px solid var(--border);
+  padding: 10px 16px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.resp-editor[hidden] { display: none; }
+.resp-editor-head {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 11.5px; color: var(--ink-soft);
+}
+.resp-editor-logo {
+  width: 18px; height: 18px;
+  border-radius: 50%;
+  background: #fff;
+  padding: 2px;
+  object-fit: contain;
+  box-shadow: 0 0 0 1px rgba(0,0,0,0.06);
+}
+.resp-editor-name {
+  font-weight: 700;
+  font-size: 12.5px;
+  color: var(--ink);
+  letter-spacing: -0.01em;
+}
+.resp-editor-meta {
+  flex: 1; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.resp-editor-close {
+  width: 22px; height: 22px;
+  border: none; background: transparent;
+  color: var(--ink-soft); cursor: pointer;
+  border-radius: 5px;
+  font-size: 12px;
+  transition: all 0.12s;
+}
+.resp-editor-close:hover { background: rgba(127,127,127,0.18); color: var(--ink); }
+.resp-editor-text {
+  width: 100%;
+  min-height: 90px;
+  max-height: 240px;
+  background: var(--bg);
+  color: var(--ink);
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font: inherit;
+  font-size: 12.5px;
+  line-height: 1.55;
+  resize: vertical;
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(10,132,255,0.10);
+}
+.resp-editor-text:focus { box-shadow: 0 0 0 3px rgba(10,132,255,0.20); }
 
 /* ── 任务模式选择器 ── */
 /* v4.8.23: task-picker 整体胶囊化 + 按 data-mode 切配色 + 发光呼吸 */
@@ -2804,6 +3002,46 @@ body { letter-spacing: -0.01em; }
   gap: 8px;
   padding: 4px 0 10px;
 }
+/* v4.8.41: hero-slot 外包一层 wrap 容纳卡片 + 下方快捷按钮（不影响 grid 列宽）*/
+.hero-slot-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+/* v4.8.41 + v4.8.42 K样式: 卡片下方 3 快捷按钮（重发蓝/提取绿/跳过橙） icon-only + hover tooltip */
+.hero-quick-actions {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 5px;
+  margin-top: 4px;
+}
+.hqa-btn {
+  width: 100%;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 7px;
+  cursor: pointer;
+  font-family: inherit;
+  transition: all 0.15s;
+  position: relative;
+}
+.hqa-btn[data-act="resend"]     { background: rgba(10,132,255,0.10); color: #0a84ff; }
+.hqa-btn[data-act="reextract"]  { background: rgba(52,199,89,0.12);  color: #34c759; }
+.hqa-btn[data-act="skip"]       { background: rgba(255,159,10,0.12); color: #ff9f0a; }
+.hqa-btn:hover {
+  transform: scale(1.06);
+  filter: saturate(1.2);
+}
+.hqa-btn[data-act="resend"]:hover    { background: #0a84ff; color: #fff; }
+.hqa-btn[data-act="reextract"]:hover { background: #34c759; color: #fff; }
+.hqa-btn[data-act="skip"]:hover      { background: #ff9f0a; color: #fff; }
+.hqa-btn:active { transform: scale(0.96); }
+.hqa-btn .ai-icn { width: 16px; height: 16px; display: block; }
+/* v4.8.43: 删除 ::after data-label tooltip — 浏览器原生 title 已经在下方显示，避免重复 */
 .hero-slot {
   /* v4.8.17: 0.85 → 0.72 贴合卡牌比例 */
   /* v4.8.19: 0.72 → 0.78 + .hero-slot-logo 改 contain 兜底所有卡牌比例（0.666 ~ 0.881 跨度大）*/
@@ -3167,13 +3405,51 @@ body { letter-spacing: -0.01em; }
 .btn-mini-mode:active { transform: translateY(0) scale(0.98); }
 /* btn-mini-pulse / btn-mini-aura 已删（v4.8.24 静态化）*/
 
-/* mini 模式 — 全隐藏的区域 */
+/* v4.8.41: 简洁模式按钮 — 紧贴折叠到顶，关闭态克制（描边胶囊），开启态渐变实色提示 */
+.btn-compact-mode {
+  background: transparent;
+  color: var(--ink);
+  border: 1px solid var(--border);
+  height: 30px;
+  padding: 0 12px;
+  border-radius: 999px;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  letter-spacing: 0.01em;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+  margin-right: 8px;
+  transition: transform 0.2s, background 0.2s, color 0.2s, box-shadow 0.2s;
+}
+.btn-compact-mode:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  transform: translateY(-1px);
+}
+.btn-compact-mode:active { transform: translateY(0) scale(0.98); }
+.btn-compact-mode.active {
+  background: linear-gradient(135deg, #5eead4 0%, #34c759 100%);
+  color: #0a1024;
+  border-color: transparent;
+  box-shadow: 0 0 0 1px rgba(94,234,212,0.45), 0 4px 12px rgba(52,199,89,0.25);
+}
+.btn-compact-mode.active:hover {
+  transform: translateY(-1px) scale(1.02);
+  box-shadow: 0 0 0 1px rgba(94,234,212,0.65), 0 6px 16px rgba(52,199,89,0.35);
+}
+
+/* mini 模式 — 全隐藏的区域
+   v4.8.57: chat-roster 从隐藏 → 显示（"折叠到顶"新语义：保留 pill 列 + input bar 两行）
+   v4.8.58: chat-header 整体隐藏（"展开/简洁"按钮已 DOM-move 到 task-picker 旁边）*/
 body[data-mode="mini"] .chat-sidebar,
 body[data-mode="mini"] .chat-rightpanel,
 body[data-mode="mini"] .chat-messages,
 body[data-mode="mini"] .empty-state,
-body[data-mode="mini"] .chat-roster,        /* v4.8.27: 单行模式下 roster 也藏掉 */
-body[data-mode="mini"] .arena-badge {        /* 辩论轮次徽章也藏 */
+body[data-mode="mini"] .chat-header,
+body[data-mode="mini"] .arena-badge {
   display: none !important;
 }
 /* v4.8.28: mini 模式下 task-menu 改向下弹（窗口上方无空间），
@@ -3183,6 +3459,8 @@ body[data-mode="mini"] .task-menu {
   top: calc(100% + 6px) !important;
   /* 子菜单仍然 left:100% 横向弹出，不动 */
 }
+/* v4.8.58: chat-header 整体隐藏后，旧的 chat-title / hdr-mode-toggle / btn-clear / btn-hard-reset
+   单独 hide 规则也没意义了，但保留兜底（防 chat-header 因其他原因显示时仍精简） */
 body[data-mode="mini"] .chat-title,
 body[data-mode="mini"] .chat-actions .hdr-mode-toggle,
 body[data-mode="mini"] .chat-actions #btn-clear,
@@ -3190,70 +3468,63 @@ body[data-mode="mini"] .chat-actions #btn-hard-reset {
   display: none !important;
 }
 
-/* v4.8.27: mini 模式核心 — chat-main 改 row flex，header/input-bar 全部并排成一行 */
+/* v4.8.27: mini 模式 — chat-main 原 row flex（单行 bar），
+   v4.8.57: 改回 column —— mini 现在是"折叠到顶 = roster pill + input-bar 两行"多行设计
+   v4.8.58: chat-header 已隐藏，chat-main 内只剩 chat-roster + chat-input-bar 两行 */
 body[data-mode="mini"] .chat-app { height: auto; min-height: 0; }
 body[data-mode="mini"] .chat-main {
   width: 100%;
   height: auto;
   min-height: 0;
   display: flex;
-  flex-direction: row;
-  align-items: center;
-  justify-content: flex-start;
-  gap: 8px;
-  /* v4.8.30: padding 加大让按钮底部不贴边（8 12 → 12 14）*/
-  padding: 12px 14px;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
   background: transparent;
 }
-body[data-mode="mini"] .chat-header {
+/* v4.8.58: 按钮 DOM-move 到 input-bar 后用 .in-input-bar 标记 — 改为青绿胶囊 */
+.btn-mini-mode.in-input-bar,
+.btn-compact-mode.in-input-bar {
   flex-shrink: 0;
-  padding: 0;
-  min-height: 0;
-  height: auto;
-  border: none;
-  background: transparent;
-  backdrop-filter: none;
-  /* 让 .chat-actions 自然 flex 自己 — 默认就是 inline-flex */
+  font-size: 11.5px;
+  padding: 5px 10px;
+  height: 28px;
+  border-radius: 14px;
+  white-space: nowrap;
 }
-body[data-mode="mini"] .chat-actions {
-  gap: 0;
-  padding: 0;
-}
-body[data-mode="mini"] .btn-mini-mode {
-  margin-right: 0;
-  /* 展开按钮换青绿，跟 input-bar 配色协调（不再橙红抢眼）*/
+.btn-mini-mode.in-input-bar {
   background: linear-gradient(135deg, #5eead4, #a78bfa);
   color: #0a1024;
+  border: none;
   box-shadow: 0 0 0 1px rgba(94,234,212,0.35), 0 2px 8px rgba(94,234,212,0.25);
 }
-body[data-mode="mini"] .btn-mini-mode:hover {
+.btn-mini-mode.in-input-bar:hover {
   box-shadow: 0 0 0 1px rgba(94,234,212,0.55), 0 6px 18px rgba(94,234,212,0.45);
+  transform: translateY(-1px);
 }
-/* input-bar 占满剩余宽度，去 padding/border */
+/* v4.8.57: mini input-bar 恢复正常 row 布局（不再 flex:1 占满，因为现在是 column） */
 body[data-mode="mini"] .chat-input-bar {
-  flex: 1;
   padding: 0;
   border-top: none;
   background: transparent;
   display: flex;
   align-items: center;
   gap: 8px;
-  min-width: 0;          /* 让 .chat-input-wrap flex 收缩生效 */
+  min-width: 0;
 }
 body[data-mode="mini"] .chat-input-wrap {
   min-width: 0;
 }
-
-/* v4.8.30: mini 模式参与者头像横排（picker 和输入框之间） — full 模式 display:none */
-.mini-roster { display: none; }
-body[data-mode="mini"] .mini-roster {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-shrink: 0;
-  margin: 0 4px;
+/* v4.8.57: chat-roster 在 mini 下保持正常 flex 行，但去掉 card 背景让和上下 input/header 视觉融合 */
+body[data-mode="mini"] .chat-roster {
+  padding: 4px 0;
+  background: transparent;
+  border-top: none;
 }
-body[data-mode="mini"] .mini-roster.empty { display: none; }
+
+/* v4.8.30: mini 模式参与者头像横排 — v4.8.57 隐藏（已被 chat-roster pill 取代，避免重复显示 AI 头像）*/
+.mini-roster { display: none; }
+body[data-mode="mini"] .mini-roster { display: none; }
 .mini-ai {
   position: relative;
   width: 28px; height: 28px;
@@ -3305,4 +3576,207 @@ body[data-mode="mini"] .mini-roster.empty { display: none; }
 @keyframes mini-ai-blink {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.35; }
+}
+
+/* ============================================================
+   v4.8.51: basic 风格（默认基础）— 不打包 webp 卡片，走 brand SVG/PNG 原图
+   classic/anime/cat 都是 225×320 webp 满铺卡牌；basic 是透明 brand SVG，
+   叠在默认深色 .hero-slot 上会撞色看不清 → 切到白底卡片 + 留 padding
+============================================================ */
+body[data-logo-style="basic"] .hero-slot {
+  background: linear-gradient(135deg, #ffffff, #f5f5f7);
+  border-color: #e5e5e7;
+  box-shadow: inset 0 1px 0 rgba(0,0,0,0.02), 0 1px 3px rgba(0,0,0,0.06);
+}
+body[data-logo-style="basic"] .hero-slot.filled {
+  border-color: #d2d2d7;
+}
+body[data-logo-style="basic"] .hero-slot.filled.status-ready { border-color: #34c759; }
+body[data-logo-style="basic"] .hero-slot.filled.status-busy  { border-color: #ff9f0a; }
+body[data-logo-style="basic"] .hero-slot.filled.status-error { border-color: #ff3b30; }
+body[data-logo-style="basic"] .hero-slot-logo {
+  /* SVG brand 是 1:1 正方形 → 在 225×320 卡里给 padding 让其居中适中 */
+  padding: 22% 20% 26% 20%;
+  object-position: center;
+}
+/* basic 卡底部名字遮罩 — 白底场景反相为浅白渐变 */
+body[data-logo-style="basic"] .hero-slot.filled::after {
+  background: linear-gradient(to top, rgba(245,245,247,0.95) 0%, rgba(245,245,247,0) 100%);
+}
+body[data-logo-style="basic"] .hero-slot-name {
+  color: #1d1d1f;
+  text-shadow: none;
+}
+/* 设置面板 — basic 风格预览图：brand SVG 也需要白底兜底（非 basic 风格无影响）*/
+.rp-style-preview[src*="/brands/"] {
+  background: #ffffff;
+  padding: 6px;
+  object-fit: contain;
+  border: 1px solid #e5e5e7;
+}
+/* 聊天气泡头像 — basic 风格下 brand SVG 加白底圆形（避免 dark mode 下黑底 SVG 看不清）*/
+body[data-logo-style="basic"] .msg-avatar img {
+  background: #ffffff;
+  padding: 3px;
+}
+
+/* ============================================================
+   v4.8.52: .msg.system —— 系统提示气泡（Tab 模式 debugger 警告等）
+   居中布局 / 浅橙底（warning）/ 含 ✕ 关闭按钮 / 不渲染头像/时间
+============================================================ */
+.msg.system {
+  display: flex;
+  justify-content: center;
+  padding: 4px 16px;
+  margin: 4px 0;
+}
+.msg.system .msg-body {
+  max-width: 92%;
+  width: 100%;
+}
+.msg-sys-bubble {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 14px;
+  background: rgba(255, 159, 10, 0.08);
+  border: 1px solid rgba(255, 159, 10, 0.30);
+  border-radius: 10px;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--ink);
+}
+.msg-sys-icon {
+  flex-shrink: 0;
+  width: 18px; height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: 700;
+  color: #ff9f0a;
+}
+.msg-sys-text {
+  flex: 1;
+  min-width: 0;
+}
+.msg-sys-text strong {
+  display: block;
+  font-weight: 600;
+  color: #ff9f0a;
+  margin-bottom: 3px;
+  font-size: 12px;
+}
+.msg-sys-text em {
+  font-style: normal;
+  background: rgba(255, 159, 10, 0.12);
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-size: 11.5px;
+}
+.msg-sys-close {
+  flex-shrink: 0;
+  width: 22px; height: 22px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--ink-soft);
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  border-radius: 4px;
+  transition: background 0.15s, color 0.15s;
+}
+.msg-sys-close:hover {
+  background: rgba(255, 159, 10, 0.15);
+  color: #ff9f0a;
+}
+/* v4.8.35 决策：不用 prefers-color-scheme；橙色背景半透明叠加 dark/light 主题都自动 OK */
+
+/* ============================================================
+   v4.8.62: 新手教程 3 步骤卡（empty-state 下方）
+============================================================ */
+.es-tutorial {
+  position: relative;
+  margin: 18px auto 0;
+  max-width: 480px;
+  padding: 16px 22px 18px;
+  background: linear-gradient(135deg, rgba(94,234,212,0.08), rgba(167,139,250,0.08));
+  border: 1px solid rgba(94,234,212,0.28);
+  border-radius: 14px;
+  box-shadow: 0 4px 18px rgba(94,234,212,0.10);
+}
+.es-tutorial-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--neon-1, #5eead4);
+  letter-spacing: 0.04em;
+  margin-bottom: 10px;
+}
+.es-tutorial-title::before {
+  content: "🎓 ";
+  font-size: 14px;
+}
+.es-tutorial-close {
+  position: absolute;
+  top: 8px; right: 10px;
+  width: 22px; height: 22px;
+  padding: 0;
+  border: none; background: transparent;
+  color: var(--ink-soft);
+  cursor: pointer;
+  font-size: 13px;
+  border-radius: 4px;
+  transition: background 0.15s;
+}
+.es-tutorial-close:hover {
+  background: rgba(127,127,127,0.18);
+  color: var(--ink);
+}
+.es-tutorial-steps {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+.es-tutorial-steps li {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--ink);
+}
+.es-tut-num {
+  flex-shrink: 0;
+  width: 22px; height: 22px;
+  display: flex; align-items: center; justify-content: center;
+  background: linear-gradient(135deg, #5eead4, #a78bfa);
+  color: #0a1024;
+  border-radius: 50%;
+  font-size: 11px;
+  font-weight: 700;
+}
+.es-tutorial-steps strong {
+  font-weight: 600;
+  color: var(--ink);
+  margin-right: 2px;
+}
+.es-tutorial-steps em {
+  font-style: normal;
+  font-weight: 600;
+  color: var(--accent);
+}
+.es-tutorial-steps kbd {
+  display: inline-block;
+  padding: 1px 6px;
+  margin: 0 2px;
+  background: rgba(127,127,127,0.15);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-family: "SF Mono", "Consolas", monospace;
+  font-size: 10.5px;
+  color: var(--ink);
 }
