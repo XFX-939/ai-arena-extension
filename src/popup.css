@@ -3024,39 +3024,63 @@ body { letter-spacing: -0.01em; }
   gap: 6px;
   min-width: 0;
 }
-/* v4.8.41 + v4.8.42 K样式: 卡片下方 3 快捷按钮（重发蓝/提取绿/跳过橙） icon-only + hover tooltip */
+/* v4.8.68 Cyber Slash 风：三段斜切梯形拼成一根条 + 永久流光（呼应卡片 cyan 边框） */
+/* hover 时该段填充对应色（resend蓝 / reextract绿 / skip橙）+ 内发光，icon 默认灰，hover 出色 */
 .hero-quick-actions {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 5px;
+  display: flex;
+  height: 28px;
   margin-top: 4px;
+  position: relative;
+  border-radius: 4px;
+  overflow: hidden;
+  background: #0a0d12;
+  border: 1px solid #1f2229;
+}
+.hero-quick-actions::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg,
+    transparent 0%,
+    rgba(94, 234, 212, 0) 30%,
+    rgba(94, 234, 212, 0.35) 50%,
+    rgba(94, 234, 212, 0) 70%,
+    transparent 100%);
+  transform: translateX(-100%);
+  animation: hqa-shimmer 3.5s ease-in-out infinite;
+  pointer-events: none;
+}
+@keyframes hqa-shimmer {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .hero-quick-actions::before { animation: none; opacity: 0.18; transform: none; }
 }
 .hqa-btn {
-  width: 100%;
-  height: 28px;
+  flex: 1;
+  border: none;
+  background: transparent;
+  color: #9aa0a8;
+  cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  border: none;
-  border-radius: 7px;
-  cursor: pointer;
-  font-family: inherit;
-  transition: all 0.15s;
   position: relative;
+  transition: background 0.2s, color 0.2s, box-shadow 0.2s, transform 0.12s;
+  clip-path: polygon(8% 0, 100% 0, 92% 100%, 0 100%);
+  margin-left: -6px;
+  font-family: inherit;
+  padding: 0;
 }
-.hqa-btn[data-act="resend"]     { background: rgba(10,132,255,0.10); color: #0a84ff; }
-.hqa-btn[data-act="reextract"]  { background: rgba(52,199,89,0.12);  color: #34c759; }
-.hqa-btn[data-act="skip"]       { background: rgba(255,159,10,0.12); color: #ff9f0a; }
-.hqa-btn:hover {
-  transform: scale(1.06);
-  filter: saturate(1.2);
-}
-.hqa-btn[data-act="resend"]:hover    { background: #0a84ff; color: #fff; }
-.hqa-btn[data-act="reextract"]:hover { background: #34c759; color: #fff; }
-.hqa-btn[data-act="skip"]:hover      { background: #ff9f0a; color: #fff; }
+.hqa-btn:first-child { margin-left: 0; clip-path: polygon(0 0, 100% 0, 92% 100%, 0 100%); }
+.hqa-btn:last-child  { clip-path: polygon(8% 0, 100% 0, 100% 100%, 0 100%); }
+.hqa-btn:hover { color: #fff; }
+.hqa-btn[data-act="resend"]:hover    { background: rgba(10, 132, 255, 0.4); box-shadow: inset 0 0 16px rgba(10, 132, 255, 0.6); }
+.hqa-btn[data-act="reextract"]:hover { background: rgba(52, 199, 89, 0.4);  box-shadow: inset 0 0 16px rgba(52, 199, 89, 0.6); }
+.hqa-btn[data-act="skip"]:hover      { background: rgba(255, 159, 10, 0.4); box-shadow: inset 0 0 16px rgba(255, 159, 10, 0.6); }
 .hqa-btn:active { transform: scale(0.96); }
-.hqa-btn .ai-icn { width: 16px; height: 16px; display: block; }
-/* v4.8.43: 删除 ::after data-label tooltip — 浏览器原生 title 已经在下方显示，避免重复 */
+.hqa-btn .ai-icn { width: 14px; height: 14px; display: block; position: relative; z-index: 1; }
 .hero-slot {
   /* v4.8.17: 0.85 → 0.72 贴合卡牌比例 */
   /* v4.8.19: 0.72 → 0.78 + .hero-slot-logo 改 contain 兜底所有卡牌比例（0.666 ~ 0.881 跨度大）*/
