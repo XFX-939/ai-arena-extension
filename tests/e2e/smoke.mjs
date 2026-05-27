@@ -67,7 +67,7 @@ try {
   // 2) 读 manifest version_name 验证版本同步（直接读源文件）
   const manifest = JSON.parse(fs.readFileSync(path.join(EXT_PATH, "manifest.json"), "utf8"));
   console.log(`[smoke] manifest version: ${manifest.version}, version_name: ${manifest.version_name}`);
-  check("manifest version_name = 4.8.65-beta", manifest.version_name === "4.8.65-beta", `actual: ${manifest.version_name}`);
+  check("manifest version_name = 4.8.66-beta", manifest.version_name === "4.8.66-beta", `actual: ${manifest.version_name}`);
 
   // 3) 打开 sidepanel.html（作为普通 tab），验证 DOM
   const sidepanelPage = await context.newPage();
@@ -75,10 +75,10 @@ try {
   await sidepanelPage.waitForLoadState("domcontentloaded");
 
   const versionBadge = await sidepanelPage.locator(".version").textContent();
-  check("sidepanel version badge", versionBadge === "v4.8.65-beta", `actual: "${versionBadge}"`);
+  check("sidepanel version badge", versionBadge === "v4.8.66-beta", `actual: "${versionBadge}"`);
 
   const footerVersion = await sidepanelPage.locator(".footer").textContent();
-  check("sidepanel footer version", footerVersion?.includes("v4.8.65-beta"), `actual: "${footerVersion?.slice(0, 100)}"`);
+  check("sidepanel footer version", footerVersion?.includes("v4.8.66-beta"), `actual: "${footerVersion?.slice(0, 100)}"`);
 
   const openChatBtn = await sidepanelPage.locator("#btn-open-chat").count();
   check('sidepanel has "🪟 群聊" button', openChatBtn === 1);
@@ -96,7 +96,7 @@ try {
   await popupPage.waitForLoadState("domcontentloaded");
 
   const popupVersion = await popupPage.locator(".chat-version").textContent();
-  check("popup chat-version = v4.8.65-beta", popupVersion === "v4.8.65-beta", `actual: "${popupVersion}"`);
+  check("popup chat-version = v4.8.66-beta", popupVersion === "v4.8.66-beta", `actual: "${popupVersion}"`);
 
   // 图标资产验证（v4.0.11）
   const assetsOk = await popupPage.evaluate(async (extId) => {
@@ -2002,6 +2002,23 @@ try {
   check("v4.8.65 ① 运行时: 顶栏按钮显示 '清空群聊' / '彻底重置' 文字",
     headerBtnText.clear === "清空群聊" && headerBtnText.reset === "彻底重置",
     `actual: ${JSON.stringify(headerBtnText)}`);
+
+  // ── v4.8.66: 辩论总结卡删 "查看完整报告" 按钮 + iframe 默认展开 ──
+  // 用户反馈：hover tooltip "查看完整报告" 出现垂直竖排（跟 v4.8.59 收起按钮同症），
+  // 决策：直接删按钮，iframe 改成默认展开，避免二次点击
+  const popupJsV66 = fs.readFileSync(path.join(EXT_PATH, "popup.js"), "utf8");
+  const bubbleActsV66 = fs.readFileSync(path.join(EXT_PATH, "popup-bubble-actions.js"), "utf8");
+  check("v4.8.66: popup.js appendDebateSummaryCard 不再有 summary-toggle 按钮",
+    !/data-act="summary-toggle"/.test(popupJsV66) &&
+    !/查看完整报告/.test(popupJsV66),
+    "popup.js 仍含 summary-toggle 按钮或 '查看完整报告' 文案");
+  check("v4.8.66: popup.js summary-iframe 默认展开（不再有 style=\"display:none\"）",
+    /class="summary-iframe"[^>]*srcdoc="\$\{escapeAttr\(html\)\}"[^>]*><\/iframe>/.test(popupJsV66) &&
+    !/class="summary-iframe"[^>]*style="display:\s*none"/.test(popupJsV66),
+    "summary-iframe 仍带 display:none 或 srcdoc 后跟着 style");
+  check("v4.8.66: popup-bubble-actions.js 移除 summary-toggle 分支",
+    !/act === "summary-toggle"/.test(bubbleActsV66),
+    "popup-bubble-actions.js 仍含 summary-toggle 分支");
 
   // v4.8.52: Tab 模式 debugger 提示
   //   chrome.debugger.attach 会强制显示"AI Arena 已开始调试此浏览器"横条，

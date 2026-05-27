@@ -462,7 +462,6 @@
           <span class="time">${escapeHtml(meta?.date || "")}</span>
           <span class="stat done"><span class="pip"></span>已生成</span>
           <span class="acts">
-            <button data-act="summary-toggle" title="展开/收起报告">▾ 查看完整报告</button>
             <button data-act="summary-open" title="在新标签页打开">↗</button>
             ${downloadId != null ? `<button data-act="summary-redownload" data-did="${downloadId}" title="再次下载">⬇</button>` : ""}
           </span>
@@ -472,7 +471,8 @@
             <strong>${escapeHtml(meta?.topic || "辩论总结")}</strong>
             <span class="summary-pitch-meta">${escapeHtml(meta?.participants?.join(" · ") || "")} · ${escapeHtml(meta?.rounds || 0)} 轮</span>
           </div>
-          <iframe class="summary-iframe" sandbox="allow-same-origin" srcdoc="${escapeAttr(html)}" style="display:none"></iframe>
+          <!-- v4.8.66: iframe 默认展开，不再需要二次点击切换 -->
+          <iframe class="summary-iframe" sandbox="allow-same-origin" srcdoc="${escapeAttr(html)}"></iframe>
         </div>
       </div>`;
     $messages.appendChild(row);
