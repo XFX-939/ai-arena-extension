@@ -2306,6 +2306,18 @@ try {
     !scanRuntime.err && scanRuntime.hits2Count === 1,
     `actual: ${JSON.stringify(scanRuntime)}`);
 
+  // ── v4.9.0 ⑪: popup-task-menu.js dispatch 3 分支接 bridge ──
+  const taskMenuJsV490 = fs.readFileSync(path.join(EXT_PATH, "popup-task-menu.js"), "utf8");
+  check("v4.9.0 ⑪: ask 分支调 ChatGatekeeperBridge.handleResp（textField: text）",
+    /type:\s*"chatBroadcast"[\s\S]{0,400}ChatGatekeeperBridge\?\.handleResp\(msg,\s*resp,\s*\{\s*textField:\s*"text"/.test(taskMenuJsV490),
+    "ask 分支未接 bridge");
+  check("v4.9.0 ⑪: debate 分支用 textField: guidance",
+    /type:\s*"debateRound"[\s\S]{0,500}ChatGatekeeperBridge\?\.handleResp\(msg,\s*resp,\s*\{\s*textField:\s*"guidance"/.test(taskMenuJsV490),
+    "debate 分支未接 bridge 或 textField 不对");
+  check("v4.9.0 ⑪: summary 分支用 textField: customInstruction",
+    /type:\s*"summary"[\s\S]{0,400}ChatGatekeeperBridge\?\.handleResp\(msg,\s*resp,\s*\{\s*textField:\s*"customInstruction"/.test(taskMenuJsV490),
+    "summary 分支未接 bridge 或 textField 不对");
+
   // v4.8.52: Tab 模式 debugger 提示
   //   chrome.debugger.attach 会强制显示"AI Arena 已开始调试此浏览器"横条，
   //   用户点取消会 detach 所有 attach → 后台 AI tab 失反节流 → 流式渲染降到 1 fps。

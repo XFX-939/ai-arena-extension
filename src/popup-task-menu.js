@@ -137,11 +137,16 @@
         }));
       } catch (_) {}
       if (c.task === "ask") {
+        const msg = { type: "chatBroadcast", text, targets, images: [] };
         return new Promise((res) => {
-          chrome.runtime.sendMessage(
-            { type: "chatBroadcast", text, targets, images: [] },
-            (resp) => res(resp || { ok: false, error: chrome.runtime.lastError?.message })
-          );
+          chrome.runtime.sendMessage(msg, (resp) => {
+            // v4.9.0: 守门员命中 → bridge 接管弹 modal + 重发
+            if (window.ChatGatekeeperBridge?.handleResp(msg, resp, { textField: "text" })) {
+              res({ ok: false, intercepted: "sensitive_blocked" });
+              return;
+            }
+            res(resp || { ok: false, error: chrome.runtime.lastError?.message });
+          });
         });
       }
       if (c.task === "debate") {
@@ -150,43 +155,49 @@
         // v4.8.65: insufficient_responses → 弹自定义 modal（重新提取 / 切同时提问）
         return new Promise((res) => {
           const sendOnce = (force) => {
-            chrome.runtime.sendMessage(
-              { type: "debateRound", style: c.style, guidance: text || "", concise: false, force },
-              (resp) => {
-                if (resp?.needsConfirm) {
-                  if (window.confirm(resp.message)) {
-                    sendOnce(true);
-                  } else {
-                    res({ ok: false, cancelled: true });
-                  }
-                  return;
-                }
-                if (resp && !resp.ok) {
-                  if (resp.reason === "insufficient_responses" && window.ChatModal) {
-                    window.ChatModal.showInsufficientResponses(resp, {
-                      onReextract: (missing) => _reextractMissing(missing),
-                      onSwitchAsk: () => setTask("ask"),
-                    });
-                  } else {
-                    alert(`辩论失败：${resp.error || "未知错误"}`);
-                  }
-                }
-                res(resp || { ok: false, error: chrome.runtime.lastError?.message });
+            const msg = { type: "debateRound", style: c.style, guidance: text || "", concise: false, force };
+            chrome.runtime.sendMessage(msg, (resp) => {
+              // v4.9.0: 守门员拦截（在 needsConfirm 之前判断 — guardedSend 在 handleDebateRound 之前已 return）
+              if (window.ChatGatekeeperBridge?.handleResp(msg, resp, { textField: "guidance" })) {
+                res({ ok: false, intercepted: "sensitive_blocked" });
+                return;
               }
-            );
+              if (resp?.needsConfirm) {
+                if (window.confirm(resp.message)) {
+                  sendOnce(true);
+                } else {
+                  res({ ok: false, cancelled: true });
+                }
+                return;
+              }
+              if (resp && !resp.ok) {
+                if (resp.reason === "insufficient_responses" && window.ChatModal) {
+                  window.ChatModal.showInsufficientResponses(resp, {
+                    onReextract: (missing) => _reextractMissing(missing),
+                    onSwitchAsk: () => setTask("ask"),
+                  });
+                } else {
+                  alert(`辩论失败：${resp.error || "未知错误"}`);
+                }
+              }
+              res(resp || { ok: false, error: chrome.runtime.lastError?.message });
+            });
           };
           sendOnce(false);
         });
       }
       if (c.task === "summary") {
+        const msg = { type: "summary", judgeId: c.judgeId, customInstruction: text || "" };
         return new Promise((res) => {
-          chrome.runtime.sendMessage(
-            { type: "summary", judgeId: c.judgeId, customInstruction: text || "" },
-            (resp) => {
-              if (resp && !resp.ok) alert(`总结失败：${resp.error || "未知错误"}`);
-              res(resp || { ok: false, error: chrome.runtime.lastError?.message });
+          chrome.runtime.sendMessage(msg, (resp) => {
+            // v4.9.0: 守门员拦截（textField: customInstruction）
+            if (window.ChatGatekeeperBridge?.handleResp(msg, resp, { textField: "customInstruction" })) {
+              res({ ok: false, intercepted: "sensitive_blocked" });
+              return;
             }
-          );
+            if (resp && !resp.ok) alert(`总结失败：${resp.error || "未知错误"}`);
+            res(resp || { ok: false, error: chrome.runtime.lastError?.message });
+          });
         });
       }
       if (c.task === "ppt") {
