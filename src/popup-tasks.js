@@ -160,12 +160,11 @@
       const judgeId = root.querySelector("#rp-judge")?.value;
       if (!judgeId) { alert("请先选择裁判"); return; }
       state.judgeId = judgeId;
-      chrome.runtime.sendMessage({
-        type: "summary",
-        judgeId,
-        customInstruction: "",
-        format,
-      }, (resp) => {
+      const msg = { type: "summary", judgeId, customInstruction: "", format };
+      chrome.runtime.sendMessage(msg, (resp) => {
+        // v4.9.0.2 fix I3: 防御性接 bridge，customInstruction 当前写死空，巧合安全；
+        // 一旦 v4.9.1 改为可编辑 customInstruction 立即生效
+        if (window.ChatGatekeeperBridge?.handleResp(msg, resp, { textField: "customInstruction" })) return;
         if (resp && !resp.ok) alert(`总结失败：${resp.error || "未知错误"}`);
       });
     }
@@ -226,6 +225,7 @@
     template: "intro",
     prompt: "",
     lastKind: null,
+    autoLoaded: false,  // v4.9.x: 首次进入 PPT 工坊自动加载文案 prompt 的 guard
   };
 
   function renderPpt() {
@@ -261,6 +261,14 @@
   }
 
   function bindPpt(root) {
+    // v4.9.x: 首次进入 PPT 工坊自动加载文案 prompt（不用用户再点"1️⃣ 文案"按钮）
+    // guard: autoLoaded 标志位 + prompt 为空，避免在 loadPptPrompt → render → bindPpt 循环里重复触发
+    if (!pptUi.autoLoaded && !pptUi.prompt) {
+      pptUi.autoLoaded = true;
+      pptUi.lastKind = "copy";
+      state.kind = "copy";
+      loadPptPrompt("copy").then(() => render());
+    }
     // 1/2/3 step 按钮
     root.querySelectorAll(".rp-ppt-step").forEach(b => {
       b.addEventListener("click", async () => {

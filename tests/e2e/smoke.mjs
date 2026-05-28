@@ -67,7 +67,7 @@ try {
   // 2) 读 manifest version_name 验证版本同步（直接读源文件）
   const manifest = JSON.parse(fs.readFileSync(path.join(EXT_PATH, "manifest.json"), "utf8"));
   console.log(`[smoke] manifest version: ${manifest.version}, version_name: ${manifest.version_name}`);
-  check("manifest version_name = 4.9.0.1-hotfix", manifest.version_name === "4.9.0.1-hotfix", `actual: ${manifest.version_name}`);
+  check("manifest version_name = 5.0.0-beta", manifest.version_name === "5.0.0-beta", `actual: ${manifest.version_name}`);
 
   // 3) 打开 sidepanel.html（作为普通 tab），验证 DOM
   const sidepanelPage = await context.newPage();
@@ -75,10 +75,10 @@ try {
   await sidepanelPage.waitForLoadState("domcontentloaded");
 
   const versionBadge = await sidepanelPage.locator(".version").textContent();
-  check("sidepanel version badge", versionBadge === "v4.9.0.1-hotfix", `actual: "${versionBadge}"`);
+  check("sidepanel version badge", versionBadge === "v5.0.0-beta", `actual: "${versionBadge}"`);
 
   const footerVersion = await sidepanelPage.locator(".footer").textContent();
-  check("sidepanel footer version", footerVersion?.includes("v4.9.0.1-hotfix"), `actual: "${footerVersion?.slice(0, 100)}"`);
+  check("sidepanel footer version", footerVersion?.includes("v5.0.0-beta"), `actual: "${footerVersion?.slice(0, 100)}"`);
 
   const openChatBtn = await sidepanelPage.locator("#btn-open-chat").count();
   check('sidepanel has "🪟 群聊" button', openChatBtn === 1);
@@ -96,7 +96,7 @@ try {
   await popupPage.waitForLoadState("domcontentloaded");
 
   const popupVersion = await popupPage.locator(".chat-version").textContent();
-  check("popup chat-version = v4.9.0.1-hotfix", popupVersion === "v4.9.0.1-hotfix", `actual: "${popupVersion}"`);
+  check("popup chat-version = v5.0.0-beta", popupVersion === "v5.0.0-beta", `actual: "${popupVersion}"`);
 
   // 图标资产验证（v4.0.11）
   const assetsOk = await popupPage.evaluate(async (extId) => {
@@ -1043,16 +1043,17 @@ try {
     /btn\.innerHTML = orig/.test(bubbleActionsV42) &&
     !/const orig = btn\.textContent[\s\S]{0,400}btn\.textContent = orig/.test(bubbleActionsV42),
     "popup-bubble-actions.js 仍用 textContent（会清掉 SVG）");
-  check("v4.8.42 ③: popup.css .hqa-btn K 样式 — resend 蓝 / reextract 绿 / skip 橙 淡底",
-    /\.hqa-btn\[data-act="resend"\][\s\S]{0,200}rgba\(10,132,255/.test(popupCssV42) &&
-    /\.hqa-btn\[data-act="reextract"\][\s\S]{0,200}rgba\(52,199,89/.test(popupCssV42) &&
-    /\.hqa-btn\[data-act="skip"\][\s\S]{0,200}rgba\(255,159,10/.test(popupCssV42),
-    "popup.css 缺 K 样式的三色淡底");
-  check("v4.8.42 ③: popup.css .hqa-btn:hover 跳实色（resend蓝 / reextract绿 / skip橙）",
-    /\.hqa-btn\[data-act="resend"\]:hover[\s\S]{0,200}#0a84ff/.test(popupCssV42) &&
-    /\.hqa-btn\[data-act="reextract"\]:hover[\s\S]{0,200}#34c759/.test(popupCssV42) &&
-    /\.hqa-btn\[data-act="skip"\]:hover[\s\S]{0,200}#ff9f0a/.test(popupCssV42),
-    "popup.css 缺 hover 跳实色");
+  // v4.8.68 改造为 Cyber Slash 风（clip-path 斜切 + rgba 0.4 hover + inset 发光）
+  // 老 K 样式（0.12 淡底 + hover 跳实色）已废弃，断言更新适配新风格
+  check("v4.8.42+v4.8.68: popup.css .hqa-btn 三色 hover（resend 蓝 / reextract 绿 / skip 橙）",
+    /\.hqa-btn\[data-act="resend"\]:hover[\s\S]{0,200}rgba\(10,\s*132,\s*255/.test(popupCssV42) &&
+    /\.hqa-btn\[data-act="reextract"\]:hover[\s\S]{0,200}rgba\(52,\s*199,\s*89/.test(popupCssV42) &&
+    /\.hqa-btn\[data-act="skip"\]:hover[\s\S]{0,200}rgba\(255,\s*159,\s*10/.test(popupCssV42),
+    "popup.css 缺三色 hover");
+  check("v4.8.68: popup.css .hqa-btn 用 clip-path 斜切 + inset box-shadow 发光（Cyber Slash 风）",
+    /\.hqa-btn[\s\S]{0,500}clip-path:\s*polygon/.test(popupCssV42) &&
+    /\.hqa-btn\[data-act="resend"\]:hover[\s\S]{0,200}box-shadow:\s*inset 0 0 16px/.test(popupCssV42),
+    "popup.css 缺 Cyber Slash 风（clip-path + inset shadow）");
   // v4.8.43 修订：.hqa-btn::after data-label tooltip 已删除（与浏览器原生 title 重复）
   check("v4.8.43: popup.css .hqa-btn::after 已删除（用浏览器原生 title 显示）",
     !/\.hqa-btn::after\b/.test(popupCssV42) &&
@@ -2174,7 +2175,8 @@ try {
     /case\s+"summary":[\s\S]{0,200}text:\s*msg\.customInstruction/.test(bgV490_t6),
     "case summary 没接或字段不对");
   check("v4.9.0 ⑥: case 'sendPromptToService' 走 guardedSend",
-    /case\s+"sendPromptToService":[\s\S]{0,300}guardedSend/.test(bgV490_t6),
+    // v4.9.0.2: 窗口 300→800（I1 fix 加了 lastSentByPid fallback 块让 case 体积膨胀）
+    /case\s+"sendPromptToService":[\s\S]{0,800}guardedSend/.test(bgV490_t6),
     "case sendPromptToService 没接");
   check("v4.9.0 ⑥: case 'chatBroadcast' 走 guardedSend",
     /case\s+"chatBroadcast":[\s\S]{0,300}guardedSend/.test(bgV490_t6),
@@ -2419,6 +2421,34 @@ try {
   check("v4.9.0.1 hotfix: popup.js handleSend ask 直发路径接 ChatGatekeeperBridge",
     /chrome\.runtime\.sendMessage\(msg,[\s\S]{0,300}ChatGatekeeperBridge\?\.handleResp\(msg,\s*resp,\s*\{\s*textField:\s*"text"/.test(popupJsHotfix),
     "popup.js handleSend 仍漏接 bridge，ask 任务命中后 modal 不弹");
+
+  // ── v4.9.0.2 final-review 修复: 3 Critical + 2 Important ──
+  const bgV492    = fs.readFileSync(path.join(EXT_PATH, "background.js"), "utf8");
+  const tasksV492 = fs.readFileSync(path.join(EXT_PATH, "popup-tasks.js"), "utf8");
+  const sideV492  = fs.readFileSync(path.join(EXT_PATH, "sidepanel.js"),  "utf8");
+
+  check("v4.9.0.2 C2: guardedSend 用 hasBlocking 区分 warn-only 不阻断",
+    /Engine\.hasBlocking\s*===\s*"function"\s*&&\s*!Engine\.hasBlocking\(hits\)/.test(bgV492),
+    "guardedSend 仍把 warn-only hits 当 block 处理");
+
+  check("v4.9.0.2 C3: background.js 含 _bumpGatekeeperStat handler",
+    /case\s+"_bumpGatekeeperStat":[\s\S]{0,200}GatekeeperStore\.bumpStat\(msg\.key\)/.test(bgV492),
+    "background 仍缺 _bumpGatekeeperStat case，stats 统计无法落地");
+
+  check("v4.9.0.2 I1: sendPromptToService 用 lastSentByPid fallback（防 bubble resend 绕过扫描）",
+    /case\s+"sendPromptToService":[\s\S]{0,500}StateMachine\.lastSentByPid\?\.\[p\.id\]/.test(bgV492),
+    "sendPromptToService 仍直接用 msg.text，bubble resend 空文本会绕过守门员");
+
+  check("v4.9.0.2 I3: popup-tasks bindSummary 防御性接 bridge",
+    /dispatchSummary[\s\S]{0,500}ChatGatekeeperBridge\?\.handleResp\(msg,\s*resp,\s*\{\s*textField:\s*"customInstruction"/.test(tasksV492),
+    "popup-tasks bindSummary 未接 bridge");
+
+  check("v4.9.0.2 C1: sidepanel.js 含 handleSensitiveInSidepanel 轻量 confirm + 3 处接入",
+    /function handleSensitiveInSidepanel/.test(sideV492) &&
+    /handleSensitiveInSidepanel\(broadcastMsg,\s*r,\s*"text"\)/.test(sideV492) &&
+    /handleSensitiveInSidepanel\(debateMsg,\s*r,\s*"guidance"\)/.test(sideV492) &&
+    /handleSensitiveInSidepanel\(summaryMsg,\s*r,\s*"customInstruction"\)/.test(sideV492),
+    "sidepanel.js 缺 handleSensitiveInSidepanel 或 3 处接入不全");
 
   // v4.8.52: Tab 模式 debugger 提示
   //   chrome.debugger.attach 会强制显示"AI Arena 已开始调试此浏览器"横条，

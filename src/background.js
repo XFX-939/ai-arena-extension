@@ -419,13 +419,22 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         case "checkAllCompletion": sendResponse(await checkAllCompletion()); break;
         case "focusTab":          sendResponse(await handleFocusTab(msg.id)); break;
         case "readOneResponse":   sendResponse(await readOneResponse(msg.participantId)); break;
-        case "sendPromptToService":
+        case "sendPromptToService": {
+          // v4.9.0.2 fix I1: bubble resend 按钮发送时 msg.text 为空（实际 prompt 在 lastSentByPid），
+          // 用 fallback 取出真实 prompt 让守门员扫描，避免被空文本短路绕过
+          let scanText = msg.text || "";
+          if (!scanText.trim()) {
+            const svc = msg.service || "chatgpt";
+            const p = (StateMachine.participants || []).find(x => x.service === svc);
+            scanText = (p && StateMachine.lastSentByPid?.[p.id]) || "";
+          }
           sendResponse(await guardedSend({
-            text: msg.text || "",
+            text: scanText,
             msg,
             handler: () => sendPromptToService(msg.service || "chatgpt", msg.text || ""),
           }));
           break;
+        }
         case "exportSession":     sendResponse(exportSession()); break;
         case "getState":          sendResponse(StateMachine.getFullState()); break;
         case "getSelectors":      sendResponse(DEFAULT_SELECTORS[msg.platform] || {}); break;
@@ -478,6 +487,12 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             handler: () => ChatBus.broadcast(msg.text, msg.targets || [], msg.images || []),
           }));
           break;
+        // v4.9.0.2 fix: 守门员统计 stat 上报 — bridge.onConfirm/onCancel 发的消息要落地
+        case "_bumpGatekeeperStat":
+          if (msg.key && self.GatekeeperStore) {
+            try { await self.GatekeeperStore.bumpStat(msg.key); } catch (_) {}
+          }
+          sendResponse({ ok: true }); break;
         case "chatRestoreLog":
           sendResponse({ messages: ChatBus.getLog() }); break;
         case "chatClear":
@@ -1689,6 +1704,8 @@ async function guardedSend({ text, handler, msg }) {
 
     const hits = await Engine.scan(text);
     if (!hits.length) return await handler();
+    // v4.9.0.2 fix: warn-only 命中不阻断（spec §4.2 战略词软提醒），只 block 级才弹窗
+    if (typeof Engine.hasBlocking === "function" && !Engine.hasBlocking(hits)) return await handler();
 
     // 命中 → 不走 handler，return reason 给 popup
     const masked = Engine.maskText(text, hits);

@@ -8,14 +8,32 @@ const judgeSelect = $("#judge-select");
 const broadcastInput = $("#broadcast-input"), btnSend = $("#btn-send");
 const btnDebate = $("#btn-debate"), btnSummary = $("#btn-summary"), btnDebateRetry = $("#btn-debate-retry");
 const guidanceInput = $("#guidance-input"), roundBadge = $("#round-badge");
-const pptPromptBox = $("#ppt-prompt-box"), btnPptCopy = $("#btn-ppt-copy"), btnPptImageMenu = $("#btn-ppt-image-menu");
-const pptTemplateMenu = $("#ppt-template-menu"), btnPptStart = $("#btn-ppt-start"), btnPptxPrompt = $("#btn-pptx-prompt");
-const btnPptSaveMenu = $("#btn-ppt-save-menu"), pptSaveMenu = $("#ppt-save-menu");
-
+// v4.9.x: PPT 工坊全量迁出 sidepanel，DOM 引用 / 独立 storage key / pptCustomPrompts 已删。
+//         走 popup-tasks.js + background.js pptBuildPrompt 消息 + ppt-prompts.js 统一管线。
 let participants = [], debateSession = {}, flowState = "idle", streamingPollTimer = null;
-let pptPromptKind = null;
-const PPT_CUSTOM_PROMPTS_KEY = "aiArenaPptCustomPromptsV1";
-let pptCustomPrompts = { copy: "", image: "", pptx: "" };
+
+// v4.9.0.2 fix C1: sidepanel 端守门员命中处理（轻量 confirm，不引入 ChatModal 大改动）
+//   返回 true = 已处理（命中并 confirm 完）→ 调用方应 return 不再走正常逻辑
+//   返回 false = 未命中 → 调用方继续
+function handleSensitiveInSidepanel(originalMsg, resp, textField) {
+  if (!resp || resp.ok !== false || resp.reason !== "sensitive_blocked") return false;
+  const { hits = [], masked = "" } = resp;
+  const cats = [...new Set(hits.map(h => h.category))].join(" / ");
+  const choice = window.confirm(
+    `⚠ 守门员检测到 ${hits.length} 处敏感信息：${cats}\n\n` +
+    `打码后预览：\n${masked.slice(0, 200)}${masked.length > 200 ? "..." : ""}\n\n` +
+    `点【确定】= 自动打码后发送\n` +
+    `点【取消】= 不发送，返回输入框修改`
+  );
+  if (choice) {
+    chrome.runtime.sendMessage({ ...originalMsg, [textField]: masked, skipGatekeeper: true })
+      .catch(() => {});
+    addLog(`守门员: 已自动打码 ${hits.length} 处敏感信息后发送`, "warn");
+  } else {
+    addLog(`守门员: 检测到 ${hits.length} 处敏感信息，已取消发送`, "warn");
+  }
+  return true;
+}
 
 function mergeParticipants(remote) {
   if (!remote) return;
@@ -53,360 +71,7 @@ function setEditorText(text) {
 }
 function getDebateRound() { return debateSession?.rounds?.length || 0; }
 
-const PPT_TEMPLATE_META = {
-  intro: {
-    name: "技术介绍",
-    title: "技术介绍｜揭示核心原理",
-    thesis: "{对象}：基于{核心机制}实现{量化收益/能力提升}",
-    structure: "问题约束 → 机制拆解 → 实验/指标证据 → 输出收益",
-    slots: "2-4 个紧凑区域；每区包含小标题、2-4 条短句、指标数字、方法标签或微型图表",
-    visuals: "公式、伪代码、结构小图、热力图、曲线、小表格中至少 3 类",
-    angle: "解释一个技术对象为什么有效，核心是“机制可信 + 证据可验证”。",
-    layout: "中部放核心机制/架构拆解图，左侧放问题约束，右侧放实验指标或收益，下方用证据条收束。",
-    mustInclude: "必须出现机制拆解、关键公式/伪代码/链路图、至少 2 个指标或验证口径。",
-    avoid: "不要做成领域全景或宏观趋势页；不要只罗列概念。",
-    huaweiSeed: "请生成一页 16:9 华为内部技术评审 PPT 截图风格的效果图，用于介绍“{技术/机制}”的核心原理。整体必须像真实工程汇报页：白底、高信息密度、左上红色结论标题、顶部细线、右上可放黄色推进箭头、底部保留页码 / Huawei Confidential / HUAWEI 标识。标题写成“{对象}：基于{核心机制}实现{量化收益/能力提升}”，不要写成营销口号。主体采用“问题约束 → 机制拆解 → 实验/指标证据 → 输出收益”的因果链。页面分 2-4 个紧凑区域，使用黑色虚线框、浅灰底板、细箭头和红色虚线强调关键路径。每个框都要像华为工程页一样被内容填满：框内包含小标题、2-4 条短句、指标数字、方法标签或微型图表，使文字/标注占据框内约 70%-90%，不要出现只放一个词或大量留白的空心框。必须包含真实技术汇报的视觉纹理：至少出现公式/伪代码/结构小图/热力图/曲线/小表格中的 3 类；每个模块用短标签说明“输入、机制、指标、结论”。红色只强调结论、关键增益和风险点，蓝色承载技术模块，灰色承载分区。避免大插画、大图标、渐变背景、圆角卡片堆叠和空泛段落。"
-  },
-  topic: {
-    name: "技术专题",
-    title: "技术专题介绍｜总分形式",
-    thesis: "{专题名称}：围绕{关键抓手}突破{核心约束}，{指标}提升{数值}",
-    structure: "上方总判断 + 下方多方向证据；横向链路概括输入、关键方向、验证、应用、收益",
-    slots: "下方拆成 3-5 个正交方向；每个方向至少包含目标、方法、指标、证据图中的 3 类",
-    visuals: "细表格、柱状图、热力图、矩阵、流程小图、红框重点标注",
-    angle: "围绕一个专题做总分式展开，核心是“一个总判断 + 多个正交抓手”。",
-    layout: "顶部为红色总论点；中部 3-5 个并列模块；底部用指标/验证/场景条做闭环。",
-    mustInclude: "必须出现 3-5 个正交方向、每个方向的目标/方法/指标，以及一条横向贯穿链路。",
-    avoid: "不要做成单机制详解；不要让多个模块重复同一维度。",
-    huaweiSeed: "请生成一页 16:9 华为内部技术专题 PPT 截图风格的效果图，主题为“{专题名称}”。页面必须先给出红色结论标题和量化目标，标题格式接近“{专题名称}：围绕{关键抓手}突破{核心约束}，{指标}提升{数值}”。白底、严格网格、顶部细线、右上小黄箭头、底部页码和 Huawei Confidential / HUAWEI 标识。主体采用“上方总判断 + 下方多方向证据”的总分结构。上方用 1 条横向技术链路或阶段轴概括：数据/输入 → 关键技术方向 → 训练/验证 → 场景应用 → 收益。下方拆成 3-5 个正交方向，每个方向放在浅灰/白色紧凑分区中，包含“目标、方法、指标、证据图”四类信息中的至少 3 类。所有分区和模块框必须内容饱满：每个框至少有小标题、2-4 条短句、指标/约束/方法标签或微型证据图，文字与标注占框内约 70%-90%，避免大 padding、空白卡片和只列名词。多使用细表格、柱状图、热力图、矩阵、流程小图、红框重点标注和短句标签；不要只排大卡片。红色用于关键收益和结论，蓝色用于技术主体，灰色用于分区，黄色只用于推进箭头或局部高亮。整体像研发例会进展页，不像营销宣传页。"
-  },
-  compare: {
-    name: "技术对比",
-    title: "技术对比｜As-Is / To-Be",
-    thesis: "{对象}：从 As-Is 到 To-Be，通过{关键变化}带来{量化收益}",
-    structure: "左侧 As-Is 现有链路/痛点/基线指标，中间演进箭头，右侧 To-Be 目标架构/新机制/目标指标",
-    slots: "下方 2-3 个证据块；每个对比框写清基线、变化、结果",
-    visuals: "柱状对比、曲线、表格、热力图、公式推导、红色增益标尺",
-    angle: "突出从现状到目标态的变化，核心是“差异、路径、收益”。",
-    layout: "左侧 As-Is，右侧 To-Be，中间用红色演进箭头连接；底部放 2-3 个证据对比块。",
-    mustInclude: "必须出现基线指标、目标指标、关键变化点、红色收益标尺或 before/after 图。",
-    avoid: "不要只列优缺点；不要缺少量化前后对比。",
-    huaweiSeed: "请生成一页 16:9 华为内部技术对比 PPT 截图风格的效果图。标题必须是红色结论句，格式接近“{对象}：从 As-Is 到 To-Be，通过{关键变化}带来{量化收益}”。白底、顶部细线、右上小黄箭头、底部页码与 Huawei Confidential / HUAWEI 标识，整体像真实评审材料截图。主体让“差异为什么产生收益”一眼可见。推荐左中右结构：左侧 As-Is 现有链路/痛点/基线指标，中间用粗细结合的演进箭头和红色关键变化标注，右侧 To-Be 目标架构/新机制/目标指标；下方再放 2-3 个证据块，包括柱状对比、曲线、表格、热力图或公式推导。As-Is 可用灰/黑线框，To-Be 用蓝色模块，收益跃迁用红色数字、红框、红色虚线箭头或增益标尺。每个对比框和证据框都要填满：小标题下放 2-4 条短句、基线/目标数字、约束说明、方法标签或微型图表，内容占框内约 70%-90%，不要出现空洞大框。每个区域用短标签写清“基线、变化、结果”，禁止做成两个大圆角卡片或抽象插画。"
-  },
-  insight: {
-    name: "技术洞察",
-    title: "技术洞察｜新技术科普",
-    thesis: "{技术方向}：{关键变化}驱动{能力演进}，{指标}提升{数值}",
-    structure: "约束/痛点 → 技术变化 → 机制解释 → 场景收益，下面放 2-3 个证据区",
-    slots: "每个机制框、证据框、场景框包含标题、2-4 条短句、指标/约束/结论标签",
-    visuals: "公式或机制框图、趋势曲线或柱状图、场景小矩阵、红色 callout、蓝灰架构框至少 4 类",
-    angle: "解释一个新趋势/新技术为什么重要，核心是“变化原因 + 机制解释 + 场景启发”。",
-    layout: "左上放趋势或痛点，中心放机制解释，右侧放能力演进，下方放场景收益矩阵。",
-    mustInclude: "必须出现趋势判断、关键机制、应用场景、风险/边界、至少 1 个趋势图或场景矩阵。",
-    avoid: "不要做成纯科普文章；不要缺少技术边界和落地场景。",
-    huaweiSeed: "请生成一页 16:9 华为内部技术洞察 PPT 截图风格的效果图，用于解释“{新技术/新方向}”为何重要。标题必须是红色判断句，包含驱动因素和量化影响，如“{技术方向}：{关键变化}驱动{能力演进}，{指标}提升{数值}”。白底、顶部细线、右上小黄箭头、底部页码和 Huawei Confidential / HUAWEI 标识。主体不要做科幻插画，要做工程化推演页。推荐分成“约束/痛点 → 技术变化 → 机制解释 → 场景收益”四段横向链路，并在下方放 2-3 个证据区。所有机制框、证据框和场景框都要内容密实：每框包含标题、2-4 条短句、指标/约束/结论标签、微型图表或公式片段，文字和标注占框内约 70%-90%，避免留出大块空白。必须出现可验证的技术纹理：公式或机制框图、趋势曲线或柱状图、场景小矩阵、红色 callout、蓝灰架构框中的至少 4 类。用黑色/灰色承载解释，蓝色承载新技术机制，红色标出关键判断、增益和风险边界。文本短句化，像内部专家给研发团队讲清楚“为什么现在有效”，不要像公众号封面、科技海报或趋势宣传页。"
-  },
-  landscape: {
-    name: "技术全景",
-    title: "技术全景｜领域沙盘与演进",
-    thesis: "{领域/系统}：按{维度A}/{维度B}/{维度C}正交拆分，支撑{收益}提升至{目标值}",
-    structure: "高密度领域沙盘/演进地图；横向体现阶段/链路/时间演进，纵向体现能力层/数据层/模型层/场景层",
-    slots: "顶部 3 步关键突破，中部主架构/数据链路，下部 3-4 个场景扩展或能力增强证据块",
-    visuals: "虚线分区、红色突破点、蓝灰模块、黄色推进箭头、细表格、柱状指标、热力图、架构小图",
-    angle: "给出一个领域/系统的全局结构，核心是“分层、演进、能力覆盖”。",
-    layout: "横向用阶段轴或链路轴，纵向用能力层/数据层/模型层/场景层泳道，中下部放场景和指标块。",
-    mustInclude: "必须出现分层结构、关键链路、演进阶段、场景覆盖和 2-4 个指标/能力标签。",
-    avoid: "不要做成单点机制页；不要让全景图只有空框和大箭头。",
-    huaweiSeed: "请生成一页 16:9 华为内部技术全景 PPT 截图风格的效果图，主题为“{领域/系统}全景”。标题用红色结论句指出拆分维度和收益，如“{领域/系统}：按{维度A}/{维度B}/{维度C}正交拆分，支撑{收益}提升至{目标值}”。白底、顶部细线、右上小黄箭头、底部页码与 Huawei Confidential / HUAWEI 标识。主体做成高密度“领域沙盘/演进地图”，不要做宽松概念图。横向体现阶段、链路或时间演进，纵向体现能力层、数据层、模型层、场景层或业务层；每个交叉点用小模块、图标化技术块、指标标签或证据缩略图表达。推荐结构：顶部 3 步关键突破，中部一条主架构/数据链路，下部 3-4 个场景扩展或能力增强证据块。每个能力块、场景块、证据块内部必须填充标题、2-4 条短句、指标/方法/约束标签或微型图表，内容占框内约 70%-90%，避免只放一个概念词导致空白。使用虚线分区、红色突破点、蓝灰模块、黄色推进箭头、细表格、柱状指标、热力图、架构小图和红色增益标尺。只有一个主结论，信息可以密但必须有清晰层次；禁止概念堆砌、抽象 3D 沙盘、炫光背景和大面积空白。"
-  }
-};
-
-function getDiscussionSource() {
-  const question = broadcastInput?.innerText?.trim();
-  const responses = participants
-    .filter(p => (p.response || p.responsePreview || "").trim())
-    .map(p => `【${p.name}】\n${(p.response || p.responsePreview || "").trim()}`)
-    .join("\n\n");
-  if (question || responses) {
-    return [
-      question ? `【原始问题】\n${question}` : "",
-      responses ? `【AI 讨论摘录】\n${responses}` : ""
-    ].filter(Boolean).join("\n\n").slice(0, 24000);
-  }
-  return "请基于我们前面在本网页中的讨论内容整理 PPT 文案；如果你看不到前文，请先向我索要讨论材料。";
-}
-
-function loadPptCustomPrompts() {
-  chrome.storage.local.get(PPT_CUSTOM_PROMPTS_KEY, (data) => {
-    const saved = data?.[PPT_CUSTOM_PROMPTS_KEY] || {};
-    pptCustomPrompts = {
-      copy: typeof saved.copy === "string" ? saved.copy : "",
-      image: typeof saved.image === "string" ? saved.image : "",
-      pptx: typeof saved.pptx === "string" ? saved.pptx : ""
-    };
-  });
-}
-
-function renderPromptTemplate(text, context = {}) {
-  const safe = {
-    discussion: context.discussion || getDiscussionSource(),
-    imageBrief: context.imageBrief || "",
-    templateTitle: context.templateTitle || "",
-    templateName: context.templateName || "",
-    huaweiSeed: context.huaweiSeed || "",
-    templateAngle: context.templateAngle || "",
-    templateLayout: context.templateLayout || "",
-    templateMustInclude: context.templateMustInclude || "",
-    templateAvoid: context.templateAvoid || ""
-  };
-  return (text || "")
-    .replaceAll("{{discussion}}", safe.discussion)
-    .replaceAll("{{discussion_excerpt}}", safe.discussion)
-    .replaceAll("${discussion}", safe.discussion)
-    .replaceAll("{{image_brief}}", safe.imageBrief)
-    .replaceAll("{{copy}}", safe.imageBrief)
-    .replaceAll("${copy}", safe.imageBrief)
-    .replaceAll("{{template_title}}", safe.templateTitle)
-    .replaceAll("${t.title}", safe.templateTitle)
-    .replaceAll("{{template_name}}", safe.templateName)
-    .replaceAll("${t.name}", safe.templateName)
-    .replaceAll("{{template_seed}}", safe.huaweiSeed)
-    .replaceAll("{{huawei_seed}}", safe.huaweiSeed)
-    .replaceAll("${t.huaweiSeed}", safe.huaweiSeed)
-    .replaceAll("{{template_angle}}", safe.templateAngle)
-    .replaceAll("${t.angle}", safe.templateAngle)
-    .replaceAll("{{template_layout}}", safe.templateLayout)
-    .replaceAll("${t.layout}", safe.templateLayout)
-    .replaceAll("{{template_must_include}}", safe.templateMustInclude)
-    .replaceAll("${t.mustInclude}", safe.templateMustInclude)
-    .replaceAll("{{template_avoid}}", safe.templateAvoid)
-    .replaceAll("${t.avoid}", safe.templateAvoid);
-}
-
-function buildPptCopyPrompt() {
-  if (pptCustomPrompts.copy?.trim()) {
-    return renderPromptTemplate(pptCustomPrompts.copy.trim(), { discussion: getDiscussionSource() });
-  }
-  const source = getDiscussionSource();
-  return `你是华为风格企业技术汇报 PPT 的内容编译器。请把我们在本 AI Web 网页中已经展开的长期讨论，整理成后续“生成单页 PPT 效果图”可直接使用的“材料池 + 单页视觉 brief”。
-
-当前阶段：第 1 步 / 3 步：文案生成 → 图片生成 → PPT生成
-本步只做内容编译，不生成图片，不生成 PPTX，不写代码。
-
-上下文使用方式：
-- 默认你已经能看到本网页上方几十轮讨论、AI 回复和我补充的追问，请优先基于“我们的讨论内容”进行整理。
-- 下面的“补充摘录”只是为了防止网页上下文遗漏；如果它和上文不一致，以上文最近讨论为准。
-- 不要把本条 prompt、按钮名称、工作流说明当成 PPT 内容主题；它们只是操作指令。
-- 如果你完全看不到上文，也无法从补充摘录判断主题，请先向我索要讨论材料，不要凭空编造。
-
-补充摘录：
-${source}
-
-核心目标：
-1. 先建立高密度 material-pool，再确定 slide thesis、template fit、content slots、word-budget、negative constraints。
-2. 把几十轮讨论压缩成“单页华为式技术评审图”需要的高密度材料，避免下一步生图时内容空、框空、指标空。
-3. 为后续 5 类模板都准备可选择的论点和内容槽，但最后给出一段最推荐的【图片生成输入文案】。
-
-内容编译原则：
-- User brief：先明确用户真正要证明的主题、受众、汇报目的和输出形态。
-- Material pool：过量收集并保留事实、指标、术语、机制、约束、分歧、场景、反例和视觉素材；最终单页只用其中 1000-2000 字。
-- Slide thesis：生成 3-5 个候选结论型标题，标题必须说清对象、关键动作、因果机制和收益，不只是命名主题。
-- Template fit：分别判断技术介绍、技术专题、技术对比、技术洞察、技术全景哪种最适合当前讨论，不要强行套模板。
-- Content slots：为单页准备 3-5 个主模块、1-3 个 mini figure / metric strip / timeline / matrix / architecture element。
-- Density target：每个模块都要有小标题、2-4 条短句、指标/证据/方法标签或微型图，框内信息填充率目标 70%-90%。
-- Negative constraints：明确避免太空、太海报、太概念、太大卡片、太少证据、模板错配、把讨论过程画进页面。
-
-生成要求：
-1. 先生成 5000-10000 字【material-pool 内容素材池】。如果单次输出受限，请先输出尽可能完整的第一版，并在末尾明确“可继续补全素材池”；不要只输出提纲。
-2. material-pool 至少覆盖：背景与问题、用户目标、对象定义、关键机制、技术路线、对比维度、数据指标、证据链、风险约束、应用场景、落地路径、反方观点、可视化元素。
-3. 生成【template fit / scenario pick】：对 5 个模板逐一评分，说明推荐模板和备用模板。
-4. 生成【word-budget / density target】：标题、模块数、每模块文字量、图形量、指标条数量、预计框内填充率。
-5. 生成【candidate slide theses】：3-5 个结论型标题，每个说明适合的模板：技术介绍 / 技术专题 / 技术对比 / 技术洞察 / 技术全景。
-6. 生成【recommended content slots】：3-5 个主模块，每个模块必须包含模块标题、核心观点、2-4 条短 bullet、证据/指标、推荐图形、是否适合 native PPT 重建。
-7. 最后输出【图片生成输入文案】：500-900 字，必须能被下一步直接用于生成一页高密度华为式 PPT 效果图。
-
-请严格按以下结构输出，不要省略标题：
-
-【0. User brief】
-主题 / 受众 / 汇报目的 / 希望证明的核心判断 / 推荐输出页型。
-
-【1. material-pool 内容素材池：5000-10000字】
-按小标题组织，不要散文堆砌。每个小节都要包含可用于 PPT 的观点、证据、指标或可视化元素。
-
-【2. 共识 / 分歧 / 待验证假设】
-分别列出 AI 讨论中的共识、分歧、互补观点和待验证假设。
-
-【3. template fit / scenario pick】
-分别评价技术介绍、技术专题、技术对比、技术洞察、技术全景 5 类模板与当前讨论的匹配度，给出推荐模板和备用模板。
-
-【4. candidate slide theses】
-输出 3-5 个结论型标题，并标注推荐模板和推荐理由。
-
-【5. content slots + word-budget】
-输出 3-5 个主模块；每个模块按“模块标题 / 核心观点 / bullet / 证据指标 / 推荐图形 / 字数密度”组织。
-
-【6. negative constraints】
-列出本主题最容易生成失败的 5-8 条负面约束，例如太空、太概念、缺少证据、模板错配、指标不足等。
-
-【7. 图片生成输入文案】
-用 500-900 字输出下一步生图可直接使用的浓缩 brief。必须包含：结论标题、推荐模板、页面结构、模块内容、关键指标、建议图形、密度目标、负面约束。`;
-}
-
-function looksLikePptWorkflowPrompt(text) {
-  return [
-    "你是华为风格技术汇报 PPT 的内容编译器",
-    "你是华为风格企业技术汇报 PPT 的内容编译器",
-    "你是华为风格技术汇报 PPT 的视觉生成提示词执行器",
-    "你是华为风格企业技术汇报 PPT 的视觉生成器",
-    "你是图片转 PowerPoint 的重建工程师",
-    "你是图片转 PowerPoint 的语义重建工程师",
-    "当前阶段：第 1 步 / 3 步",
-    "当前阶段：第 2 步 / 3 步",
-    "当前阶段：第 3 步 / 3 步",
-    "模板风格与版式规则",
-    "版式编译：",
-    "重建目标：",
-    "讨论文案："
-  ].some(marker => text.includes(marker));
-}
-
-function extractImageBriefFromCopy(text) {
-  const source = (text || "").trim();
-  if (!source) return "";
-  const marker = source.includes("【7. 图片生成输入文案】")
-    ? "【7. 图片生成输入文案】"
-    : source.includes("【6. 图片生成输入文案】")
-      ? "【6. 图片生成输入文案】"
-      : "【5. 图片生成输入文案】";
-  const idx = source.indexOf(marker);
-  if (idx >= 0) {
-    const after = source.slice(idx + marker.length).trim();
-    const nextSection = after.search(/\n【\d+[\s\S]*?】|\n【[^\n】]+】/);
-    return (nextSection > 0 ? after.slice(0, nextSection) : after).trim();
-  }
-  return source;
-}
-
-function currentPptCopy() {
-  const responseCandidates = [
-    ...participants.filter(p => p.service === "chatgpt"),
-    ...participants.filter(p => p.service !== "chatgpt")
-  ].map(p => (p.response || p.responsePreview || "").trim()).filter(Boolean);
-
-  for (const text of responseCandidates) {
-    if (!looksLikePptWorkflowPrompt(text)) return extractImageBriefFromCopy(text);
-  }
-
-  const text = pptPromptBox?.value?.trim() || "";
-  if (text && pptPromptKind === "manual" && !looksLikePptWorkflowPrompt(text)) {
-    return extractImageBriefFromCopy(text);
-  }
-
-  return "请先点击“文案生成”并发送给 ChatGPT；等 ChatGPT 回复讨论文案后，再点击“图片生成”。不要把文案生成、图片生成或 PPT生成按钮产生的 prompt 当作讨论文案。";
-}
-
-function buildHuaweiImagePrompt(templateKey) {
-  const t = PPT_TEMPLATE_META[templateKey] || PPT_TEMPLATE_META.intro;
-  const copy = currentPptCopy();
-  if (pptCustomPrompts.image?.trim()) {
-    return renderPromptTemplate(pptCustomPrompts.image.trim(), {
-      imageBrief: copy,
-      templateTitle: t.title,
-      templateName: t.name,
-      huaweiSeed: t.huaweiSeed,
-      templateAngle: t.angle,
-      templateLayout: t.layout,
-      templateMustInclude: t.mustInclude,
-      templateAvoid: t.avoid
-    });
-  }
-  return `你是华为风格企业技术汇报 PPT 的视觉生成器。请把我们前面已经形成的 PPT 文案和讨论上下文，转化为一页 16:9 华为内部技术评审 PPT 效果图。
-
-当前阶段：第 2 步 / 3 步：文案生成 → 图片生成 → PPT生成
-本步只生成单页 PPT 效果图，不生成 PPTX，不解释过程，不输出长文案。
-
-上下文使用方式：
-- 默认你已经能看到本网页上方的文案生成结果和讨论历史，请优先使用上文最新的 PPT 文案。
-- 下面的“补充生图内容”是从上一步【图片生成输入文案】提取的浓缩 brief；如果你能看到更完整的上文，请以上文的材料池为内容来源、以下方 brief 为画面准绳。
-- 不要把本条 prompt、模板 seed、按钮名称或工作流说明画进图里；它们只用于控制风格和版式。
-- 如果你看不到上文，也无法从补充 brief 判断主题，请先要求我提供文案，不要把本 prompt 当作主题内容。
-
-补充生图内容：
-${copy}
-
-选定模板：${t.title}
-
-模板风格与版式规则（必须优先复用其结构、层级、密度和视觉语法，不要只复用几个风格词）：
-${t.huaweiSeed}
-
-本模板的差异化任务：
-- 叙事角度：${t.angle}
-- 版式骨架：${t.layout}
-- 必须包含：${t.mustInclude}
-- 避免误用：${t.avoid}
-
-请按以下顺序在内部完成画面编译：
-1. Canvas and style：16:9，白底或极浅灰底，华为内部企业技术报告截图风格，红/蓝/灰/黄配色，中文微软雅黑观感，英文和数字 Arial 观感，禁止营销海报风。
-2. Slide thesis：从上文 material-pool / 图片生成输入文案中提炼一个“结论先行”的红色标题，标题必须说清观点、对象、关键动作和收益，不要只命名主题。标题格式参考：${t.thesis}
-3. Template recipe：优先采用上面的模板风格与版式规则，以及选定模板差异化任务；复用其结构、层级、密度、证据组织方式和视觉语法，不照抄规则中的占位词。
-4. Content slots：从材料池中选择 3-5 个具体模块，包含标题、短 bullet、指标/证据、方法标签、微型图形；至少 1-3 个 mini figures / metric strips / timelines / flows / matrices / architecture elements。
-5. Word budget：总文字观感约 1000-1500 中文字；模块内使用 7-10pt 紧凑短标签，标题 18-22pt，分区标题 11-14pt；不要写长段落。
-6. Density target：每个容器内部必须被内容填满，文字/标注/图表占框内 70%-90%；只要画框，就必须有证据、指标、方法或微型图。
-7. Negative constraints：避免空白框、大圆角卡片、渐变海报、3D 炫光、大图标堆砌、浏览器边框、聊天窗口、mockup frame、lorem ipsum、伪造 logo、把 prompt 指令画进图。
-8. Output requirements：调用当前聊天的图像生成能力，只输出一张单页 PPT 效果图；不要输出解释文字；不要生成 PPTX。
-
-视觉硬约束：
-- 页眉：左上红色结论标题，顶部红/灰细线，右上可放小黄色推进箭头。
-- 页脚：左下小页码，中间可放 Huawei Confidential 或 HUAWEI TECHNOLOGIES CO., LTD.，右下可放 HUAWEI 标识风格占位。
-- 结构：页面由 2-4 个主要区域组成，使用细灰线、浅灰底板、黑色虚线框或分区标题切分；保持模板 ${t.name} 的主要版式骨架。
-- 信息纹理：混合使用小型图表、公式、热力图、矩阵、微型架构图、表格、标注、箭头、红色虚线路径和指标柱。
-- 配色：华为红 #CC0000 用于标题、结论、收益、关键箭头和虚线高亮；中蓝 #005691 / 浅蓝用于技术模块；浅灰 #F2F2F2 用于底板；黑/灰用于证据文字；黄色/橙色只用于推进箭头或局部高亮。
-- PPTX 友好：尽量让主要文字、表格、流程节点、指标条、图表和箭头看起来可被后续 native PowerPoint 对象重建；复杂纹理和小图标可以简化。
-
-最终只生成图像。`;
-}
-
-function buildImageToPptPrompt() {
-  if (pptCustomPrompts.pptx?.trim()) {
-    return renderPromptTemplate(pptCustomPrompts.pptx.trim());
-  }
-  return `你是图片转 PowerPoint 的语义重建工程师。请将我们刚生成的 PPT 效果图，或我随后上传的 PNG/JPG，重建为一份可编辑的 PowerPoint PPTX。
-
-当前阶段：第 3 步 / 3 步：文案生成 → 图片生成 → PPT生成
-上下文使用方式：
-- 默认你已经能看到本网页上方刚生成的 PPT 效果图，请把那张图作为转换对象。
-- 如果你看不到上方图片，或当前网页无法直接读取图片，请直接要求我上传 PNG/JPG。
-- 不要重新生成文案，不要重新设计图片；本步只做图片到 PPTX 的语义重建。
-
-重建原则：
-- 视觉 1:1 优先：先保持上一步效果图的整体视觉、布局、层级、配色、密度和 Huawei 技术评审页质感。
-- 再恢复可编辑性：标题、正文、表格、图表标签、流程节点、指标数字、箭头、矩形模块和主要形状尽量使用 PowerPoint 原生对象。
-- 可采用“视觉优先 + 可编辑对象覆盖”的混合重建：必要时用小面积 PNG/SVG fallback 保住复杂纹理、细小 logo、阴影、复杂图标或低编辑价值装饰，但不能把整页或大块文字区栅格化。
-- 如果可以执行文件生成，请按闭环思路完成：源图 → 结构化页面规格 / 语义对象清单 → PPTX → 渲染预览 → 评分 → 差异修正。
-- 优化对象是结构化页面规格或对象清单，不要直接堆 PPTX 字节或把整页图贴进去。
-
-重建目标：
-1. 视觉优先：PPTX 渲染后应尽量接近原图的布局、颜色、层级、字号、间距和对齐。
-2. 可编辑优先级：标题、正文、表格、图表标签、流程节点、指标数字、箭头、矩形模块和主要形状尽量使用 PowerPoint 原生对象。
-3. 禁止偷懒：不要把整页作为一张大图贴进 PPT；不要把重要文字、表格、图表整体栅格化。
-4. 允许 fallback：复杂纹理、细小 logo、阴影、复杂图标或低编辑价值装饰，可以用小 PNG/SVG fallback。
-
-重建流程：
-1. 先识别语义结构：标题区、页眉页脚、主模块、证据图、表格/图表、流程箭头、指标标签、注释说明。
-2. 为每个语义单元建立对象清单，标注 role、bbox、style、native text / native shape / native chart-table / small fallback。
-3. 元素路由：标题、正文、表格单元格、图表轴/标签/数据为 whitelist，必须 native；小箭头、徽标、装饰点为 greylist，可 native 或小 fallback；复杂纹理、微小 logo、低编辑价值装饰为 blacklist，可早期 fallback。
-4. 按视觉层级重建：背景与分区 → 主体模块 → 图表/流程 → 文字与指标 → 标注与细节。
-5. 中文字体优先使用微软雅黑或相近字体；英文和数字使用 Arial 或相近字体。
-6. fallback 图片总面积尽量控制在 5% 以内，单个 fallback 尽量不超过 1.5%，不得 rasterize 白名单内容。
-7. 如果可渲染和评分，请报告视觉还原分、可编辑性分、综合分、相似度、shape count、text shape count、picture area ratio；目标是视觉接近原图且可编辑对象占比足够高。若无法评分，明确说明限制并至少报告对象统计和 fallback 策略。
-
-交付要求：
-- 如果可以直接生成文件，请输出 PPTX。
-- 同时说明：哪些元素是原生可编辑，哪些元素用了 fallback，以及为什么。
-- 必须检查中文文本是否乱码或异常问号；发现乱码时先修复，不要交付。
-- 如果当前环境不能直接产出 PPTX，请先输出可执行的重建方案、对象清单、页面尺寸、颜色/字体规范、fallback 策略，并明确需要我上传哪张图片。`;
-}
-
+// v4.9.x: PPT_TEMPLATE_META 已迁至 ppt-prompts.js（统一来源），sidepanel 不再重复定义。
 
 // ── 日志 ──
 function addLog(msg, type = "info") {
@@ -975,7 +640,13 @@ async function doBroadcast() {
   trackConversation(participants.length);
 
   try {
-    const r = await chrome.runtime.sendMessage({ type: "broadcast", text, images: hasImages ? pendingImages : undefined });
+    const broadcastMsg = { type: "broadcast", text, images: hasImages ? pendingImages : undefined };
+    const r = await chrome.runtime.sendMessage(broadcastMsg);
+    // v4.9.0.2 fix C1: 守门员命中 → 轻量 confirm 处理（自动打码后发 / 取消）
+    if (handleSensitiveInSidepanel(broadcastMsg, r, "text")) {
+      btnSend.disabled = false; btnSend.innerHTML = "发送";
+      return;
+    }
     if (r) {
       injectResults = {};
       for (const [id, v] of Object.entries(r)) {
@@ -1001,44 +672,7 @@ async function doBroadcast() {
 btnSend.addEventListener("click", doBroadcast);
 broadcastInput.addEventListener("keydown", (e) => { if (e.key === "Enter" && e.ctrlKey) { e.preventDefault(); doBroadcast(); } });
 
-// ── PPT 制作 block ──
-function setPptPrompt(text, kind = "manual") {
-  if (!pptPromptBox) return;
-  pptPromptBox.value = text;
-  pptPromptKind = kind;
-  pptPromptBox.focus();
-}
-
-async function sendPptPromptToChatGPT() {
-  const text = pptPromptBox?.value?.trim() || "";
-  if (!text) { addLog("请先生成或填写 PPT prompt", "error"); return; }
-  if (btnPptStart.disabled) return;
-  btnPptStart.disabled = true;
-  btnPptStart.innerHTML = '<span class="btn-spinner btn-dark-spinner"></span> 发送中...';
-  try {
-    const r = await chrome.runtime.sendMessage({ type: "sendPromptToService", service: "chatgpt", text });
-    if (!r?.ok) {
-      addLog(`发送给 ChatGPT 失败: ${r?.error || "未知错误"}`, "error");
-      return;
-    }
-    addLog(`已发送给 ChatGPT：${r.name || "GPT"}`, "success");
-    participants.forEach(p => {
-      if (p.id === r.participantId) {
-        p._pollStatus = null;
-        p._textLength = 0;
-      } else {
-        p._pollStatus = "ready";
-      }
-    });
-    renderParticipants();
-    startStreamingPoll([r.participantId]);
-  } catch (e) {
-    addLog("发送给 ChatGPT 失败: " + e.message, "error");
-  } finally {
-    btnPptStart.disabled = false;
-    btnPptStart.textContent = "开始生成";
-  }
-}
+// v4.9.x: PPT 制作 block 已整体迁出（setPptPrompt / sendPptPromptToChatGPT 已删）。
 
 function updateTaskState() {
   const el = $("#task-state");
@@ -1054,75 +688,9 @@ function updateTaskState() {
   el.textContent = labels[flowState] || "准备就绪";
 }
 
-btnPptCopy?.addEventListener("click", () => {
-  setPptPrompt(buildPptCopyPrompt(), "copy-prompt");
-  addLog("已生成讨论文案 prompt", "info");
-});
-
-btnPptImageMenu?.addEventListener("click", (e) => {
-  e.stopPropagation();
-  pptSaveMenu?.classList.remove("open");
-  pptTemplateMenu?.classList.toggle("open");
-});
-
-pptTemplateMenu?.querySelectorAll(".ppt-template-item").forEach(btn => {
-  btn.addEventListener("click", () => {
-    const key = btn.dataset.template || "intro";
-    setPptPrompt(buildHuaweiImagePrompt(key), "image-prompt");
-    pptTemplateMenu.classList.remove("open");
-    addLog(`已生成「${PPT_TEMPLATE_META[key]?.name || "图片生成"}」prompt`, "info");
-  });
-});
-
-btnPptxPrompt?.addEventListener("click", () => {
-  setPptPrompt(buildImageToPptPrompt(), "pptx-prompt");
-  addLog("已生成图片转 PPTX prompt", "info");
-});
-
-let pptPromptInputTimer = null;
-pptPromptBox?.addEventListener("input", () => {
-  clearTimeout(pptPromptInputTimer);
-  pptPromptInputTimer = setTimeout(() => { pptPromptKind = "manual"; }, 0);
-});
-
-btnPptStart?.addEventListener("click", sendPptPromptToChatGPT);
-
-btnPptSaveMenu?.addEventListener("click", (e) => {
-  e.stopPropagation();
-  pptTemplateMenu?.classList.remove("open");
-  pptSaveMenu?.classList.toggle("open");
-});
-
-pptSaveMenu?.querySelectorAll("[data-save-prompt]").forEach(btn => {
-  btn.addEventListener("click", () => {
-    const kind = btn.dataset.savePrompt;
-    const text = pptPromptBox?.value?.trim() || "";
-    if (!text) {
-      addLog("请先在输入框中填写要保存的 prompt", "error");
-      return;
-    }
-    if (!["copy", "image", "pptx"].includes(kind)) return;
-    pptCustomPrompts = { ...pptCustomPrompts, [kind]: text };
-    chrome.storage.local.set({ [PPT_CUSTOM_PROMPTS_KEY]: pptCustomPrompts }, () => {
-      const label = kind === "copy" ? "文案" : kind === "image" ? "图片" : "PPT";
-      addLog(`已保存${label} prompt，下次点击对应按钮会优先使用`, "success");
-    });
-    pptSaveMenu.classList.remove("open");
-  });
-});
-
-document.addEventListener("click", (e) => {
-  if (pptTemplateMenu?.classList.contains("open")) {
-    if (e.target !== btnPptImageMenu && !pptTemplateMenu.contains(e.target)) {
-      pptTemplateMenu.classList.remove("open");
-    }
-  }
-  if (pptSaveMenu?.classList.contains("open")) {
-    if (e.target !== btnPptSaveMenu && !pptSaveMenu.contains(e.target)) {
-      pptSaveMenu.classList.remove("open");
-    }
-  }
-});
+// v4.9.x: PPT 工坊所有按钮事件（btnPptCopy / btnPptImageMenu / pptTemplateMenu /
+//         btnPptxPrompt / pptPromptBox input / btnPptStart / btnPptSaveMenu / pptSaveMenu）
+//         + document.click 关菜单逻辑 已整体删除，迁至 popup-tasks.js。
 
 // ── 辩论模式切换 ──
 let debateMode = "free";
@@ -1149,7 +717,13 @@ btnDebate.addEventListener("click", async () => {
   try {
     const concise = $("#concise-mode")?.checked || false;
     // v4.8.38: needsConfirm 路径 — handleDebateRound 探测到 polling 中的 AI 会先返回提示
-    let r = await chrome.runtime.sendMessage({ type: "debateRound", style: debateMode, guidance, concise });
+    const debateMsg = { type: "debateRound", style: debateMode, guidance, concise };
+    let r = await chrome.runtime.sendMessage(debateMsg);
+    // v4.9.0.2 fix C1: 守门员命中（guidance 含敏感词）
+    if (handleSensitiveInSidepanel(debateMsg, r, "guidance")) {
+      btnDebate.disabled = false; btnDebate.innerHTML = `开始辩论（第${getDebateRound() + 1}轮）`;
+      return;
+    }
     if (r?.needsConfirm) {
       if (window.confirm(r.message)) {
         r = await chrome.runtime.sendMessage({ type: "debateRound", style: debateMode, guidance, concise, force: true });
@@ -1199,7 +773,14 @@ btnSummary.addEventListener("click", async () => {
   btnSummary.disabled = true; btnSummary.innerHTML = '<span class="btn-spinner"></span> 总结中...';
   addLog("生成总结...", "info");
   try {
-    const r = await chrome.runtime.sendMessage({ type: "summary", judgeId });
+    const summaryMsg = { type: "summary", judgeId };
+    const r = await chrome.runtime.sendMessage(summaryMsg);
+    // v4.9.0.2 fix C1: 防御性接守门员（当前 sidepanel summary 不带 customInstruction 巧合安全，
+    // 但一旦 v4.9.1 加可编辑 customInstruction 立即生效）
+    if (handleSensitiveInSidepanel(summaryMsg, r, "customInstruction")) {
+      btnSummary.disabled = false; btnSummary.innerHTML = '输出总结';
+      return;
+    }
     if (r?.ok) { addLog("总结已发送", "success"); startStreamingPoll(); }
     else addLog(`失败: ${r?.error}`, "error");
   } catch (e) { addLog("失败: " + e.message, "error"); }
@@ -1380,7 +961,7 @@ $$(".stats-tab").forEach(btn => {
 });
 
 loadStats();
-loadPptCustomPrompts();
+// v4.9.x: loadPptCustomPrompts() 调用已删，PPT 工坊迁至 popup。
 
 // ── 通知权限 ──
 if ("Notification" in window) Notification.requestPermission();
