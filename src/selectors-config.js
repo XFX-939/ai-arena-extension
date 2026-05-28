@@ -165,7 +165,11 @@ const DEFAULT_SELECTORS = {
       '[class*="generating"]'
     ],
     sendButton: [
-      'button[class*="send"]',
+      // v5.2.15: MCP 实测真 class 含 bg-g-send-msg-btn-bg / send-msg-btn-bg / [&_svg]:size-[16px]
+      'button[class*="send-msg-btn"]',         // 最精准（豆包专属）
+      'button[class*="g-send-msg"]',           // bg-g-send-msg-* hash 命名空间
+      'button[aria-label*="发送"]',             // aria-label 兜底（未来若加 a11y）
+      'button[class*="send"]',                  // 历史
       '[class*="send-btn"]'
     ],
     userMessage: [
@@ -241,10 +245,16 @@ const DEFAULT_SELECTORS = {
     ],
     streaming: [
       'button[class*="stop"]',
+      'button[aria-label*="停止"]',
+      'button[aria-label*="Stop"]',
       '[class*="generating"]',
       '[class*="loading"]'
     ],
     sendButton: [
+      // v5.2.15: 防御加强 — Kimi 真 send 按钮 class 未实测，加 aria-label 兜底
+      'button[aria-label*="发送"]',
+      'button[aria-label*="Send"]',
+      'button[aria-label="提交"]',
       'button[class*="send"]',
       'button[class*="submit"]'
     ],
@@ -272,10 +282,16 @@ const DEFAULT_SELECTORS = {
     ],
     streaming: [
       'button[class*="stop"]',
+      'button[aria-label*="停止"]',
+      'button[aria-label*="Stop"]',
       '[class*="generating"]',
       '[class*="loading"]'
     ],
     sendButton: [
+      // v5.2.15: 防御加强 — 元宝真 send 按钮未实测，加 aria-label 兜底
+      'button[aria-label*="发送"]',
+      'button[aria-label*="Send"]',
+      'button[aria-label="提交"]',
       'button[class*="send"]',
       'button[class*="submit"]'
     ],

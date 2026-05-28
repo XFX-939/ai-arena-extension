@@ -67,7 +67,7 @@ try {
   // 2) 读 manifest version_name 验证版本同步（直接读源文件）
   const manifest = JSON.parse(fs.readFileSync(path.join(EXT_PATH, "manifest.json"), "utf8"));
   console.log(`[smoke] manifest version: ${manifest.version}, version_name: ${manifest.version_name}`);
-  check("manifest version_name = 5.2.14-decoration-banner-strip", manifest.version_name === "5.2.14-decoration-banner-strip", `actual: ${manifest.version_name}`);
+  check("manifest version_name = 5.2.15-sendbutton-aria-fallback", manifest.version_name === "5.2.15-sendbutton-aria-fallback", `actual: ${manifest.version_name}`);
 
   // 3) 打开 sidepanel.html（作为普通 tab），验证 DOM
   const sidepanelPage = await context.newPage();
@@ -75,10 +75,10 @@ try {
   await sidepanelPage.waitForLoadState("domcontentloaded");
 
   const versionBadge = await sidepanelPage.locator(".version").textContent();
-  check("sidepanel version badge", versionBadge === "v5.2.14-decoration-banner-strip", `actual: "${versionBadge}"`);
+  check("sidepanel version badge", versionBadge === "v5.2.15-sendbutton-aria-fallback", `actual: "${versionBadge}"`);
 
   const footerVersion = await sidepanelPage.locator(".footer").textContent();
-  check("sidepanel footer version", footerVersion?.includes("v5.2.14-decoration-banner-strip"), `actual: "${footerVersion?.slice(0, 100)}"`);
+  check("sidepanel footer version", footerVersion?.includes("v5.2.15-sendbutton-aria-fallback"), `actual: "${footerVersion?.slice(0, 100)}"`);
 
   const openChatBtn = await sidepanelPage.locator("#btn-open-chat").count();
   check('sidepanel has "🪟 群聊" button', openChatBtn === 1);
@@ -96,7 +96,7 @@ try {
   await popupPage.waitForLoadState("domcontentloaded");
 
   const popupVersion = await popupPage.locator(".chat-version").textContent();
-  check("popup chat-version = v5.2.14-decoration-banner-strip", popupVersion === "v5.2.14-decoration-banner-strip", `actual: "${popupVersion}"`);
+  check("popup chat-version = v5.2.15-sendbutton-aria-fallback", popupVersion === "v5.2.15-sendbutton-aria-fallback", `actual: "${popupVersion}"`);
 
   // 图标资产验证（v4.0.11）
   const assetsOk = await popupPage.evaluate(async (extId) => {
@@ -2652,12 +2652,12 @@ try {
     hasCurrentVersion: typeof window.ChatUpdateCheck?.currentVersion === "function",
     hasNewerHelper: typeof window.ChatUpdateCheck?._hasNewer === "function",
     curVer: window.ChatUpdateCheck?.currentVersion?.(),
-    hasNewerSelfTest: window.ChatUpdateCheck?._hasNewer?.("5.2.14-decoration-banner-strip", "v5.3.0-beta"),
-    hasNewerSameTest: window.ChatUpdateCheck?._hasNewer?.("5.2.14-decoration-banner-strip", "v5.2.14-decoration-banner-strip"),
+    hasNewerSelfTest: window.ChatUpdateCheck?._hasNewer?.("5.2.15-sendbutton-aria-fallback", "v5.3.0-beta"),
+    hasNewerSameTest: window.ChatUpdateCheck?._hasNewer?.("5.2.15-sendbutton-aria-fallback", "v5.2.15-sendbutton-aria-fallback"),
   }));
-  check("v5.2.0 运行时: ChatUpdateCheck API 暴露 + currentVersion 返回 5.2.14-decoration-banner-strip + hasNewer 比对逻辑正确",
+  check("v5.2.0 运行时: ChatUpdateCheck API 暴露 + currentVersion 返回 5.2.15-sendbutton-aria-fallback + hasNewer 比对逻辑正确",
     v52ApiRuntime.hasApi && v52ApiRuntime.hasCurrentVersion && v52ApiRuntime.hasNewerHelper &&
-    v52ApiRuntime.curVer === "5.2.14-decoration-banner-strip" &&
+    v52ApiRuntime.curVer === "5.2.15-sendbutton-aria-fallback" &&
     v52ApiRuntime.hasNewerSelfTest === true &&
     v52ApiRuntime.hasNewerSameTest === false,
     JSON.stringify(v52ApiRuntime));
@@ -2785,6 +2785,17 @@ try {
     /'\[class\*="ads-"\]'/.test(injSrc) &&
     /'\[class\*="advert"\]'/.test(injSrc),
     "NOISE_SEL 缺 popup/ads-/advert");
+
+  // ── v5.2.15: 豆包/Kimi/元宝 sendButton 防御加强（aria-label 兜底 + 豆包精准 send-msg-btn）──
+  check("v5.2.15: 豆包 sendButton 加 send-msg-btn 精准 selector（MCP 实测豆包真 class）",
+    /'button\[class\*="send-msg-btn"\]'/.test(selSrc),
+    "豆包 sendButton 缺 send-msg-btn 精准");
+  check("v5.2.15: Kimi sendButton 加 aria-label 兜底",
+    /kimi:[\s\S]{0,2000}?sendButton[\s\S]*?'button\[aria-label\*="发送"\]'/.test(selSrc),
+    "Kimi sendButton 缺 aria-label 防御");
+  check("v5.2.15: 元宝 sendButton 加 aria-label 兜底",
+    /yuanbao:[\s\S]{0,2000}?sendButton[\s\S]*?'button\[aria-label\*="发送"\]'/.test(selSrc),
+    "元宝 sendButton 缺 aria-label 防御");
 
   // v4.8.52: Tab 模式 debugger 提示
   //   chrome.debugger.attach 会强制显示"AI Arena 已开始调试此浏览器"横条，
