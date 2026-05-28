@@ -427,6 +427,11 @@
     });
   });
 
+  // v5.2.0: 顶部检查更新按钮 ↻ — 手动触发，调 GitHub Releases API
+  document.getElementById("btn-update-check")?.addEventListener("click", () => {
+    window.ChatUpdateCheck?.checkAndShow({ manual: true }).catch(() => {});
+  });
+
   // ── 顶部彻底初始化按钮 ⚡ ──
   // v5.0.0-beta: 彻底重置 改用 ChatModal 替代原生 confirm
   function doHardReset() {

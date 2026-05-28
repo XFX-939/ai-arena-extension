@@ -67,7 +67,7 @@ try {
   // 2) 读 manifest version_name 验证版本同步（直接读源文件）
   const manifest = JSON.parse(fs.readFileSync(path.join(EXT_PATH, "manifest.json"), "utf8"));
   console.log(`[smoke] manifest version: ${manifest.version}, version_name: ${manifest.version_name}`);
-  check("manifest version_name = 5.1.0a-beta", manifest.version_name === "5.1.0a-beta", `actual: ${manifest.version_name}`);
+  check("manifest version_name = 5.2.0-beta", manifest.version_name === "5.2.0-beta", `actual: ${manifest.version_name}`);
 
   // 3) 打开 sidepanel.html（作为普通 tab），验证 DOM
   const sidepanelPage = await context.newPage();
@@ -75,10 +75,10 @@ try {
   await sidepanelPage.waitForLoadState("domcontentloaded");
 
   const versionBadge = await sidepanelPage.locator(".version").textContent();
-  check("sidepanel version badge", versionBadge === "v5.1.0a-beta", `actual: "${versionBadge}"`);
+  check("sidepanel version badge", versionBadge === "v5.2.0-beta", `actual: "${versionBadge}"`);
 
   const footerVersion = await sidepanelPage.locator(".footer").textContent();
-  check("sidepanel footer version", footerVersion?.includes("v5.1.0a-beta"), `actual: "${footerVersion?.slice(0, 100)}"`);
+  check("sidepanel footer version", footerVersion?.includes("v5.2.0-beta"), `actual: "${footerVersion?.slice(0, 100)}"`);
 
   const openChatBtn = await sidepanelPage.locator("#btn-open-chat").count();
   check('sidepanel has "🪟 群聊" button', openChatBtn === 1);
@@ -96,7 +96,7 @@ try {
   await popupPage.waitForLoadState("domcontentloaded");
 
   const popupVersion = await popupPage.locator(".chat-version").textContent();
-  check("popup chat-version = v5.1.0a-beta", popupVersion === "v5.1.0a-beta", `actual: "${popupVersion}"`);
+  check("popup chat-version = v5.2.0-beta", popupVersion === "v5.2.0-beta", `actual: "${popupVersion}"`);
 
   // 图标资产验证（v4.0.11）
   const assetsOk = await popupPage.evaluate(async (extId) => {
@@ -2453,30 +2453,30 @@ try {
     /handleSensitiveInSidepanel\(summaryMsg,\s*r,\s*"customInstruction"\)/.test(sideV492),
     "sidepanel.js 缺 handleSensitiveInSidepanel 或 3 处接入不全");
 
-  // ── v5.1.0a-beta polish: placeholder 动态化 + 重置弹窗美化 ──
+  // ── v5.2.0-beta polish: placeholder 动态化 + 重置弹窗美化 ──
   const taskMenuV5 = fs.readFileSync(path.join(EXT_PATH, "popup-task-menu.js"), "utf8");
   const popupJsV5  = fs.readFileSync(path.join(EXT_PATH, "popup.js"), "utf8");
   const tasksJsV5  = fs.readFileSync(path.join(EXT_PATH, "popup-tasks.js"), "utf8");
 
-  check("v5.1.0a-beta polish ①: popup-task-menu 含 PLACEHOLDER_BY_TASK 4 模式 + updatePlaceholder",
+  check("v5.2.0-beta polish ①: popup-task-menu 含 PLACEHOLDER_BY_TASK 4 模式 + updatePlaceholder",
     /PLACEHOLDER_BY_TASK\s*=\s*\{[\s\S]{0,500}ask:[\s\S]{0,200}debate:[\s\S]{0,200}summary:[\s\S]{0,200}ppt:/.test(taskMenuV5) &&
     /function updatePlaceholder/.test(taskMenuV5),
     "popup-task-menu 缺 PLACEHOLDER_BY_TASK 或 updatePlaceholder");
-  check("v5.1.0a-beta polish ①: setTask 和 menu click 都调 updatePlaceholder",
+  check("v5.2.0-beta polish ①: setTask 和 menu click 都调 updatePlaceholder",
     (taskMenuV5.match(/updatePlaceholder\(current\)/g) || []).length >= 3,
     "updatePlaceholder 调用点不全（menu click / setTask / 首次 init 应至少 3 处）");
-  check("v5.1.0a-beta polish ①: debate/summary placeholder 含'留空'提示",
+  check("v5.2.0-beta polish ①: debate/summary placeholder 含'留空'提示",
     /debate:[\s\S]{0,200}留空/.test(taskMenuV5) &&
     /summary:[\s\S]{0,200}留空/.test(taskMenuV5),
     "debate/summary placeholder 没提示用户可'留空直接发送'");
 
-  check("v5.1.0a-beta polish ②: popup.js btn-hard-reset 改用 ChatModal.show",
+  check("v5.2.0-beta polish ②: popup.js btn-hard-reset 改用 ChatModal.show",
     /btn-hard-reset[\s\S]{0,500}window\.ChatModal\.show\(\{[\s\S]{0,300}title:\s*"彻底重置/.test(popupJsV5),
     "btn-hard-reset 仍用原生 confirm");
-  check("v5.1.0a-beta polish ②: popup.js btn-clear 改用 ChatModal.show",
+  check("v5.2.0-beta polish ②: popup.js btn-clear 改用 ChatModal.show",
     /\$clear\.addEventListener[\s\S]{0,500}window\.ChatModal\.show\(\{[\s\S]{0,300}title:\s*"清空群聊/.test(popupJsV5),
     "btn-clear 仍用原生 confirm");
-  check("v5.1.0a-beta polish ②: popup-tasks #rp-btn-reset 改用 ChatModal.show",
+  check("v5.2.0-beta polish ②: popup-tasks #rp-btn-reset 改用 ChatModal.show",
     /rp-btn-reset[\s\S]{0,500}window\.ChatModal\.show\(\{[\s\S]{0,300}title:\s*"重置会话/.test(tasksJsV5),
     "rp-btn-reset 仍用原生 confirm");
 
@@ -2494,14 +2494,14 @@ try {
     const afterAsk = $inp?.dataset?.placeholder || "";
     return { before, afterDebate, afterAsk };
   });
-  check("v5.1.0a-beta polish ① 运行时: setTask('debate') 后 placeholder 含'辩论引导'+'留空'",
+  check("v5.2.0-beta polish ① 运行时: setTask('debate') 后 placeholder 含'辩论引导'+'留空'",
     placeholderRuntime.afterDebate.includes("辩论引导") && placeholderRuntime.afterDebate.includes("留空"),
     `actual: ${JSON.stringify(placeholderRuntime)}`);
-  check("v5.1.0a-beta polish ① 运行时: 切回 ask 后 placeholder 恢复原文",
+  check("v5.2.0-beta polish ① 运行时: 切回 ask 后 placeholder 恢复原文",
     placeholderRuntime.afterAsk.includes("Ctrl+Enter 发送") && placeholderRuntime.afterAsk.includes("@ 单发"),
     `actual: ${JSON.stringify(placeholderRuntime)}`);
 
-  // v5.1.0a-beta fix: ChatModal escListener 不再泄漏（点按钮关 modal 后 document 上无残留 keydown）
+  // v5.2.0-beta fix: ChatModal escListener 不再泄漏（点按钮关 modal 后 document 上无残留 keydown）
   const modalListenerLeak = await popupPage.evaluate(async () => {
     // 准备：先清干净
     if (!window.ChatModal) return { err: "ChatModal 未加载" };
@@ -2527,7 +2527,7 @@ try {
 
     return { primaryFired, modalGone: !document.querySelector(".arena-modal-overlay") };
   });
-  check("v5.1.0a-beta fix: 点按钮关 modal 后 Enter 不再泄漏触发 primary.onClick（修彻底重置 bug）",
+  check("v5.2.0-beta fix: 点按钮关 modal 后 Enter 不再泄漏触发 primary.onClick（修彻底重置 bug）",
     !modalListenerLeak.err && modalListenerLeak.primaryFired === 1 && modalListenerLeak.modalGone === true,
     `actual: ${JSON.stringify(modalListenerLeak)} — 期望 primaryFired===1（仅点按钮那一次），如果 >1 说明 Enter 泄漏 listener 又触发了`);
 
@@ -2607,6 +2607,59 @@ try {
   check("v5.1.0 运行时: 主题 G 的 --accent = #a855f7 / H 的 --accent = #4d8b56",
     v51ThemeRuntime.gAccent === "#a855f7" && v51ThemeRuntime.hAccent === "#4d8b56",
     JSON.stringify(v51ThemeRuntime));
+
+  // ── v5.2.0: 检查更新按钮 + GitHub Releases API ──
+  const updateJsV52 = fs.readFileSync(path.join(EXT_PATH, "popup-update-check.js"), "utf8");
+  const popupHtmlV52 = fs.readFileSync(path.join(EXT_PATH, "popup.html"), "utf8");
+  const popupJsV52   = fs.readFileSync(path.join(EXT_PATH, "popup.js"), "utf8");
+  const manifestV52  = fs.readFileSync(path.join(EXT_PATH, "manifest.json"), "utf8");
+
+  check("v5.2.0 ①: popup-update-check.js 暴露 ChatUpdateCheck.checkAndShow + 24h 节流常量",
+    /window\.ChatUpdateCheck\s*=\s*\{[\s\S]{0,300}checkAndShow/.test(updateJsV52) &&
+    /AUTO_CHECK_INTERVAL_MS\s*=\s*24\s*\*\s*60\s*\*\s*60\s*\*\s*1000/.test(updateJsV52),
+    "popup-update-check.js 缺 API 或 24h 节流");
+
+  check("v5.2.0 ①: 调 GitHub Releases API 正确仓库（owner/name + /releases/latest）",
+    /REPO_OWNER\s*=\s*"TianLin0509"/.test(updateJsV52) &&
+    /REPO_NAME\s*=\s*"ai-arena-extension"/.test(updateJsV52) &&
+    /api\.github\.com\/repos[\s\S]{0,200}releases\/latest/.test(updateJsV52),
+    "API URL / 仓库名不对");
+
+  check("v5.2.0 ①: 弹 3 按钮 modal — 下载 / changelog / 暂不更新",
+    /下载新版/.test(updateJsV52) &&
+    /查看完整 changelog/.test(updateJsV52) &&
+    /暂不更新/.test(updateJsV52),
+    "modal 3 按钮文案不全");
+
+  check("v5.2.0 ②: popup.html 顶栏含 #btn-update-check 按钮 + 引入 popup-update-check.js",
+    /<button class="btn-icon" id="btn-update-check"/.test(popupHtmlV52) &&
+    /<script src="popup-update-check\.js"><\/script>/.test(popupHtmlV52),
+    "popup.html 缺按钮或 script");
+
+  check("v5.2.0 ③: popup.js 绑定 btn-update-check click → ChatUpdateCheck.checkAndShow({ manual: true })",
+    /getElementById\("btn-update-check"\)[\s\S]{0,300}ChatUpdateCheck\?\.checkAndShow\(\{\s*manual:\s*true/.test(popupJsV52),
+    "popup.js 没绑按钮 click");
+
+  check("v5.2.0 ④: manifest.json host_permissions 含 api.github.com",
+    /api\.github\.com\/\*/.test(manifestV52),
+    "manifest 没加 api.github.com host permission");
+
+  // 运行时：popup 中 ChatUpdateCheck.checkAndShow({ manual: true }) 真发 fetch
+  // 注意：实际网络 fetch GitHub 会成功（fail open 也行），主要验证 API 暴露 + 函数能跑
+  const v52ApiRuntime = await popupPage.evaluate(() => ({
+    hasApi: typeof window.ChatUpdateCheck?.checkAndShow === "function",
+    hasCurrentVersion: typeof window.ChatUpdateCheck?.currentVersion === "function",
+    hasNewerHelper: typeof window.ChatUpdateCheck?._hasNewer === "function",
+    curVer: window.ChatUpdateCheck?.currentVersion?.(),
+    hasNewerSelfTest: window.ChatUpdateCheck?._hasNewer?.("5.2.0-beta", "v5.3.0-beta"),
+    hasNewerSameTest: window.ChatUpdateCheck?._hasNewer?.("5.2.0-beta", "v5.2.0-beta"),
+  }));
+  check("v5.2.0 运行时: ChatUpdateCheck API 暴露 + currentVersion 返回 5.2.0-beta + hasNewer 比对逻辑正确",
+    v52ApiRuntime.hasApi && v52ApiRuntime.hasCurrentVersion && v52ApiRuntime.hasNewerHelper &&
+    v52ApiRuntime.curVer === "5.2.0-beta" &&
+    v52ApiRuntime.hasNewerSelfTest === true &&
+    v52ApiRuntime.hasNewerSameTest === false,
+    JSON.stringify(v52ApiRuntime));
 
   // v4.8.52: Tab 模式 debugger 提示
   //   chrome.debugger.attach 会强制显示"AI Arena 已开始调试此浏览器"横条，
