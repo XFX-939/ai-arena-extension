@@ -27,8 +27,8 @@
     cat:     { dir: "icons/heroes-cat",    name: "小猫", desc: "毛茸茸 Q 版萌猫", ext: "webp" },
     chick:   { dir: "icons/heroes-chick",  name: "小鸡", desc: "黄色小鸡 meme·童趣", ext: "webp" },
     leader:  { dir: "icons/heroes-leader", name: "领袖", desc: "AI 公司 CEO 手捧 logo", ext: "webp" },
-    labubu:  { dir: "icons/heroes-labubu", name: "潮玩", desc: "Labubu 潮玩手办主题风", ext: "png" },
-    qq:      { dir: "icons/heroes-qq",     name: "怀旧", desc: "QQ 经典怀旧头像·童年回忆", ext: "png" },
+    labubu:  { dir: "icons/heroes-labubu", name: "潮玩", desc: "Labubu 潮玩手办主题风", ext: "webp" },
+    qq:      { dir: "icons/heroes-qq",     name: "怀旧", desc: "QQ 经典怀旧头像·童年回忆", ext: "webp" },
   };
   const IDS = ["claude","gemini","chatgpt","deepseek","doubao","qwen","kimi","yuanbao","grok","huawei"];
 

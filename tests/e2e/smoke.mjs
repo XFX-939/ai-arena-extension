@@ -67,7 +67,7 @@ try {
   // 2) 读 manifest version_name 验证版本同步（直接读源文件）
   const manifest = JSON.parse(fs.readFileSync(path.join(EXT_PATH, "manifest.json"), "utf8"));
   console.log(`[smoke] manifest version: ${manifest.version}, version_name: ${manifest.version_name}`);
-  check("manifest version_name = 5.1.0-beta", manifest.version_name === "5.1.0-beta", `actual: ${manifest.version_name}`);
+  check("manifest version_name = 5.1.0a-beta", manifest.version_name === "5.1.0a-beta", `actual: ${manifest.version_name}`);
 
   // 3) 打开 sidepanel.html（作为普通 tab），验证 DOM
   const sidepanelPage = await context.newPage();
@@ -75,10 +75,10 @@ try {
   await sidepanelPage.waitForLoadState("domcontentloaded");
 
   const versionBadge = await sidepanelPage.locator(".version").textContent();
-  check("sidepanel version badge", versionBadge === "v5.1.0-beta", `actual: "${versionBadge}"`);
+  check("sidepanel version badge", versionBadge === "v5.1.0a-beta", `actual: "${versionBadge}"`);
 
   const footerVersion = await sidepanelPage.locator(".footer").textContent();
-  check("sidepanel footer version", footerVersion?.includes("v5.1.0-beta"), `actual: "${footerVersion?.slice(0, 100)}"`);
+  check("sidepanel footer version", footerVersion?.includes("v5.1.0a-beta"), `actual: "${footerVersion?.slice(0, 100)}"`);
 
   const openChatBtn = await sidepanelPage.locator("#btn-open-chat").count();
   check('sidepanel has "🪟 群聊" button', openChatBtn === 1);
@@ -96,7 +96,7 @@ try {
   await popupPage.waitForLoadState("domcontentloaded");
 
   const popupVersion = await popupPage.locator(".chat-version").textContent();
-  check("popup chat-version = v5.1.0-beta", popupVersion === "v5.1.0-beta", `actual: "${popupVersion}"`);
+  check("popup chat-version = v5.1.0a-beta", popupVersion === "v5.1.0a-beta", `actual: "${popupVersion}"`);
 
   // 图标资产验证（v4.0.11）
   const assetsOk = await popupPage.evaluate(async (extId) => {
@@ -2453,30 +2453,30 @@ try {
     /handleSensitiveInSidepanel\(summaryMsg,\s*r,\s*"customInstruction"\)/.test(sideV492),
     "sidepanel.js 缺 handleSensitiveInSidepanel 或 3 处接入不全");
 
-  // ── v5.1.0-beta polish: placeholder 动态化 + 重置弹窗美化 ──
+  // ── v5.1.0a-beta polish: placeholder 动态化 + 重置弹窗美化 ──
   const taskMenuV5 = fs.readFileSync(path.join(EXT_PATH, "popup-task-menu.js"), "utf8");
   const popupJsV5  = fs.readFileSync(path.join(EXT_PATH, "popup.js"), "utf8");
   const tasksJsV5  = fs.readFileSync(path.join(EXT_PATH, "popup-tasks.js"), "utf8");
 
-  check("v5.1.0-beta polish ①: popup-task-menu 含 PLACEHOLDER_BY_TASK 4 模式 + updatePlaceholder",
+  check("v5.1.0a-beta polish ①: popup-task-menu 含 PLACEHOLDER_BY_TASK 4 模式 + updatePlaceholder",
     /PLACEHOLDER_BY_TASK\s*=\s*\{[\s\S]{0,500}ask:[\s\S]{0,200}debate:[\s\S]{0,200}summary:[\s\S]{0,200}ppt:/.test(taskMenuV5) &&
     /function updatePlaceholder/.test(taskMenuV5),
     "popup-task-menu 缺 PLACEHOLDER_BY_TASK 或 updatePlaceholder");
-  check("v5.1.0-beta polish ①: setTask 和 menu click 都调 updatePlaceholder",
+  check("v5.1.0a-beta polish ①: setTask 和 menu click 都调 updatePlaceholder",
     (taskMenuV5.match(/updatePlaceholder\(current\)/g) || []).length >= 3,
     "updatePlaceholder 调用点不全（menu click / setTask / 首次 init 应至少 3 处）");
-  check("v5.1.0-beta polish ①: debate/summary placeholder 含'留空'提示",
+  check("v5.1.0a-beta polish ①: debate/summary placeholder 含'留空'提示",
     /debate:[\s\S]{0,200}留空/.test(taskMenuV5) &&
     /summary:[\s\S]{0,200}留空/.test(taskMenuV5),
     "debate/summary placeholder 没提示用户可'留空直接发送'");
 
-  check("v5.1.0-beta polish ②: popup.js btn-hard-reset 改用 ChatModal.show",
+  check("v5.1.0a-beta polish ②: popup.js btn-hard-reset 改用 ChatModal.show",
     /btn-hard-reset[\s\S]{0,500}window\.ChatModal\.show\(\{[\s\S]{0,300}title:\s*"彻底重置/.test(popupJsV5),
     "btn-hard-reset 仍用原生 confirm");
-  check("v5.1.0-beta polish ②: popup.js btn-clear 改用 ChatModal.show",
+  check("v5.1.0a-beta polish ②: popup.js btn-clear 改用 ChatModal.show",
     /\$clear\.addEventListener[\s\S]{0,500}window\.ChatModal\.show\(\{[\s\S]{0,300}title:\s*"清空群聊/.test(popupJsV5),
     "btn-clear 仍用原生 confirm");
-  check("v5.1.0-beta polish ②: popup-tasks #rp-btn-reset 改用 ChatModal.show",
+  check("v5.1.0a-beta polish ②: popup-tasks #rp-btn-reset 改用 ChatModal.show",
     /rp-btn-reset[\s\S]{0,500}window\.ChatModal\.show\(\{[\s\S]{0,300}title:\s*"重置会话/.test(tasksJsV5),
     "rp-btn-reset 仍用原生 confirm");
 
@@ -2494,14 +2494,14 @@ try {
     const afterAsk = $inp?.dataset?.placeholder || "";
     return { before, afterDebate, afterAsk };
   });
-  check("v5.1.0-beta polish ① 运行时: setTask('debate') 后 placeholder 含'辩论引导'+'留空'",
+  check("v5.1.0a-beta polish ① 运行时: setTask('debate') 后 placeholder 含'辩论引导'+'留空'",
     placeholderRuntime.afterDebate.includes("辩论引导") && placeholderRuntime.afterDebate.includes("留空"),
     `actual: ${JSON.stringify(placeholderRuntime)}`);
-  check("v5.1.0-beta polish ① 运行时: 切回 ask 后 placeholder 恢复原文",
+  check("v5.1.0a-beta polish ① 运行时: 切回 ask 后 placeholder 恢复原文",
     placeholderRuntime.afterAsk.includes("Ctrl+Enter 发送") && placeholderRuntime.afterAsk.includes("@ 单发"),
     `actual: ${JSON.stringify(placeholderRuntime)}`);
 
-  // v5.1.0-beta fix: ChatModal escListener 不再泄漏（点按钮关 modal 后 document 上无残留 keydown）
+  // v5.1.0a-beta fix: ChatModal escListener 不再泄漏（点按钮关 modal 后 document 上无残留 keydown）
   const modalListenerLeak = await popupPage.evaluate(async () => {
     // 准备：先清干净
     if (!window.ChatModal) return { err: "ChatModal 未加载" };
@@ -2527,7 +2527,7 @@ try {
 
     return { primaryFired, modalGone: !document.querySelector(".arena-modal-overlay") };
   });
-  check("v5.1.0-beta fix: 点按钮关 modal 后 Enter 不再泄漏触发 primary.onClick（修彻底重置 bug）",
+  check("v5.1.0a-beta fix: 点按钮关 modal 后 Enter 不再泄漏触发 primary.onClick（修彻底重置 bug）",
     !modalListenerLeak.err && modalListenerLeak.primaryFired === 1 && modalListenerLeak.modalGone === true,
     `actual: ${JSON.stringify(modalListenerLeak)} — 期望 primaryFired===1（仅点按钮那一次），如果 >1 说明 Enter 泄漏 listener 又触发了`);
 
@@ -2539,17 +2539,17 @@ try {
   const sideThemesV51  = fs.readFileSync(path.join(EXT_PATH, "sidepanel-themes.css"), "utf8");
 
   check("v5.1.0 ①: popup-logo-style.js STYLES 含 labubu + qq（共 8 风格）",
-    /labubu:\s*\{\s*dir:\s*"icons\/heroes-labubu"[^}]*ext:\s*"png"/.test(logoStyleV51) &&
-    /qq:\s*\{\s*dir:\s*"icons\/heroes-qq"[^}]*ext:\s*"png"/.test(logoStyleV51),
+    /labubu:\s*\{\s*dir:\s*"icons\/heroes-labubu"[^}]*ext:\s*"webp"/.test(logoStyleV51) &&
+    /qq:\s*\{\s*dir:\s*"icons\/heroes-qq"[^}]*ext:\s*"webp"/.test(logoStyleV51),
     "popup-logo-style STYLES 缺 labubu/qq");
 
-  check("v5.1.0 ①: heroes-labubu 和 heroes-qq 目录各 10 个 PNG",
-    fs.existsSync(path.join(EXT_PATH, "icons/heroes-labubu/claude.png")) &&
-    fs.existsSync(path.join(EXT_PATH, "icons/heroes-labubu/chatgpt.png")) &&
-    fs.existsSync(path.join(EXT_PATH, "icons/heroes-labubu/huawei.png")) &&
-    fs.existsSync(path.join(EXT_PATH, "icons/heroes-qq/claude.png")) &&
-    fs.existsSync(path.join(EXT_PATH, "icons/heroes-qq/chatgpt.png")) &&
-    fs.existsSync(path.join(EXT_PATH, "icons/heroes-qq/huawei.png")),
+  check("v5.1.0 ①: heroes-labubu 和 heroes-qq 目录各 10 个 webp（v5.1.0a 已压缩 PNG→webp）",
+    fs.existsSync(path.join(EXT_PATH, "icons/heroes-labubu/claude.webp")) &&
+    fs.existsSync(path.join(EXT_PATH, "icons/heroes-labubu/chatgpt.webp")) &&
+    fs.existsSync(path.join(EXT_PATH, "icons/heroes-labubu/huawei.webp")) &&
+    fs.existsSync(path.join(EXT_PATH, "icons/heroes-qq/claude.webp")) &&
+    fs.existsSync(path.join(EXT_PATH, "icons/heroes-qq/chatgpt.webp")) &&
+    fs.existsSync(path.join(EXT_PATH, "icons/heroes-qq/huawei.webp")),
     "heroes-labubu/qq 目录文件缺失");
 
   check("v5.1.0 ②: popup-themes.css 含 body[data-theme='G'] 和 'H'（共 8 主题）",
@@ -2585,13 +2585,13 @@ try {
     window.ArenaLogoStyle.setCurrent("basic", false);
     return { labubuClaude, labubuGpt, qqClaude, qqGpt };
   });
-  check("v5.1.0 运行时: labubu 风格 heroPath claude/chatgpt → icons/heroes-labubu/{name}.png",
-    v51StyleRuntime.labubuClaude === "icons/heroes-labubu/claude.png" &&
-    v51StyleRuntime.labubuGpt    === "icons/heroes-labubu/chatgpt.png",
+  check("v5.1.0 运行时: labubu 风格 heroPath claude/chatgpt → icons/heroes-labubu/{name}.webp",
+    v51StyleRuntime.labubuClaude === "icons/heroes-labubu/claude.webp" &&
+    v51StyleRuntime.labubuGpt    === "icons/heroes-labubu/chatgpt.webp",
     JSON.stringify(v51StyleRuntime));
-  check("v5.1.0 运行时: qq 风格 heroPath claude/chatgpt → icons/heroes-qq/{name}.png",
-    v51StyleRuntime.qqClaude === "icons/heroes-qq/claude.png" &&
-    v51StyleRuntime.qqGpt    === "icons/heroes-qq/chatgpt.png",
+  check("v5.1.0 运行时: qq 风格 heroPath claude/chatgpt → icons/heroes-qq/{name}.webp",
+    v51StyleRuntime.qqClaude === "icons/heroes-qq/claude.webp" &&
+    v51StyleRuntime.qqGpt    === "icons/heroes-qq/chatgpt.webp",
     JSON.stringify(v51StyleRuntime));
 
   // 运行时：切到 G/H 主题，验证 body data-theme + CSS var 生效
