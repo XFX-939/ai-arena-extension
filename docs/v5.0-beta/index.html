@@ -1088,6 +1088,28 @@
     margin: 20px auto 0;
     border: 2px dashed #d2d2d7;
   }
+  /* 真实微信二维码 */
+  .wechat-qr {
+    margin: 24px auto 0;
+    display: inline-flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 14px;
+    background: #fff;
+    border-radius: 12px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+  }
+  .wechat-qr img {
+    width: 160px; height: 160px;
+    display: block;
+    object-fit: contain;
+  }
+  .wechat-qr-cap {
+    margin-top: 8px;
+    font-size: 12px;
+    color: #1d1d1f;
+    font-weight: 600;
+  }
   .cta-final .perks {
     margin-top: 28px;
     padding-top: 24px;
@@ -1359,6 +1381,295 @@
     transition: all 0.2s;
   }
   .whatsnew-continue:hover { transform: translateY(-2px); box-shadow: 0 12px 32px rgba(10,132,255,0.55); }
+
+  /* ===== whatsnew 模态 · 2 tab 切换 ===== */
+  .wn-tabs {
+    display: flex;
+    justify-content: center;
+    gap: 8px;
+    margin: 24px 0 18px;
+    padding: 6px;
+    background: var(--bg-soft);
+    border-radius: 999px;
+    width: fit-content;
+    margin-left: auto;
+    margin-right: auto;
+    border: 1px solid var(--border);
+  }
+  .wn-tab-btn {
+    padding: 10px 22px;
+    border: none;
+    background: transparent;
+    color: var(--ink-soft);
+    font-size: 14.5px;
+    font-weight: 600;
+    cursor: pointer;
+    border-radius: 999px;
+    transition: all 0.25s;
+    letter-spacing: 0.01em;
+  }
+  .wn-tab-btn:hover { color: var(--ink); }
+  .wn-tab-btn.active {
+    background: linear-gradient(135deg, #af52de, #ff2d95);
+    color: #fff;
+    box-shadow: 0 4px 14px rgba(175,82,222,0.35);
+  }
+  .wn-tab-panel {
+    display: none;
+    animation: wn-panel-in 0.4s ease;
+  }
+  .wn-tab-panel.active { display: block; }
+  @keyframes wn-panel-in {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  /* whatsnew 插图区 */
+  .wn-illust {
+    margin: 8px 0 24px;
+    border-radius: 12px;
+    overflow: hidden;
+    background: var(--bg-soft);
+    border: 1px solid var(--border);
+    box-shadow: 0 8px 24px rgba(0,0,0,0.20);
+  }
+  .wn-illust img {
+    width: 100%;
+    display: block;
+    max-height: 320px;
+    object-fit: cover;
+  }
+  .wn-illust-cap {
+    padding: 10px 16px;
+    font-size: 12.5px;
+    color: var(--ink-soft);
+    border-top: 1px solid var(--border);
+    background: var(--bg);
+    line-height: 1.55;
+  }
+  .wn-illust-cap b { color: var(--ink); }
+  .wn-illust-cap code {
+    background: rgba(175,82,222,0.16);
+    color: #ff2d95;
+    padding: 1px 6px;
+    border-radius: 4px;
+    font-size: 0.9em;
+  }
+
+  /* 4 logo 小预览 */
+  .wn-logo-row {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 10px;
+    margin: 20px 0 8px;
+  }
+  @media (max-width: 540px) { .wn-logo-row { grid-template-columns: repeat(2, 1fr); } }
+  .wn-logo-cell {
+    background: var(--bg-soft);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 10px;
+    text-align: center;
+  }
+  .wn-logo-cell img {
+    width: 100%;
+    aspect-ratio: 1 / 1;
+    object-fit: cover;
+    border-radius: 6px;
+  }
+  .wn-logo-cell div {
+    margin-top: 6px;
+    font-size: 12px;
+    color: var(--ink);
+    font-weight: 600;
+  }
+
+  /* ===== 下载后弹出的使用指南模态 ===== */
+  .guide-modal {
+    position: fixed; inset: 0;
+    z-index: 95;
+    background: var(--bg);
+    overflow-y: auto;
+    opacity: 0; pointer-events: none;
+    transform: scale(0.97);
+    transition: opacity 0.4s, transform 0.5s cubic-bezier(.4,0,.2,1);
+    padding: 56px 32px 80px;
+  }
+  .guide-modal.show { opacity: 1; pointer-events: auto; transform: scale(1); }
+  .guide-modal .close-x {
+    position: fixed;
+    top: 20px; right: 24px;
+    width: 44px; height: 44px;
+    border-radius: 50%;
+    background: rgba(28,28,30,0.85);
+    backdrop-filter: blur(12px);
+    border: 1px solid var(--border);
+    color: var(--ink);
+    cursor: pointer;
+    font-size: 24px; line-height: 1;
+    display: flex; align-items: center; justify-content: center;
+    z-index: 99;
+    transition: all 0.25s;
+  }
+  .guide-modal .close-x:hover { background: var(--accent); border-color: var(--accent); transform: rotate(90deg); }
+  .guide-inner { max-width: 880px; margin: 0 auto; }
+
+  .guide-banner {
+    background: linear-gradient(135deg, #34c759 0%, #0a84ff 100%);
+    color: #fff;
+    border-radius: 16px;
+    padding: 22px 26px;
+    display: flex; align-items: center; gap: 18px;
+    box-shadow: 0 12px 32px rgba(52,199,89,0.30);
+  }
+  .guide-banner-ico {
+    font-size: 40px; line-height: 1;
+    animation: guide-bounce 1.4s ease infinite;
+  }
+  @keyframes guide-bounce {
+    0%,100% { transform: translateY(0); }
+    50% { transform: translateY(-6px); }
+  }
+  .guide-banner-title { font-size: 18px; font-weight: 700; letter-spacing: -0.01em; }
+  .guide-banner-sub { font-size: 13.5px; color: rgba(255,255,255,0.85); margin-top: 4px; }
+
+  .guide-title {
+    margin: 36px 0 20px;
+    font-size: 28px;
+    font-weight: 800;
+    letter-spacing: -0.015em;
+    text-align: center;
+  }
+
+  .guide-steps {
+    display: flex; flex-direction: column;
+    gap: 16px;
+  }
+  .guide-step {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 22px 26px;
+    display: grid;
+    grid-template-columns: 56px 1fr;
+    gap: 20px;
+  }
+  .guide-num {
+    width: 44px; height: 44px;
+    background: linear-gradient(135deg, var(--accent), #5ac8fa);
+    color: #fff;
+    border-radius: 12px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 22px; font-weight: 800; line-height: 1;
+  }
+  .guide-step h4 { margin: 0 0 10px; font-size: 17px; font-weight: 700; letter-spacing: -0.01em; }
+  .guide-step p { margin: 0 0 8px; font-size: 14px; line-height: 1.7; color: var(--ink); }
+  .guide-step p b { color: var(--accent); font-weight: 700; }
+  .guide-step code {
+    background: var(--chip-bg); color: var(--ink);
+    padding: 2px 8px; border-radius: 4px;
+    font-family: "SF Mono","Consolas",monospace;
+    font-size: 13.5px;
+  }
+  .guide-step ol.guide-ol {
+    margin: 8px 0 4px;
+    padding-left: 22px;
+    color: var(--ink);
+    font-size: 14px;
+    line-height: 1.85;
+  }
+  .guide-tip {
+    margin-top: 10px !important;
+    padding: 8px 12px;
+    background: rgba(52,199,89,0.10);
+    border-left: 3px solid #34c759;
+    border-radius: 4px;
+    font-size: 13px !important;
+    color: var(--ink-soft) !important;
+  }
+  .guide-warn {
+    margin-top: 8px !important;
+    padding: 8px 12px;
+    background: rgba(255,159,10,0.10);
+    border-left: 3px solid #ff9f0a;
+    border-radius: 4px;
+    font-size: 13px !important;
+    color: var(--ink-soft) !important;
+  }
+  .guide-path {
+    margin: 10px 0;
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 14px;
+    background: var(--bg-soft);
+    border-radius: 8px;
+    border: 1px solid var(--border);
+  }
+  .guide-path code {
+    flex: 1;
+    font-size: 15px;
+    font-weight: 600;
+    background: transparent;
+    padding: 0;
+    color: var(--accent);
+  }
+  .guide-copy {
+    padding: 6px 12px;
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 12.5px;
+    font-weight: 600;
+    transition: all 0.2s;
+  }
+  .guide-copy:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(10,132,255,0.45); }
+  .guide-copy.copied { background: #34c759; }
+
+  .guide-ai-grid {
+    display: flex; flex-wrap: wrap; gap: 8px;
+    margin: 10px 0;
+  }
+  .guide-ai {
+    padding: 8px 14px;
+    background: var(--bg-soft);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    color: var(--ink);
+    text-decoration: none;
+    font-size: 13.5px;
+    font-weight: 500;
+    transition: all 0.2s;
+  }
+  .guide-ai:hover { background: var(--accent); border-color: var(--accent); color: #fff; transform: translateY(-1px); }
+
+  .guide-footer {
+    margin-top: 36px;
+    display: flex; gap: 14px; justify-content: center;
+    flex-wrap: wrap;
+  }
+  .guide-go-cta {
+    padding: 14px 28px;
+    background: linear-gradient(135deg, #34c759, #0a84ff);
+    color: #fff;
+    border-radius: 999px;
+    font-size: 16px; font-weight: 700;
+    text-decoration: none;
+    box-shadow: 0 8px 24px rgba(52,199,89,0.40);
+    transition: all 0.2s;
+  }
+  .guide-go-cta:hover { transform: translateY(-2px); box-shadow: 0 12px 32px rgba(52,199,89,0.55); }
+  .guide-go-wechat {
+    padding: 14px 28px;
+    background: transparent;
+    color: var(--ink);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    font-size: 14.5px; font-weight: 500;
+    text-decoration: none;
+    transition: all 0.2s;
+  }
+  .guide-go-wechat:hover { background: var(--card-soft, var(--bg-soft)); border-color: var(--accent); color: var(--accent); }
 
 </style>
 </head>
@@ -1900,10 +2211,13 @@
     <h2>现在加入 · 30 秒后你就在指挥 3 个 AI 辩论</h2>
     <p>明天就要面对那份没头绪的报告？现在装上，让 9 大 AI 帮你想答案。</p>
     <div class="actions">
-      <a class="btn btn-cta" href="#TODO-chrome-store">⚡ Chrome Store 一键安装</a>
-      <a class="btn btn-cta-ghost" href="#TODO-github">查看 GitHub 源码</a>
+      <a class="btn btn-cta" href="release/ai-arena-extension-v4.8.66.zip" download data-trigger-guide>⬇️ 一键下载安装包（1.7 MB）</a>
+      <a class="btn btn-cta-ghost" href="https://github.com/TianLin0509/ai-arena-extension" target="_blank">查看 GitHub 源码 →</a>
     </div>
-    <div class="qr-placeholder">[ Beta 群二维码 ]</div>
+    <div class="wechat-qr">
+      <img src="release/wechat-qrcode.png" alt="作者微信二维码" />
+      <div class="wechat-qr-cap">📱 扫码加作者微信 · 反馈 / 答疑 / 早鸟群</div>
+    </div>
     <div class="perks">
       <div class="perk">
         <div class="icon">🎨</div>
@@ -1934,6 +2248,16 @@
       <p class="book-intro-sub">👋 用过<b>简陋 sidepanel</b> 的老用户专享 · 看看这一年发生了什么</p>
     </div>
 
+    <nav class="wn-tabs">
+      <button class="wn-tab-btn active" data-wn-tab="visible">👀 看得见的升级</button>
+      <button class="wn-tab-btn" data-wn-tab="hidden">🛡️ 内功护城河</button>
+    </nav>
+
+    <div class="wn-tab-panel active" data-wn-panel="visible">
+      <div class="wn-illust">
+        <img src="v5.0-screenshots/poster-ai-team.webp" alt="9 AI 卡牌头像" />
+        <div class="wn-illust-cap">↑ v5.0：9 AI 卡牌头像 + 王者卡槽 · v1.0 只是 6 个 <code>+Claude</code>/<code>+Gemini</code> 文本按钮</div>
+      </div>
     <div class="diff-grid">
       <div class="diff-row">
         <div class="diff-label">🖼️ 主界面</div>
@@ -1971,6 +2295,22 @@
         <div class="diff-arrow">→</div>
         <div class="diff-to"><span class="ver-tag">v5.0</span><b>6 主题</b>（极光琉璃 / 深海指挥 / 暖橙书页 / 霓虹赛博 / 月白极简 / 落日熔金）<b> × 4 Logo 风格</b>（经典/王者/小猫/小鸡）= 24 种组合</div>
       </div>
+    </div>
+    <!-- 4 logo 小预览 -->
+    <div class="wn-logo-row">
+      <div class="wn-logo-cell"><img src="v5.0-screenshots/heroes/claude.webp" alt="经典英雄" /><div>经典英雄</div></div>
+      <div class="wn-logo-cell"><img src="v5.0-screenshots/heroes-leader/claude.webp" alt="王者卡牌" /><div>王者卡牌</div></div>
+      <div class="wn-logo-cell"><img src="v5.0-screenshots/heroes-cat/claude.webp" alt="小猫" /><div>小猫</div></div>
+      <div class="wn-logo-cell"><img src="v5.0-screenshots/heroes-chick/claude.webp" alt="小鸡" /><div>小鸡</div></div>
+    </div>
+    </div><!-- panel visible end -->
+
+    <div class="wn-tab-panel" data-wn-panel="hidden">
+      <div class="wn-illust">
+        <img src="v5.0-screenshots/03-stats-tab.png" alt="统计 Tab · 168 cell 热力图" />
+        <div class="wn-illust-cap">↑ v5.0：统计 Tab 含 168 cell 周×小时热力图 · arena.ai 实力榜 · v1.0 完全没有这块</div>
+      </div>
+    <div class="diff-grid">
       <div class="diff-row">
         <div class="diff-label">📊 统计</div>
         <div class="diff-from"><span class="ver-tag">v1.0</span>无 · 你用了多少 token 自己心里没数</div>
@@ -2008,8 +2348,92 @@
         <div class="diff-to"><span class="ver-tag">v5.0</span>输入框打 <code style="background:rgba(255,255,255,0.1);padding:1px 6px;border-radius:4px;">@cla</code> <b>单点路由</b>，不广播给全员</div>
       </div>
     </div>
+    <!-- GIF 实力证明 -->
+    <div class="wn-illust" style="margin-top: 16px;">
+      <img src="v5.0-screenshots/04-roster-demo.gif" alt="AI 卡槽 + 下轮预览 + @mention 真实录屏" />
+      <div class="wn-illust-cap">↑ v5.0：AI 卡槽 + 下轮发言预览 + @ 单点路由 · 整套对话指挥能力 · v1.0 完全没有</div>
+    </div>
+    </div><!-- panel hidden end -->
 
     <a class="whatsnew-continue" href="#" data-whatsnew-continue>📖 看完了 · 继续看 7 张王牌 →</a>
+  </div>
+</div>
+
+<!-- ===== 下载后立即弹出的使用指南模态 ===== -->
+<div class="guide-modal" data-guide>
+  <button class="close-x" data-guide-close aria-label="关闭">×</button>
+  <div class="guide-inner">
+    <div class="guide-banner">
+      <div class="guide-banner-ico">⬇️</div>
+      <div>
+        <div class="guide-banner-title">下载已开始 · ai-arena-extension-v4.8.66.zip</div>
+        <div class="guide-banner-sub">⏳ 浏览器正在下载到你的「下载」文件夹 · 1.7 MB · 几秒钟就好</div>
+      </div>
+    </div>
+
+    <h2 class="guide-title">📖 接下来 4 步搞定（小白看这里）</h2>
+
+    <div class="guide-steps">
+
+      <div class="guide-step">
+        <div class="guide-num">1</div>
+        <div class="guide-body">
+          <h4>找到下载好的 zip</h4>
+          <p>打开 <b>文件资源管理器</b> → 左侧「下载」文件夹 → 找到 <code>ai-arena-extension-v4.8.66.zip</code></p>
+          <p class="guide-tip">💡 Win + E 一键打开文件资源管理器 · 或者按 Ctrl+J 在浏览器看下载列表</p>
+        </div>
+      </div>
+
+      <div class="guide-step">
+        <div class="guide-num">2</div>
+        <div class="guide-body">
+          <h4>解压到推荐位置 ⭐</h4>
+          <p>右键 zip → <b>"全部解压"</b> → 在「选择目标位置」框里粘贴这个路径：</p>
+          <div class="guide-path">
+            <code>C:\AI-Arena</code>
+            <button class="guide-copy" data-copy="C:\AI-Arena">📋 复制路径</button>
+          </div>
+          <p class="guide-tip">💡 解压完会得到 <code>C:\AI-Arena\manifest.json</code> 等文件 · 后续步骤都基于这个路径</p>
+          <p class="guide-warn">⚠️ 如果系统盘 C: 权限不够，可以用 <code>D:\AI-Arena</code> 或者桌面 <code>C:\Users\&lt;你的用户名&gt;\Desktop\AI-Arena</code></p>
+        </div>
+      </div>
+
+      <div class="guide-step">
+        <div class="guide-num">3</div>
+        <div class="guide-body">
+          <h4>Chrome 加载扩展（关键 4 小步）</h4>
+          <ol class="guide-ol">
+            <li>Chrome 地址栏粘贴：<code>chrome://extensions</code> → 回车</li>
+            <li>打开右上角 <b>"开发者模式"</b> 开关</li>
+            <li>点 <b>"加载已解压的扩展程序"</b> 按钮</li>
+            <li>选刚才解压的 <code>C:\AI-Arena</code> 文件夹 → 看到 "AI Arena" 卡片 ✓</li>
+          </ol>
+          <p class="guide-tip">💡 选目录时，文件夹里应该<b>能直接看到 manifest.json</b> · 看不到说明选错层级</p>
+        </div>
+      </div>
+
+      <div class="guide-step">
+        <div class="guide-num">4</div>
+        <div class="guide-body">
+          <h4>登录至少 3 个 AI 网站</h4>
+          <p>扩展<b>不存账号</b>，所有对话走你浏览器里已登录的 AI 官网。推荐国内三巨头：</p>
+          <div class="guide-ai-grid">
+            <a class="guide-ai" href="https://chat.deepseek.com" target="_blank">🔵 DeepSeek</a>
+            <a class="guide-ai" href="https://www.doubao.com" target="_blank">🥟 豆包</a>
+            <a class="guide-ai" href="https://tongyi.aliyun.com" target="_blank">🐫 通义千问</a>
+            <a class="guide-ai" href="https://kimi.moonshot.cn" target="_blank">🌙 Kimi</a>
+            <a class="guide-ai" href="https://yuanbao.tencent.com" target="_blank">💰 元宝</a>
+          </div>
+          <p class="guide-tip">💡 海外四家（Claude / Gemini / ChatGPT / Grok）需自备代理</p>
+        </div>
+      </div>
+
+    </div>
+
+    <div class="guide-footer">
+      <a class="guide-go-cta" href="#" data-guide-close>✅ 全部搞定 · 开始使用 AI Arena</a>
+      <a class="guide-go-wechat" href="#" data-guide-show-wechat>📱 装好后扫码加作者微信，问问题</a>
+    </div>
   </div>
 </div>
 
@@ -2155,8 +2579,56 @@
     hideWN();
     setTimeout(() => goTo(ORDER.indexOf('stories')), 220);
   });
+  // whatsnew tab 切换
+  document.querySelectorAll('.wn-tab-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const target = btn.dataset.wnTab;
+      document.querySelectorAll('.wn-tab-btn').forEach(b => b.classList.toggle('active', b === btn));
+      document.querySelectorAll('.wn-tab-panel').forEach(p => p.classList.toggle('active', p.dataset.wnPanel === target));
+      // 切 tab 时滚回顶部
+      wn?.scrollTo({ top: 0, behavior: 'smooth' });
+    });
+  });
+
+  // guide modal（下载后弹出的使用指南）
+  const guide = document.querySelector('[data-guide]');
+  const guideClose = document.querySelector('[data-guide-close]');
+  function showGuide() { if (guide) guide.classList.add('show'); }
+  function hideGuide() { if (guide) guide.classList.remove('show'); }
+  guideClose?.addEventListener('click', hideGuide);
+  document.querySelectorAll('[data-guide-close]').forEach(el => el.addEventListener('click', hideGuide));
+  document.querySelector('[data-guide-show-wechat]')?.addEventListener('click', (e) => {
+    e.preventDefault();
+    hideGuide();
+    // 滚到 CTA 章节看微信二维码
+    setTimeout(() => goTo(ORDER.indexOf('cta')), 220);
+  });
+  // 点下载按钮 = 浏览器自然下载 + 弹出指南
+  document.querySelectorAll('[data-trigger-guide]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      // 不 preventDefault — 让浏览器走原生下载流程
+      setTimeout(showGuide, 280);
+    });
+  });
+  // 复制路径按钮
+  document.querySelectorAll('[data-copy]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const txt = btn.dataset.copy;
+      try {
+        await navigator.clipboard.writeText(txt);
+        btn.classList.add('copied');
+        const orig = btn.textContent;
+        btn.textContent = '✓ 已复制';
+        setTimeout(() => { btn.classList.remove('copied'); btn.textContent = orig; }, 1600);
+      } catch { btn.textContent = '✗ 失败，请手动复制'; }
+    });
+  });
+
+  // ESC 关闭任一打开的模态
   document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && wn?.classList.contains('show')) hideWN();
+    if (e.key !== 'Escape') return;
+    if (guide?.classList.contains('show')) hideGuide();
+    else if (wn?.classList.contains('show')) hideWN();
   });
 
   document.querySelectorAll('[data-spa-go]').forEach(a => {
