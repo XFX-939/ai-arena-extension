@@ -184,6 +184,9 @@
               res({ ok: false, intercepted: "sensitive_blocked" });
               return;
             }
+            // v5.2.10 fix: chatBroadcast ok=false（如"无可用参与者"）必须 alert
+            //   跟 task=debate/summary 内部 alert 行为一致 — 之前 ask 分支静默 fail
+            if (resp && !resp.ok) alert(`发送失败：${resp.error || "未知原因"}`);
             res(resp || { ok: false, error: chrome.runtime.lastError?.message });
           });
         });

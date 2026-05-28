@@ -351,6 +351,15 @@
     return { targets, text: cleanText };
   }
 
+  // v5.2.10: 共用失败提示 — chatBroadcast / dispatch 返回 ok=false 时统一记 ChatLog + alert
+  //   intercepted（守门员 / debate insufficient modal / 取消）= 已处理路径，跳过避免重复
+  function _showSendError(resp) {
+    if (!resp || resp.ok || resp.intercepted || resp.cancelled) return false;
+    const err = resp.error || "未知原因";
+    try { window.ChatLog?.push?.({ ts: Date.now(), text: `❌ 发送失败：${err}`, level: "error" }); } catch (_) {}
+    return true;
+  }
+
   async function handleSend() {
     const raw = $input.innerText.trim();
     const { targets: mentionTargets, text } = parseMentions(raw);
@@ -362,8 +371,10 @@
     // 任务模式分发：非 ask 走 ChatTaskMenu.dispatch
     const menu = window.ChatTaskMenu;
     if (menu && menu.current().task !== "ask") {
-      // dispatch 内部已对失败做 alert，这里不再 warn
-      menu.dispatch(text, targets);
+      // v5.2.10: dispatch 内部对各任务（debate/summary/ppt）已 alert，
+      //   但 ChatLog 这边也记一条便于事后回看 — _showSendError 跳过 intercepted/cancelled
+      const resp = await menu.dispatch(text, targets);
+      _showSendError(resp);
       return;
     }
 
@@ -373,6 +384,11 @@
       if (chrome.runtime.lastError) console.warn(chrome.runtime.lastError);
       // v4.9.0-hotfix: 守门员命中 → bridge 接管弹 modal + 重发（之前漏了这条 ask 直发路径）
       if (window.ChatGatekeeperBridge?.handleResp(msg, resp, { textField: "text" })) return;
+      // v5.2.10 fix: chatBroadcast ok=false（如"无可用参与者"）UI 必须有提示
+      //   之前静默 fail 用户感知"按了没反应"。alert 强提示 + ChatLog 红字日志
+      if (_showSendError(resp)) {
+        alert(`发送失败：${resp.error || "未知原因"}`);
+      }
     });
   }
 

@@ -67,7 +67,7 @@ try {
   // 2) 读 manifest version_name 验证版本同步（直接读源文件）
   const manifest = JSON.parse(fs.readFileSync(path.join(EXT_PATH, "manifest.json"), "utf8"));
   console.log(`[smoke] manifest version: ${manifest.version}, version_name: ${manifest.version_name}`);
-  check("manifest version_name = 5.2.9-task-reset", manifest.version_name === "5.2.9-task-reset", `actual: ${manifest.version_name}`);
+  check("manifest version_name = 5.2.10-send-fail-visible", manifest.version_name === "5.2.10-send-fail-visible", `actual: ${manifest.version_name}`);
 
   // 3) 打开 sidepanel.html（作为普通 tab），验证 DOM
   const sidepanelPage = await context.newPage();
@@ -75,10 +75,10 @@ try {
   await sidepanelPage.waitForLoadState("domcontentloaded");
 
   const versionBadge = await sidepanelPage.locator(".version").textContent();
-  check("sidepanel version badge", versionBadge === "v5.2.9-task-reset", `actual: "${versionBadge}"`);
+  check("sidepanel version badge", versionBadge === "v5.2.10-send-fail-visible", `actual: "${versionBadge}"`);
 
   const footerVersion = await sidepanelPage.locator(".footer").textContent();
-  check("sidepanel footer version", footerVersion?.includes("v5.2.9-task-reset"), `actual: "${footerVersion?.slice(0, 100)}"`);
+  check("sidepanel footer version", footerVersion?.includes("v5.2.10-send-fail-visible"), `actual: "${footerVersion?.slice(0, 100)}"`);
 
   const openChatBtn = await sidepanelPage.locator("#btn-open-chat").count();
   check('sidepanel has "🪟 群聊" button', openChatBtn === 1);
@@ -96,7 +96,7 @@ try {
   await popupPage.waitForLoadState("domcontentloaded");
 
   const popupVersion = await popupPage.locator(".chat-version").textContent();
-  check("popup chat-version = v5.2.9-task-reset", popupVersion === "v5.2.9-task-reset", `actual: "${popupVersion}"`);
+  check("popup chat-version = v5.2.10-send-fail-visible", popupVersion === "v5.2.10-send-fail-visible", `actual: "${popupVersion}"`);
 
   // 图标资产验证（v4.0.11）
   const assetsOk = await popupPage.evaluate(async (extId) => {
@@ -2652,12 +2652,12 @@ try {
     hasCurrentVersion: typeof window.ChatUpdateCheck?.currentVersion === "function",
     hasNewerHelper: typeof window.ChatUpdateCheck?._hasNewer === "function",
     curVer: window.ChatUpdateCheck?.currentVersion?.(),
-    hasNewerSelfTest: window.ChatUpdateCheck?._hasNewer?.("5.2.9-task-reset", "v5.3.0-beta"),
-    hasNewerSameTest: window.ChatUpdateCheck?._hasNewer?.("5.2.9-task-reset", "v5.2.9-task-reset"),
+    hasNewerSelfTest: window.ChatUpdateCheck?._hasNewer?.("5.2.10-send-fail-visible", "v5.3.0-beta"),
+    hasNewerSameTest: window.ChatUpdateCheck?._hasNewer?.("5.2.10-send-fail-visible", "v5.2.10-send-fail-visible"),
   }));
-  check("v5.2.0 运行时: ChatUpdateCheck API 暴露 + currentVersion 返回 5.2.9-task-reset + hasNewer 比对逻辑正确",
+  check("v5.2.0 运行时: ChatUpdateCheck API 暴露 + currentVersion 返回 5.2.10-send-fail-visible + hasNewer 比对逻辑正确",
     v52ApiRuntime.hasApi && v52ApiRuntime.hasCurrentVersion && v52ApiRuntime.hasNewerHelper &&
-    v52ApiRuntime.curVer === "5.2.9-task-reset" &&
+    v52ApiRuntime.curVer === "5.2.10-send-fail-visible" &&
     v52ApiRuntime.hasNewerSelfTest === true &&
     v52ApiRuntime.hasNewerSameTest === false,
     JSON.stringify(v52ApiRuntime));
@@ -2725,6 +2725,24 @@ try {
   check("v5.2.9: popup-task-menu.js hardReset 监听调用 setTask(\"ask\")",
     /setTask\(["']ask["']\)/.test(taskMenuSrc),
     "popup-task-menu.js 缺 setTask(\"ask\") 调用");
+
+  // ── v5.2.10: chatBroadcast 失败 UI 必须有提示（修"按了没反应"沉默 fail）──
+  const popupSrc = fs.readFileSync(path.join(EXT_PATH, "popup.js"), "utf8");
+  check("v5.2.10: popup.js 含 _showSendError helper（intercepted/cancelled 跳过）",
+    /_showSendError/.test(popupSrc) &&
+    /resp\.intercepted/.test(popupSrc) &&
+    /resp\.cancelled/.test(popupSrc),
+    "popup.js 缺 _showSendError 或漏 intercepted/cancelled 过滤");
+  check("v5.2.10: popup.js handleSend chatBroadcast 失败弹 alert",
+    /chatBroadcast[\s\S]*?_showSendError\(resp\)[\s\S]*?alert\(`发送失败：/.test(popupSrc),
+    "popup.js chatBroadcast 失败缺 alert 提示");
+  check("v5.2.10: popup.js handleSend 改 await menu.dispatch + _showSendError",
+    /await menu\.dispatch\(text, targets\)/.test(popupSrc) &&
+    /_showSendError\(resp\)/.test(popupSrc),
+    "popup.js handleSend 未 await dispatch 或缺 _showSendError 调用");
+  check("v5.2.10: popup-task-menu.js dispatch task=ask 分支加 alert 失败提示",
+    /c\.task === "ask"[\s\S]*?if \(resp && !resp\.ok\) alert\(`发送失败：/.test(taskMenuSrc),
+    "popup-task-menu.js task=ask 分支 alert 失败提示缺失");
 
   // v4.8.52: Tab 模式 debugger 提示
   //   chrome.debugger.attach 会强制显示"AI Arena 已开始调试此浏览器"横条，
