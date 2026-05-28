@@ -132,12 +132,13 @@ const DEFAULT_SELECTORS = {
     ]
   },
   doubao: {
-    // v5.2.2: 用户登录态 console 实测确认真实命名（v5.2.1 的 bg-g-receive 推断错了，豆包不对称设计）
-    //   · 消息行容器：[class*="v_list_row"] （在 [class*="list_items"] 内）
-    //   · AI 回复 = v_list_row 内不含 bg-g-send 的（用户消息内才有 bg-g-send）
-    //   · 用户消息：[class*="bg-g-send"]
-    //   · 输入框：textarea.semi-input-textarea（Semi Design）
-    //   · 注意 [class*="inner-item-{hash}"] 含 CSS Modules hash 不能用
+    // v5.2.3: MCP playwright 未登录态游客发送实测 — v_list_row 实际有 4 个：
+    //   idx 0,3 = 空 spacer 占位行（无 data-observe-row 属性，含 v_list_top/bottom_indicator）
+    //   idx 1   = 用户消息（含 bg-g-send）
+    //   idx 2   = 真 AI 回复（含 data-observe-row="block_XXX"）
+    //   v5.2.2 bug: 只用 :not(:has(bg-g-send)) 会命中 idx 0+2+3 三个，readLatestResponse 取 last → 拿到空 spacer
+    //   修复：加 [data-observe-row] 属性 → 排除 spacer，只剩真消息行
+    //   输入框：textarea.semi-input-textarea（Semi Design）
     input: [
       'textarea.semi-input-textarea',                    // 主输入框（实测）
       '[contenteditable="true"]',
@@ -145,9 +146,11 @@ const DEFAULT_SELECTORS = {
       '[class*="input"][class*="editor"]'
     ],
     response: [
-      // v5.2.2: 核心 selector — v_list_row 但不含 bg-g-send（=AI 消息行）
+      // v5.2.3: 核心 selector — v_list_row + data-observe-row 业务消息行 + 非 bg-g-send（=AI 行）
+      '[class*="v_list_row"][data-observe-row]:not(:has([class*="bg-g-send"]))',
+      // 兜底 1：万一 data-observe-row 属性也变了，回退到 v5.2.2 selector（仍可能误抓 spacer 但有内容总比无强）
       '[class*="v_list_row"]:not(:has([class*="bg-g-send"]))',
-      // 兜底：万一 v_list_row 命名变了，fallback 到老命名
+      // 兜底 2：万一 v_list_row 命名变了，fallback 到老命名
       '[class*="assistant"] [class*="content"]',
       '[class*="bot-message"]',
       '[class*="markdown"]'
@@ -161,7 +164,7 @@ const DEFAULT_SELECTORS = {
       '[class*="send-btn"]'
     ],
     userMessage: [
-      // v5.2.2: 用户消息 = v_list_row 内含 bg-g-send；或直接抓 bg-g-send 块
+      // v5.2.3: 用户消息 = bg-g-send 块（实测 idx 1 v_list_row 内含 bg-g-send）
       '[class*="bg-g-send"]',
       '[class*="send-msg-bubble-text"]',
       // 老 selector：

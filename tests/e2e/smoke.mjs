@@ -67,7 +67,7 @@ try {
   // 2) 读 manifest version_name 验证版本同步（直接读源文件）
   const manifest = JSON.parse(fs.readFileSync(path.join(EXT_PATH, "manifest.json"), "utf8"));
   console.log(`[smoke] manifest version: ${manifest.version}, version_name: ${manifest.version_name}`);
-  check("manifest version_name = 5.2.2-beta", manifest.version_name === "5.2.2-beta", `actual: ${manifest.version_name}`);
+  check("manifest version_name = 5.2.3-beta", manifest.version_name === "5.2.3-beta", `actual: ${manifest.version_name}`);
 
   // 3) 打开 sidepanel.html（作为普通 tab），验证 DOM
   const sidepanelPage = await context.newPage();
@@ -75,10 +75,10 @@ try {
   await sidepanelPage.waitForLoadState("domcontentloaded");
 
   const versionBadge = await sidepanelPage.locator(".version").textContent();
-  check("sidepanel version badge", versionBadge === "v5.2.2-beta", `actual: "${versionBadge}"`);
+  check("sidepanel version badge", versionBadge === "v5.2.3-beta", `actual: "${versionBadge}"`);
 
   const footerVersion = await sidepanelPage.locator(".footer").textContent();
-  check("sidepanel footer version", footerVersion?.includes("v5.2.2-beta"), `actual: "${footerVersion?.slice(0, 100)}"`);
+  check("sidepanel footer version", footerVersion?.includes("v5.2.3-beta"), `actual: "${footerVersion?.slice(0, 100)}"`);
 
   const openChatBtn = await sidepanelPage.locator("#btn-open-chat").count();
   check('sidepanel has "🪟 群聊" button', openChatBtn === 1);
@@ -96,7 +96,7 @@ try {
   await popupPage.waitForLoadState("domcontentloaded");
 
   const popupVersion = await popupPage.locator(".chat-version").textContent();
-  check("popup chat-version = v5.2.2-beta", popupVersion === "v5.2.2-beta", `actual: "${popupVersion}"`);
+  check("popup chat-version = v5.2.3-beta", popupVersion === "v5.2.3-beta", `actual: "${popupVersion}"`);
 
   // 图标资产验证（v4.0.11）
   const assetsOk = await popupPage.evaluate(async (extId) => {
@@ -133,7 +133,7 @@ try {
   check("popup has task-picker", taskPickerBtn === 1);
 
   const taskMenuItems = await popupPage.locator(".task-menu > .menu-item").count();
-  check("popup task menu has 4 main items (ask/debate/summary/ppt)", taskMenuItems === 4);
+  check("popup task menu has 5 main items (ask/debate/summary/ppt/baton)", taskMenuItems === 5);
 
   const rosterContainer = await popupPage.locator("#roster-items").count();
   check("popup has roster items container", rosterContainer === 1);
@@ -2652,12 +2652,12 @@ try {
     hasCurrentVersion: typeof window.ChatUpdateCheck?.currentVersion === "function",
     hasNewerHelper: typeof window.ChatUpdateCheck?._hasNewer === "function",
     curVer: window.ChatUpdateCheck?.currentVersion?.(),
-    hasNewerSelfTest: window.ChatUpdateCheck?._hasNewer?.("5.2.2-beta", "v5.3.0-beta"),
-    hasNewerSameTest: window.ChatUpdateCheck?._hasNewer?.("5.2.2-beta", "v5.2.2-beta"),
+    hasNewerSelfTest: window.ChatUpdateCheck?._hasNewer?.("5.2.3-beta", "v5.3.0-beta"),
+    hasNewerSameTest: window.ChatUpdateCheck?._hasNewer?.("5.2.3-beta", "v5.2.3-beta"),
   }));
-  check("v5.2.0 运行时: ChatUpdateCheck API 暴露 + currentVersion 返回 5.2.2-beta + hasNewer 比对逻辑正确",
+  check("v5.2.0 运行时: ChatUpdateCheck API 暴露 + currentVersion 返回 5.2.3-beta + hasNewer 比对逻辑正确",
     v52ApiRuntime.hasApi && v52ApiRuntime.hasCurrentVersion && v52ApiRuntime.hasNewerHelper &&
-    v52ApiRuntime.curVer === "5.2.2-beta" &&
+    v52ApiRuntime.curVer === "5.2.3-beta" &&
     v52ApiRuntime.hasNewerSelfTest === true &&
     v52ApiRuntime.hasNewerSameTest === false,
     JSON.stringify(v52ApiRuntime));
@@ -2674,6 +2674,14 @@ try {
     /\[class\*="bg-g-send"\]/.test(selectorsV521) &&
     /\[class\*="send-msg-bubble-text"\]/.test(selectorsV521),
     "doubao userMessage selector 缺新命名");
+
+  // ── v5.2.3: 加 [data-observe-row] 过滤掉豆包 spacer 占位行（v5.2.2 漏过滤导致 readLatestResponse 取末位 = 空 spacer） ──
+  check("v5.2.3: doubao response 加 [data-observe-row] 过滤 spacer 占位行（MCP 实测命中）",
+    /\[class\*="v_list_row"\]\[data-observe-row\]:not\(:has\(\[class\*="bg-g-send"\]\)\)/.test(selectorsV521),
+    "doubao response 缺 v5.2.3 [data-observe-row] 主 selector");
+  check("v5.2.3: doubao response 保留 v5.2.2 fallback selector",
+    /\[class\*="v_list_row"\]:not\(:has\(\[class\*="bg-g-send"\]\)\)/.test(selectorsV521),
+    "doubao response 缺 v5.2.2 fallback selector");
 
   // v4.8.52: Tab 模式 debugger 提示
   //   chrome.debugger.attach 会强制显示"AI Arena 已开始调试此浏览器"横条，
