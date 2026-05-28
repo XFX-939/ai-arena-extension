@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "AI Arena",
-  "version": "5.2.3",
-  "version_name": "5.2.3-beta",
+  "version": "5.2.4",
+  "version_name": "5.2.4-qwen-noise",
   "content_security_policy": {
     "extension_pages": "script-src 'self'; object-src 'self'; img-src 'self' data: blob: https: http:; media-src 'self' data: blob: https:;"
   },
@@ -92,7 +92,7 @@
     },
     {
       "matches": ["https://tongyi.aliyun.com/*", "https://www.qianwen.com/*"],
-      "js": ["inject-images.js", "content-qwen.js"],
+      "js": ["inject-images.js", "qwen-noise-filter.js", "content-qwen.js"],
       "run_at": "document_idle"
     },
     {

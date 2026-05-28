@@ -100,9 +100,18 @@ function _extractEl(el) {
     : (el.innerText || el.textContent || "");
 }
 
+// v5.2.3: 千问/夸克回答后追加"相关推荐"卡片（视频/笔记/网页 + hydrate JSON + 内联 CSS），
+//   selector 抓 wrapper 时一锅端 → 双层过滤：DOM 层 strip + 字串层 4 锚点截断。
+function _qwenExtract(el) {
+  if (!el) return "";
+  const cleaned = (typeof stripQwenDomNoise === "function") ? stripQwenDomNoise(el) : el;
+  const raw = _extractEl(cleaned);
+  return (typeof cleanQwenNoise === "function") ? cleanQwenNoise(raw) : raw;
+}
+
 function getLastResponseText() {
   const responses = queryBySelectors("response", { all: true });
-  if (responses.length > 0) return _extractEl(responses[responses.length - 1]);
+  if (responses.length > 0) return _qwenExtract(responses[responses.length - 1]);
   return "";
 }
 
@@ -194,7 +203,7 @@ async function readLatestResponse() {
   await sleep(500);
 
   const responses = queryBySelectors("response", { all: true });
-  if (responses.length > 0) return _extractEl(responses[responses.length - 1]).trim();
+  if (responses.length > 0) return _qwenExtract(responses[responses.length - 1]).trim();
   return "";
 }
 
