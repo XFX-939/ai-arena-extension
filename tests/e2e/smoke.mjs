@@ -67,7 +67,7 @@ try {
   // 2) 读 manifest version_name 验证版本同步（直接读源文件）
   const manifest = JSON.parse(fs.readFileSync(path.join(EXT_PATH, "manifest.json"), "utf8"));
   console.log(`[smoke] manifest version: ${manifest.version}, version_name: ${manifest.version_name}`);
-  check("manifest version_name = 5.2.12-extract-robust-v1-parity", manifest.version_name === "5.2.12-extract-robust-v1-parity", `actual: ${manifest.version_name}`);
+  check("manifest version_name = 5.2.13-qwen-real-dom", manifest.version_name === "5.2.13-qwen-real-dom", `actual: ${manifest.version_name}`);
 
   // 3) 打开 sidepanel.html（作为普通 tab），验证 DOM
   const sidepanelPage = await context.newPage();
@@ -75,10 +75,10 @@ try {
   await sidepanelPage.waitForLoadState("domcontentloaded");
 
   const versionBadge = await sidepanelPage.locator(".version").textContent();
-  check("sidepanel version badge", versionBadge === "v5.2.12-extract-robust-v1-parity", `actual: "${versionBadge}"`);
+  check("sidepanel version badge", versionBadge === "v5.2.13-qwen-real-dom", `actual: "${versionBadge}"`);
 
   const footerVersion = await sidepanelPage.locator(".footer").textContent();
-  check("sidepanel footer version", footerVersion?.includes("v5.2.12-extract-robust-v1-parity"), `actual: "${footerVersion?.slice(0, 100)}"`);
+  check("sidepanel footer version", footerVersion?.includes("v5.2.13-qwen-real-dom"), `actual: "${footerVersion?.slice(0, 100)}"`);
 
   const openChatBtn = await sidepanelPage.locator("#btn-open-chat").count();
   check('sidepanel has "🪟 群聊" button', openChatBtn === 1);
@@ -96,7 +96,7 @@ try {
   await popupPage.waitForLoadState("domcontentloaded");
 
   const popupVersion = await popupPage.locator(".chat-version").textContent();
-  check("popup chat-version = v5.2.12-extract-robust-v1-parity", popupVersion === "v5.2.12-extract-robust-v1-parity", `actual: "${popupVersion}"`);
+  check("popup chat-version = v5.2.13-qwen-real-dom", popupVersion === "v5.2.13-qwen-real-dom", `actual: "${popupVersion}"`);
 
   // 图标资产验证（v4.0.11）
   const assetsOk = await popupPage.evaluate(async (extId) => {
@@ -2652,12 +2652,12 @@ try {
     hasCurrentVersion: typeof window.ChatUpdateCheck?.currentVersion === "function",
     hasNewerHelper: typeof window.ChatUpdateCheck?._hasNewer === "function",
     curVer: window.ChatUpdateCheck?.currentVersion?.(),
-    hasNewerSelfTest: window.ChatUpdateCheck?._hasNewer?.("5.2.12-extract-robust-v1-parity", "v5.3.0-beta"),
-    hasNewerSameTest: window.ChatUpdateCheck?._hasNewer?.("5.2.12-extract-robust-v1-parity", "v5.2.12-extract-robust-v1-parity"),
+    hasNewerSelfTest: window.ChatUpdateCheck?._hasNewer?.("5.2.13-qwen-real-dom", "v5.3.0-beta"),
+    hasNewerSameTest: window.ChatUpdateCheck?._hasNewer?.("5.2.13-qwen-real-dom", "v5.2.13-qwen-real-dom"),
   }));
-  check("v5.2.0 运行时: ChatUpdateCheck API 暴露 + currentVersion 返回 5.2.12-extract-robust-v1-parity + hasNewer 比对逻辑正确",
+  check("v5.2.0 运行时: ChatUpdateCheck API 暴露 + currentVersion 返回 5.2.13-qwen-real-dom + hasNewer 比对逻辑正确",
     v52ApiRuntime.hasApi && v52ApiRuntime.hasCurrentVersion && v52ApiRuntime.hasNewerHelper &&
-    v52ApiRuntime.curVer === "5.2.12-extract-robust-v1-parity" &&
+    v52ApiRuntime.curVer === "5.2.13-qwen-real-dom" &&
     v52ApiRuntime.hasNewerSelfTest === true &&
     v52ApiRuntime.hasNewerSameTest === false,
     JSON.stringify(v52ApiRuntime));
@@ -2760,6 +2760,21 @@ try {
       /extractTextSafe.*?===\s*"function"/.test(src) || /typeof extractTextSafe/.test(src),
       `content-${p}.js 未优先 extractTextSafe`);
   }
+
+  // ── v5.2.13: MCP 实测千问真 DOM 命名（qk-markdown + 发送消息 aria-label）+ ChatGPT input ProseMirror 优先 ──
+  const selSrc = fs.readFileSync(path.join(EXT_PATH, "selectors-config.js"), "utf8");
+  check("v5.2.13: qwen response 加 qk-markdown 主 selector",
+    /\[class\*="qk-markdown"\]/.test(selSrc),
+    "qwen response 缺 qk-markdown");
+  check("v5.2.13: qwen sendButton 加 aria-label=发送消息（MCP 实测唯一稳特征）",
+    /button\[aria-label="发送消息"\]/.test(selSrc),
+    "qwen sendButton 缺 aria-label=发送消息");
+  check("v5.2.13: qwen streaming 加 qk-markdown:not(complete) 强信号",
+    /qk-markdown"\]:not\(\[class\*="qk-markdown-complete"\]\)/.test(selSrc),
+    "qwen streaming 缺 qk-markdown:not(complete) 判定");
+  check("v5.2.13: chatgpt input ProseMirror 提到首位（避免 textarea 误抓 hidden fallback）",
+    /div\.ProseMirror\[contenteditable='true'\]/.test(selSrc),
+    "chatgpt input 缺 div.ProseMirror 显式主 selector");
 
   // v4.8.52: Tab 模式 debugger 提示
   //   chrome.debugger.attach 会强制显示"AI Arena 已开始调试此浏览器"横条，

@@ -41,10 +41,15 @@ const DEFAULT_SELECTORS = {
     ]
   },
   chatgpt: {
+    // v5.2.13: ChatGPT 真输入框是 DIV#prompt-textarea.ProseMirror (contenteditable)，
+    //   页面还有个 TEXTAREA.wcDTda_fallbackTextarea hidden 兜底框（浏览器自动填充用）。
+    //   原 "textarea" fallback 会误抓 hidden 框 → 注入文字但用户看不到、send 不响应。
+    //   修：ProseMirror 显式优先 + textarea 改为限定 #prompt-textarea（id 不会撞 hidden 那个）
     input: [
-      "#prompt-textarea",
-      "textarea",
-      "[contenteditable='true']"
+      "div.ProseMirror[contenteditable='true']",   // v5.2.13 主 — 精准命中
+      "#prompt-textarea",                          // id 兜底（DIV 或 textarea 都行）
+      "[contenteditable='true']",                  // 通用兜底
+      "textarea#prompt-textarea"                   // 极端兜底（限定 id，避开 hidden）
     ],
     response: [
       // v4.3.2: 加宽匹配，捕获 ChatGPT 生图模式下的 image attachment 容器
@@ -174,6 +179,10 @@ const DEFAULT_SELECTORS = {
     ]
   },
   qwen: {
+    // v5.2.13: MCP 实测千问真 DOM 命名（www.qianwen.com 2026-05）
+    //   送 selector 之前用 button[class*="send"] 永远 0 命中 —— 千问 send 按钮真实 class 全是
+    //   "inline-flex size-8 shrink-0 ..." Tailwind，无 send/submit 字样，唯一稳定特征是
+    //   aria-label="发送消息"。修：以 aria-label 为主 selector。
     input: [
       '[role="textbox"]',
       '[contenteditable="true"]',
@@ -181,16 +190,28 @@ const DEFAULT_SELECTORS = {
       "textarea"
     ],
     response: [
+      // v5.2.13: MCP 实测真命名（qk = QianWen Kit）
+      '[class*="qk-markdown"]',                  // 主 — 直接命中千问 markdown 容器
+      '.qk-md-paragraph',                        // 段落 fallback
+      // 历史兜底（其他平台 / 旧版本）
+      '[class*="markdown"]',
       '[class*="assistant"] [class*="content"]',
-      '[class*="answer-content"]',
-      '[class*="markdown"]'
+      '[class*="answer-content"]'
     ],
     streaming: [
+      // v5.2.13: 强信号 — qk-markdown 容器没 complete 标志 = 还在 streaming
+      //   完成态 class: "qk-markdown qk-markdown-complete"；streaming 时无 complete
+      '[class*="qk-markdown"]:not([class*="qk-markdown-complete"])',
       'button[class*="stop"]',
+      'button[aria-label*="停止"]',
+      'button[aria-label*="Stop"]',
       '[class*="generating"]'
     ],
     sendButton: [
-      'button[class*="send"]',
+      'button[aria-label="发送消息"]',          // v5.2.13 主 — MCP 实测唯一稳定特征
+      'button[aria-label*="发送"]',             // v5.2.13 兜底 — 兼容微调
+      'button[aria-label*="Send"]',             // v5.2.13 英文 UI
+      'button[class*="send"]',                 // 历史兜底（其他 AI 可能用）
       'button[class*="submit"]'
     ],
     userMessage: [
