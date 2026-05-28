@@ -67,7 +67,7 @@ try {
   // 2) 读 manifest version_name 验证版本同步（直接读源文件）
   const manifest = JSON.parse(fs.readFileSync(path.join(EXT_PATH, "manifest.json"), "utf8"));
   console.log(`[smoke] manifest version: ${manifest.version}, version_name: ${manifest.version_name}`);
-  check("manifest version_name = 4.9.0-beta", manifest.version_name === "4.9.0-beta", `actual: ${manifest.version_name}`);
+  check("manifest version_name = 4.9.0.1-hotfix", manifest.version_name === "4.9.0.1-hotfix", `actual: ${manifest.version_name}`);
 
   // 3) 打开 sidepanel.html（作为普通 tab），验证 DOM
   const sidepanelPage = await context.newPage();
@@ -75,10 +75,10 @@ try {
   await sidepanelPage.waitForLoadState("domcontentloaded");
 
   const versionBadge = await sidepanelPage.locator(".version").textContent();
-  check("sidepanel version badge", versionBadge === "v4.9.0-beta", `actual: "${versionBadge}"`);
+  check("sidepanel version badge", versionBadge === "v4.9.0.1-hotfix", `actual: "${versionBadge}"`);
 
   const footerVersion = await sidepanelPage.locator(".footer").textContent();
-  check("sidepanel footer version", footerVersion?.includes("v4.9.0-beta"), `actual: "${footerVersion?.slice(0, 100)}"`);
+  check("sidepanel footer version", footerVersion?.includes("v4.9.0.1-hotfix"), `actual: "${footerVersion?.slice(0, 100)}"`);
 
   const openChatBtn = await sidepanelPage.locator("#btn-open-chat").count();
   check('sidepanel has "🪟 群聊" button', openChatBtn === 1);
@@ -96,7 +96,7 @@ try {
   await popupPage.waitForLoadState("domcontentloaded");
 
   const popupVersion = await popupPage.locator(".chat-version").textContent();
-  check("popup chat-version = v4.9.0-beta", popupVersion === "v4.9.0-beta", `actual: "${popupVersion}"`);
+  check("popup chat-version = v4.9.0.1-hotfix", popupVersion === "v4.9.0.1-hotfix", `actual: "${popupVersion}"`);
 
   // 图标资产验证（v4.0.11）
   const assetsOk = await popupPage.evaluate(async (extId) => {
@@ -2411,6 +2411,14 @@ try {
     e2eConfirm.retryHasSkip === true &&
     e2eConfirm.whitelistHasWord === true,
     `actual: ${JSON.stringify(e2eConfirm)}`);
+
+  // ── v4.9.0.1 hotfix: popup.js handleSend 的 ask 直发路径也必须接 bridge ──
+  // 实测发现 v4.9.0 漏了这条 — popup.js line 371 直接 sendMessage 没经 ChatTaskMenu.dispatch，
+  // 导致 ask 任务命中后 background 拦截但 popup 不弹 modal
+  const popupJsHotfix = fs.readFileSync(path.join(EXT_PATH, "popup.js"), "utf8");
+  check("v4.9.0.1 hotfix: popup.js handleSend ask 直发路径接 ChatGatekeeperBridge",
+    /chrome\.runtime\.sendMessage\(msg,[\s\S]{0,300}ChatGatekeeperBridge\?\.handleResp\(msg,\s*resp,\s*\{\s*textField:\s*"text"/.test(popupJsHotfix),
+    "popup.js handleSend 仍漏接 bridge，ask 任务命中后 modal 不弹");
 
   // v4.8.52: Tab 模式 debugger 提示
   //   chrome.debugger.attach 会强制显示"AI Arena 已开始调试此浏览器"横条，

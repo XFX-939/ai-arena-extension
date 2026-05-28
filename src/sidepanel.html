@@ -8,7 +8,7 @@
 <body data-theme="C">
   <div class="header">
     <h1>AI Arena</h1>
-    <span class="version">v4.9.0-beta</span>
+    <span class="version">v4.9.0.1-hotfix</span>
     <div class="theme-switcher">
       <button class="theme-btn" id="btn-theme">🎨</button>
       <div class="theme-menu" id="theme-menu">
@@ -31,7 +31,7 @@
 
   <!-- v4.2.0 Phase 2 提示 -->
   <div class="phase2-notice" style="padding:8px 12px;background:rgba(0,113,227,0.08);border-bottom:1px solid var(--border, #d2d2d7);font-size:12px;color:var(--accent, #0a84ff);line-height:1.5">
-    💡 v4.2 起默认入口已切换到 <strong>群聊窗口</strong>。sidepanel 保留作 PPT 工坊等高级场景的备用入口，未来 v5.0 将彻底下线。
+    💡 v4.2 起默认入口已切换到 <strong>群聊窗口</strong>。sidepanel 保留作辩论 / 同时提问的备用入口，PPT 工坊请在 popup 使用，未来 v5.0 将彻底下线。
   </div>
 
   <!-- 参与者 -->
@@ -69,7 +69,6 @@
     <div class="task-tabs">
       <button class="task-tab active" data-task="ask">同时提问</button>
       <button class="task-tab" data-task="debate">辩论</button>
-      <button class="task-tab" data-task="ppt">PPT 制作</button>
     </div>
 
     <div class="task-panel active" data-task-panel="ask">
@@ -123,36 +122,9 @@
       </div>
     </div>
 
-    <div class="task-panel ppt-workshop" data-task-panel="ppt">
-      <div class="ppt-action-row">
-        <button class="btn btn-secondary" id="btn-ppt-copy" type="button">文案生成</button>
-        <div class="ppt-template-wrap">
-          <button class="btn btn-secondary ppt-menu-trigger" id="btn-ppt-image-menu" type="button">图片生成 ▾</button>
-          <div class="ppt-template-menu" id="ppt-template-menu">
-            <button type="button" class="ppt-template-item" data-template="intro"><span class="ppt-template-name">技术介绍</span><span class="ppt-template-desc">核心原理</span></button>
-            <button type="button" class="ppt-template-item" data-template="topic"><span class="ppt-template-name">技术专题</span><span class="ppt-template-desc">总分结构</span></button>
-            <button type="button" class="ppt-template-item" data-template="compare"><span class="ppt-template-name">技术对比</span><span class="ppt-template-desc">As-Is / To-Be</span></button>
-            <button type="button" class="ppt-template-item" data-template="insight"><span class="ppt-template-name">技术洞察</span><span class="ppt-template-desc">新技术科普</span></button>
-            <button type="button" class="ppt-template-item" data-template="landscape"><span class="ppt-template-name">技术全景</span><span class="ppt-template-desc">领域沙盘</span></button>
-          </div>
-        </div>
-        <button class="btn btn-secondary" id="btn-pptx-prompt" type="button">PPT生成</button>
-      </div>
-      <textarea id="ppt-prompt-box" class="ppt-prompt-box"
-                placeholder="先点“文案生成”整理本次 AI 讨论；再点“图片生成”选择模板生成生图 prompt；最后点“PPT生成”生成图片转 PPTX prompt。"></textarea>
-      <div class="ppt-generate-row">
-        <button class="btn btn-primary ppt-start-btn" id="btn-ppt-start" type="button">开始生成</button>
-        <div class="ppt-save-wrap">
-          <button class="btn btn-secondary ppt-save-trigger" id="btn-ppt-save-menu" type="button">保存prompt ▾</button>
-          <div class="ppt-save-menu" id="ppt-save-menu">
-            <button type="button" class="ppt-template-item" data-save-prompt="copy"><span class="ppt-template-name">保存文案prompt</span></button>
-            <button type="button" class="ppt-template-item" data-save-prompt="image"><span class="ppt-template-name">保存图片prompt</span></button>
-            <button type="button" class="ppt-template-item" data-save-prompt="pptx"><span class="ppt-template-name">保存PPT prompt</span></button>
-          </div>
-        </div>
-      </div>
-      <div class="ppt-hint">默认发送给 ChatGPT。请先添加 GPT 参与者并打开 chatgpt.com 标签页。</div>
-    </div>
+    <!-- v4.9.x: PPT 工坊已整体迁移至 popup。三方迭代收敛 + 用户授权"完全删除"。
+         过去这里有 ppt-workshop panel + 独立 storage key aiArenaPptCustomPromptsV1,
+         造成双源头漂移(改 popup 模板库可能不生效)。统一改走 popup 的 📋 模板 → 📊 PPT 风格。 -->
   </div>
 
   <!-- 状态日志 -->
@@ -190,7 +162,7 @@
   <div class="dynamic-tip" id="dynamic-tip"></div>
   <div class="footer">
     <div class="shortcuts-hint">快捷键: Ctrl+Enter 发送 | Ctrl+Shift+D 辩论</div>
-    AI Arena v4.9.0-beta
+    AI Arena v4.9.0.1-hotfix
   </div>
   <script src="sidepanel.js"></script>
 </body>

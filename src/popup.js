@@ -368,8 +368,11 @@
     }
 
     if (!text) return;
-    chrome.runtime.sendMessage({ type: "chatBroadcast", text, targets, images: [] }, (resp) => {
+    const msg = { type: "chatBroadcast", text, targets, images: [] };
+    chrome.runtime.sendMessage(msg, (resp) => {
       if (chrome.runtime.lastError) console.warn(chrome.runtime.lastError);
+      // v4.9.0-hotfix: 守门员命中 → bridge 接管弹 modal + 重发（之前漏了这条 ask 直发路径）
+      if (window.ChatGatekeeperBridge?.handleResp(msg, resp, { textField: "text" })) return;
     });
   }
 
