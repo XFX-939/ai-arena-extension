@@ -159,7 +159,7 @@ async function injectAndSend(text) {
     }
 
     const el = queryBySelectors("input");
-    if (!el) return { site: SITE, status: "error", error: "未找到输入框" };
+    if (!el) return { site: SITE, status: "error", error: "未找到输入框", code: "INJECT_NO_INPUT", snapshot: { service: SITE, stage: "injecting", hitSelectors: { input: null }, domTextLen: 0, bootstrapReady: !!globalThis.__arenaBootstrap, pageUrl: location.href } };
 
     await robustInject(el, text);
 

@@ -174,7 +174,10 @@ async function robustInject(el, text) {
 async function injectAndSend(text) {
   try {
     const ready = await waitForUsableInput();
-    if (!ready.ok) return { site: SITE, status: "error", error: ready.error };
+    if (!ready.ok) {
+      const code = ready.error?.includes("登录") ? "LOGIN_REQUIRED" : "INJECT_NO_INPUT";
+      return { site: SITE, status: "error", error: ready.error, code, snapshot: { service: SITE, stage: "injecting", reason: ready.error, pageUrl: location.href, bootstrapReady: !!globalThis.__arenaBootstrap } };
+    }
     const el = ready.el;
 
     await robustInject(el, text);
@@ -193,7 +196,7 @@ async function injectAndSend(text) {
     el.dispatchEvent(new KeyboardEvent("keyup", { key: "Enter", code: "Enter", keyCode: 13, which: 13, bubbles: true }));
 
     await sleep(500);
-    if (isLoginBlocked()) return { site: SITE, status: "error", error: "需要登录或关闭登录弹窗" };
+    if (isLoginBlocked()) return { site: SITE, status: "error", error: "需要登录或关闭登录弹窗", code: "LOGIN_REQUIRED", snapshot: { service: SITE, stage: "injecting", reason: "isLoginBlocked", pageUrl: location.href } };
 
     const remaining = (el.tagName === "TEXTAREA" ? el.value : el.innerText).trim();
     if (remaining.length < text.length * 0.3) return { site: SITE, status: "sent" };
@@ -207,12 +210,12 @@ async function injectAndSend(text) {
       if (btn && !disabled) {
         btn.click();
         await sleep(800);
-        if (isLoginBlocked()) return { site: SITE, status: "error", error: "需要登录或关闭登录弹窗" };
+        if (isLoginBlocked()) return { site: SITE, status: "error", error: "需要登录或关闭登录弹窗", code: "LOGIN_REQUIRED", snapshot: { service: SITE, stage: "injecting", reason: "isLoginBlocked", pageUrl: location.href } };
         return { site: SITE, status: "sent" };
       }
     }
 
-    if (isLoginBlocked()) return { site: SITE, status: "error", error: "需要登录或关闭登录弹窗" };
+    if (isLoginBlocked()) return { site: SITE, status: "error", error: "需要登录或关闭登录弹窗", code: "LOGIN_REQUIRED", snapshot: { service: SITE, stage: "injecting", reason: "isLoginBlocked", pageUrl: location.href } };
     // v4.8.60: fail-soft 替代 v4.8.50 fail-loud — Enter 可能已触发发送（input 残留只是 React 异步清空慢），polling 兜底验证
     return { site: SITE, status: "sent", inject_warning: "button stayed disabled after 8 retries — polling will verify" };
   } catch (e) {

@@ -151,7 +151,10 @@ async function robustInject(el, text) {
 async function injectAndSend(text) {
   try {
     const ready = await waitForUsableInput();
-    if (!ready.ok) return { site: SITE, status: "error", error: ready.error };
+    if (!ready.ok) {
+      const code = ready.error?.includes("登录") ? "LOGIN_REQUIRED" : "INJECT_NO_INPUT";
+      return { site: SITE, status: "error", error: ready.error, code, snapshot: { service: SITE, stage: "injecting", reason: ready.error, pageUrl: location.href, bootstrapReady: !!globalThis.__arenaBootstrap } };
+    }
     const el = ready.el;
 
     await robustInject(el, text);

@@ -3,6 +3,16 @@
 const $ = (s) => document.querySelector(s);
 const $$ = (s) => document.querySelectorAll(s);
 
+// v5.2.4-storage-p1: 统一渲染后台失败 — 优先按 ArenaError code 翻译大白话，回退到旧式 .error 字串。
+function _formatErr(resp, fallback) {
+  if (!resp) return fallback || "未知错误";
+  const code = resp.code || resp.errorCode;
+  if (code && typeof renderUserHint === "function") {
+    return `[${code}] ${renderUserHint(code)}`;
+  }
+  return resp.error || fallback || "未知错误";
+}
+
 const logEl = $("#log"), listEl = $("#participant-list"), countEl = $("#participant-count");
 const judgeSelect = $("#judge-select");
 const broadcastInput = $("#broadcast-input"), btnSend = $("#btn-send");
@@ -194,7 +204,7 @@ function renderParticipants() {
         renderParticipants();
         if (!streamingPollTimer) startStreamingPoll();
       } else {
-        addLog(`发送失败: ${resp?.error || '未知错误'}`, "error");
+        addLog(`发送失败: ${_formatErr(resp, "未知错误")}`, "error");
       }
       b.textContent = "↻"; b.disabled = false;
     }));
@@ -213,7 +223,7 @@ function renderParticipants() {
         // 检查是否所有人都 ready 了
         checkAllReadyAndConfirm();
       } else {
-        addLog(`提取失败: ${resp?.error || '未读取到内容'}`, "error");
+        addLog(`提取失败: ${_formatErr(resp, "未读取到内容")}`, "error");
         b.textContent = "⇣"; b.disabled = false;
       }
     }));
@@ -651,7 +661,8 @@ async function doBroadcast() {
       injectResults = {};
       for (const [id, v] of Object.entries(r)) {
         injectResults[id] = (v.status === "sent" || v.status === "inputted") ? "ok" : "failed";
-        addLog(`${v.name}: ${v.status}${v.error ? " - " + v.error : ""}`, v.status === "sent" || v.status === "inputted" ? "success" : "error");
+        const errHint = (v.code || v.error) ? " - " + _formatErr(v, "") : "";
+        addLog(`${v.name}: ${v.status}${errHint}`, v.status === "sent" || v.status === "inputted" ? "success" : "error");
       }
     }
     broadcastInput.innerHTML = "";

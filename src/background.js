@@ -6,7 +6,8 @@ let lastKnownScreen = { width: 1920, height: 1080, left: 0, top: 0 };
 // v4.8.29 F37 混合模式: Tab 模式走 chrome.debugger 持久 attach（黄条不影响 UI），
 // 并列模式走 MAIN world visibility patch（无黄条）— 两套并存按需启用
 // v4.9.0: 加入 gatekeeper 三个模块（rules → store → engine 顺序，store/engine 依赖 BUILTIN_RULES）
-importScripts("selectors-config.js", "state-machine.js", "templates-builtin.js", "template-store.js", "debate-engine.js", "cdp-extractor.js", "chat-bus.js", "ppt-prompts.js", "debate-summary-template.js", "gatekeeper-rules.js", "gatekeeper-store.js", "gatekeeper-engine.js");
+// v5.2.4-storage-p1: arena-errors.js 最先 importScripts，让其余子模块都能用 makeArenaError/ArenaErrorCode/ArenaStage
+importScripts("arena-errors.js", "selectors-config.js", "state-machine.js", "templates-builtin.js", "template-store.js", "debate-engine.js", "cdp-extractor.js", "chat-bus.js", "ppt-prompts.js", "debate-summary-template.js", "gatekeeper-rules.js", "gatekeeper-store.js", "gatekeeper-engine.js");
 
 const SERVICES = {
   claude:   { url: "https://claude.ai/new",              name: "Claude" },
@@ -783,7 +784,7 @@ async function handleBroadcast(text, images) {
   const results = {};
   await Promise.all(StateMachine.participants.map(async (p) => {
     if (!p.tabId) {
-      results[p.id] = { name: p.name, status: "error", error: "未打开" };
+      results[p.id] = { name: p.name, status: "error", error: "未打开", code: "TAB_NOT_FOUND", snapshot: { service: p.service, stage: "injecting" } };
       return;
     }
     // 记录"刚发给该 p 的 prompt"——readOneResponse 用此校验防把用户消息当成 AI 回复
