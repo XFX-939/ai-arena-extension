@@ -409,25 +409,9 @@
         try { window.ChatLog?.push?.({ ts: Date.now(), text, level }); } catch (_) {}
       };
 
-      // 1. 拿历史记录
-      const log = await new Promise(res => chrome.runtime.sendMessage({ type: "chatRestoreLog" }, resp => res(resp?.messages || [])));
-      if (!log.length) { alert("当前没有对话记录，先发几条消息再生成接棒简报"); return; }
-
-      // 2. 拼 transcript（按时间顺序 + 角色名 + 内容）
-      const transcript = log.map(m => {
-        const who = m.role === "user" ? "【用户】"
-                  : `【${m.aiName || m.service || "AI"}】`;
-        const text = (m.response || m.responsePreview || m.text || "").trim();
-        return text ? `${who}\n${text}` : "";
-      }).filter(Boolean).join("\n\n");
-
-      if (!transcript || transcript.length < 20) {
-        alert("当前对话过短，无需生成接棒简报");
-        return;
-      }
-
-      // 3. 构建 meta-prompt
-      const metaPrompt = window.BatonPrompts?.buildBatonMetaPrompt?.({ length, stance, transcript });
+      // v5.2.11: 浓缩官是当前讨论的全程参与者，网页里已有完整上下文 →
+      // 不再 popup 端拼 transcript 塞回去（冗余且浪费 token），直接简明 prompt
+      const metaPrompt = window.BatonPrompts?.buildBatonMetaPrompt?.({ length, stance });
       if (!metaPrompt) { alert("BatonPrompts 模板未加载，请刷新扩展"); return; }
 
       // 4. 找浓缩官 service（chatStreamUpdate 用 service 作 participantId 字段）
