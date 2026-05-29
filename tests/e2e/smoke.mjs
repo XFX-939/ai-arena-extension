@@ -67,9 +67,9 @@ try {
   // 2) 读 manifest version_name 验证版本同步（直接读源文件）
   const manifest = JSON.parse(fs.readFileSync(path.join(EXT_PATH, "manifest.json"), "utf8"));
   console.log(`[smoke] manifest version: ${manifest.version}, version_name: ${manifest.version_name}`);
-  check("manifest version_name = 5.2.20", manifest.version_name === "5.2.20", `actual: ${manifest.version_name}`);
-  // v5.2.20: 正式改名 AI圆桌派
-  check("v5.2.20: manifest name = AI圆桌派（品牌改名）", manifest.name === "AI圆桌派", `actual: ${manifest.name}`);
+  check("manifest version_name = 5.2.21", manifest.version_name === "5.2.21", `actual: ${manifest.version_name}`);
+  // v5.2.21: 正式改名 AI圆桌派
+  check("v5.2.21: manifest name = AI圆桌派（品牌改名）", manifest.name === "AI圆桌派", `actual: ${manifest.name}`);
 
   // 3) 打开 sidepanel.html（作为普通 tab），验证 DOM
   const sidepanelPage = await context.newPage();
@@ -77,10 +77,10 @@ try {
   await sidepanelPage.waitForLoadState("domcontentloaded");
 
   const versionBadge = await sidepanelPage.locator(".version").textContent();
-  check("sidepanel version badge", versionBadge === "v5.2.20", `actual: "${versionBadge}"`);
+  check("sidepanel version badge", versionBadge === "v5.2.21", `actual: "${versionBadge}"`);
 
   const footerVersion = await sidepanelPage.locator(".footer").textContent();
-  check("sidepanel footer version", footerVersion?.includes("v5.2.20"), `actual: "${footerVersion?.slice(0, 100)}"`);
+  check("sidepanel footer version", footerVersion?.includes("v5.2.21"), `actual: "${footerVersion?.slice(0, 100)}"`);
 
   const openChatBtn = await sidepanelPage.locator("#btn-open-chat").count();
   check('sidepanel has "🪟 群聊" button', openChatBtn === 1);
@@ -98,7 +98,7 @@ try {
   await popupPage.waitForLoadState("domcontentloaded");
 
   const popupVersion = await popupPage.locator(".chat-version").textContent();
-  check("popup chat-version = v5.2.20", popupVersion === "v5.2.20", `actual: "${popupVersion}"`);
+  check("popup chat-version = v5.2.21", popupVersion === "v5.2.21", `actual: "${popupVersion}"`);
 
   // 图标资产验证（v4.0.11）
   const assetsOk = await popupPage.evaluate(async (extId) => {
@@ -2654,12 +2654,12 @@ try {
     hasCurrentVersion: typeof window.ChatUpdateCheck?.currentVersion === "function",
     hasNewerHelper: typeof window.ChatUpdateCheck?._hasNewer === "function",
     curVer: window.ChatUpdateCheck?.currentVersion?.(),
-    hasNewerSelfTest: window.ChatUpdateCheck?._hasNewer?.("5.2.20", "v5.3.0-beta"),
-    hasNewerSameTest: window.ChatUpdateCheck?._hasNewer?.("5.2.20", "v5.2.20"),
+    hasNewerSelfTest: window.ChatUpdateCheck?._hasNewer?.("5.2.21", "v5.3.0-beta"),
+    hasNewerSameTest: window.ChatUpdateCheck?._hasNewer?.("5.2.21", "v5.2.21"),
   }));
-  check("v5.2.0 运行时: ChatUpdateCheck API 暴露 + currentVersion 返回 5.2.20 + hasNewer 比对逻辑正确",
+  check("v5.2.0 运行时: ChatUpdateCheck API 暴露 + currentVersion 返回 5.2.21 + hasNewer 比对逻辑正确",
     v52ApiRuntime.hasApi && v52ApiRuntime.hasCurrentVersion && v52ApiRuntime.hasNewerHelper &&
-    v52ApiRuntime.curVer === "5.2.20" &&
+    v52ApiRuntime.curVer === "5.2.21" &&
     v52ApiRuntime.hasNewerSelfTest === true &&
     v52ApiRuntime.hasNewerSameTest === false,
     JSON.stringify(v52ApiRuntime));
@@ -2806,8 +2806,8 @@ try {
 
   // ── v5.2.18: polling 双阈值完成判定（修第二轮起 streaming 误报拖到 5min 超时）+ ARIA 表格 ──
   const busSrc = fs.readFileSync(path.join(EXT_PATH, "chat-bus.js"), "utf8");
-  check("v5.2.18: chat-bus 加 STREAM_DONE_THRESHOLD_FORCE 兜底阈值",
-    /const STREAM_DONE_THRESHOLD_FORCE\s*=\s*8/.test(busSrc),
+  check("v5.2.18/21: chat-bus 加 STREAM_DONE_THRESHOLD_FORCE 兜底阈值（v5.2.21 缩短到 6）",
+    /const STREAM_DONE_THRESHOLD_FORCE\s*=\s*\d/.test(busSrc),
     "chat-bus 缺 STREAM_DONE_THRESHOLD_FORCE");
   check("v5.2.18: pollOnce 双阈值完成判定（doneFast !isStreaming + doneForce 无视 isStreaming）",
     /doneFast\s*=\s*state\.sameCount >= STREAM_DONE_THRESHOLD && !r\?\.isStreaming/.test(busSrc) &&
@@ -2836,22 +2836,24 @@ try {
   check("v5.2.13: qwen sendButton 加 aria-label=发送消息（MCP 实测唯一稳特征）",
     /button\[aria-label="发送消息"\]/.test(selSrc),
     "qwen sendButton 缺 aria-label=发送消息");
-  check("v5.2.13: qwen streaming 加 qk-markdown:not(complete) 强信号",
-    /qk-markdown"\]:not\(\[class\*="qk-markdown-complete"\]\)/.test(selSrc),
-    "qwen streaming 缺 qk-markdown:not(complete) 判定");
+  // v5.2.21: 千问 streaming 的 qk-markdown:not(complete) 已移除（后台标记滞后卡 isStreaming），
+  //   此处只校验 response selector 仍含 qk-markdown（提取用，不受影响）
+  check("v5.2.13/21: qwen response 含 qk-markdown（streaming 反向依赖已移除）",
+    /\[class\*="qk-markdown"\]/.test(selSrc),
+    "qwen 缺 qk-markdown response selector");
   check("v5.2.13: chatgpt input ProseMirror 提到首位（避免 textarea 误抓 hidden fallback）",
     /div\.ProseMirror\[contenteditable='true'\]/.test(selSrc),
     "chatgpt input 缺 div.ProseMirror 显式主 selector");
 
-  // ── v5.2.20: MCP 登录态实测修复（元宝 hyc selector + 列表 bullet + pill 同源）──
-  check("v5.2.20: 元宝 response 加 hyc-content-md（MCP 实测真命名，修表格拆单列）",
+  // ── v5.2.21: MCP 登录态实测修复（元宝 hyc selector + 列表 bullet + pill 同源）──
+  check("v5.2.21: 元宝 response 加 hyc-content-md（MCP 实测真命名，修表格拆单列）",
     /\[class\*="hyc-content-md"\]/.test(selSrc),
     "元宝 response 缺 hyc-content-md");
-  check("v5.2.20: 元宝 streaming 删 [class*=loading]（太宽误命中持久占位）",
+  check("v5.2.21: 元宝 streaming 删 [class*=loading]（太宽误命中持久占位）",
     !/yuanbao:[\s\S]*?streaming:[\s\S]*?'\[class\*="loading"\]'/.test(selSrc),
     "元宝 streaming 仍含过宽 loading");
   const injSrc20 = fs.readFileSync(path.join(EXT_PATH, "inject-images.js"), "utf8");
-  check("v5.2.20: 列表项剥离自带 bullet 符号（修元宝双 bullet，且不含 * 防误删加粗）",
+  check("v5.2.21: 列表项剥离自带 bullet 符号（修元宝双 bullet，且不含 * 防误删加粗）",
     /replace\(\/\^\[•·‣◦⁃∙▪●○\]\+\\s\*\//.test(injSrc20),
     "inject-images 列表 bullet 剥离正则缺失或含 *");
   const rosterSrc = fs.readFileSync(path.join(EXT_PATH, "popup-roster.js"), "utf8");
@@ -2859,6 +2861,18 @@ try {
     /streamPreview/.test(rosterSrc) &&
     /chatStreamUpdate"[\s\S]*?streamPreview\.set/.test(rosterSrc),
     "popup-roster 未接入 streamPreview 同源");
+
+  // ── v5.2.21: 移除千问/元宝反向标记依赖 streaming selector（A）+ 缩短 force 兜底（B）──
+  check("v5.2.21-A: 千问 streaming 移除 qk-markdown:not(complete)（后台标记滞后卡 isStreaming）",
+    !/qk-markdown"\]:not\(\[class\*="qk-markdown-complete"\]\)/.test(selSrc),
+    "千问 streaming 仍含 qk-markdown:not(complete) 反向依赖");
+  check("v5.2.21-A: 元宝 streaming 移除 hyc-content-md:not(done)",
+    !/hyc-content-md"\]:not\(\[class\*="hyc-content-md-done"\]\)/.test(selSrc),
+    "元宝 streaming 仍含 hyc-content-md:not(done) 反向依赖");
+  const busSrc21 = fs.readFileSync(path.join(EXT_PATH, "chat-bus.js"), "utf8");
+  check("v5.2.21-B: STREAM_DONE_THRESHOLD_FORCE 缩短到 6（12s→9s 后台兜底更快）",
+    /STREAM_DONE_THRESHOLD_FORCE\s*=\s*6/.test(busSrc21),
+    "force 阈值未缩短到 6");
 
   // ── v5.2.14: NOISE_SEL 加 banner/popup/ads/advert（修豆包"下载电脑版"等横幅污染）──
   check("v5.2.14: NOISE_SEL 含 banner（豆包下载横幅污染修复）",

@@ -203,9 +203,11 @@ const DEFAULT_SELECTORS = {
       '[class*="answer-content"]'
     ],
     streaming: [
-      // v5.2.13: 强信号 — qk-markdown 容器没 complete 标志 = 还在 streaming
-      //   完成态 class: "qk-markdown qk-markdown-complete"；streaming 时无 complete
-      '[class*="qk-markdown"]:not([class*="qk-markdown-complete"])',
+      // v5.2.21: 移除 qk-markdown:not(complete) 反向标记依赖（A 方案）
+      //   根因：并列模式 AI 在后台窗口，Chrome 节流后台 tab JS，qk-markdown-complete
+      //   标记的回调滞后/不执行 → :not(complete) 一直命中 → isStreaming 卡 true →
+      //   完成判定 !isStreaming 卡死 → 第二轮起提取拖到 12s 兜底甚至更久（用户实测）。
+      //   改回正向 streaming 指示器（stop 按钮/generating，完成即消失，不依赖完成标记）。
       'button[class*="stop"]',
       'button[aria-label*="停止"]',
       'button[aria-label*="Stop"]',
@@ -287,8 +289,10 @@ const DEFAULT_SELECTORS = {
       '[class*="assistant"] [class*="content"]'
     ],
     streaming: [
-      // v5.2.20: 强信号 — hyc-content-md 完成后加 hyc-content-md-done 标记，无 done = 生成中
-      '[class*="hyc-content-md"]:not([class*="hyc-content-md-done"])',
+      // v5.2.21: 移除 hyc-content-md:not(done) 反向标记依赖（A 方案，同千问）
+      //   后台 tab 节流 → hyc-content-md-done 标记滞后 → :not(done) 卡 isStreaming=true →
+      //   完成判定卡死。改回正向 streaming 指示器。实测元宝 done 标记比文字停晚 2s，
+      //   后台更久 → 反向依赖是第二轮慢元凶。
       'button[class*="stop"]',
       'button[aria-label*="停止"]',
       'button[aria-label*="Stop"]',

@@ -279,7 +279,9 @@ const ChatBus = (() => {
   //   streaming selector 误命中 → isStreaming 卡 true → 完成判定永远差 `!isStreaming`
   //   → 拖到 MAX_POLL_TICKS(5min) 超时才放行。用户现象："页面早回答完了，扩展过很久才提取"。
   //   12s 文本不变 = AI 几乎不可能还在生成（停顿规划下一段也不会停 12s），强制完成安全。
-  const STREAM_DONE_THRESHOLD_FORCE = 8;
+  // v5.2.21: 12s→9s（B 方案）— 后台 tab 节流时 streaming 误报兜底更快。
+  //   配合 A 方案（移除千问/元宝反向标记依赖）：A 减少误报源头，B 缩短兜底上限。
+  const STREAM_DONE_THRESHOLD_FORCE = 6;
   // v4.5.5 F5: 全局 polling tick 上限，~5 分钟兜底防 imagesPending 抖动让 stableKey 永不稳定
   // 实测场景：mock readResponse 返回 text 不变但 imagesPending 0/1 抖动 → polling 跑 12s
   // 仍未完成，理论可无限跑。到达上限按当前文本强制 isDone:true 完成。
