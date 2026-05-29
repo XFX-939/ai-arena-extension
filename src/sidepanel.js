@@ -424,7 +424,7 @@ function schedulePollTick() {
             stopStreamingPoll();
             await readAllResponses(doneIds);
             if (Notification.permission === "granted") {
-              try { new Notification("AI Arena", { body: "所有 AI 已回答完毕", icon: "icons/icon128.png" }); } catch {}
+              try { new Notification("AI圆桌派", { body: "所有 AI 已回答完毕", icon: "icons/icon128.png" }); } catch {}
             }
           }
         } else { pollReadyCount = 0; }

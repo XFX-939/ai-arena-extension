@@ -68,7 +68,7 @@ async function ensureContextMenu() {
   try {
     await chrome.contextMenus.create({
       id: "ai-arena-ask",
-      title: "用 AI Arena 提问",
+      title: "用 AI圆桌派 提问",
       contexts: ["selection"],
     });
   } catch (e) {
@@ -1461,7 +1461,7 @@ async function handleFocusTab(id) {
 // ── 导出 ──
 
 function exportSession() {
-  let md = `# AI Arena 辩论记录\n\n`;
+  let md = `# AI圆桌派 辩论记录\n\n`;
   md += `**时间**: ${new Date().toLocaleString("zh-CN")}\n`;
   md += `**参与者**: ${StateMachine.participants.map(p => p.name).join(", ")}\n\n`;
   if (StateMachine.debateSession.originalQuestion) {
