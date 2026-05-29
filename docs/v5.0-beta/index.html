@@ -158,6 +158,90 @@
   }
   .hero-meta b { color: #fff; font-weight: 700; font-size: 18px; display: block; }
 
+  /* ===== Hero 3 大痛点卡 ===== */
+  .pain-grid {
+    margin: 28px 0 6px;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+  }
+  @media (max-width: 980px) { .pain-grid { grid-template-columns: 1fr; } }
+  .pain-card {
+    position: relative;
+    background: rgba(255,255,255,0.07);
+    border: 1px solid rgba(255,255,255,0.16);
+    border-left-width: 3px;
+    border-radius: 12px;
+    padding: 18px 18px 14px;
+    backdrop-filter: blur(8px);
+    display: flex; flex-direction: column;
+    transition: transform 0.2s, background 0.2s, border-color 0.2s;
+    overflow: hidden;
+  }
+  .pain-card:hover {
+    transform: translateY(-3px);
+    background: rgba(255,255,255,0.10);
+  }
+  .pain-card::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(circle at 100% 0%, rgba(255,255,255,0.10), transparent 60%);
+    pointer-events: none;
+  }
+  .pain-1 { border-left-color: #ff453a; }
+  .pain-2 { border-left-color: #ff9f0a; }
+  .pain-3 { border-left-color: #30d158; }
+  .pain-emoji {
+    font-size: 30px;
+    line-height: 1;
+    margin-bottom: 10px;
+    filter: drop-shadow(0 4px 8px rgba(0,0,0,0.25));
+  }
+  .pain-card h3 {
+    margin: 0 0 13px;
+    font-size: 17px;
+    font-weight: 700;
+    line-height: 1.35;
+    color: #fff;
+    letter-spacing: -0.01em;
+  }
+  .pain-card h3 .accent-pain {
+    background: linear-gradient(120deg, #5ac8fa 0%, #af52de 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  .pain-vs {
+    display: flex; flex-direction: column; gap: 7px;
+    font-size: 12.5px; line-height: 1.55;
+    color: rgba(255,255,255,0.85);
+  }
+  .pain-vs .row {
+    display: flex; gap: 8px; align-items: flex-start;
+    padding: 7px 9px;
+    border-radius: 7px;
+    background: rgba(0,0,0,0.22);
+  }
+  .pain-vs .row.bad { background: rgba(255,69,58,0.10); }
+  .pain-vs .row.good {
+    background: rgba(48,209,88,0.13);
+    color: rgba(255,255,255,0.95);
+  }
+  .pain-vs .tag {
+    display: inline-block;
+    flex-shrink: 0;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    padding: 1px 6px;
+    border-radius: 4px;
+    background: rgba(255,255,255,0.14);
+    color: #fff;
+    white-space: nowrap;
+    line-height: 1.5;
+  }
+
   /* ===== Hook 共鸣画面 ===== */
   .hook {
     background: var(--card);
@@ -1970,8 +2054,37 @@
 <section class="ch ch-hero hero" data-ch-id="hero">
   <div class="hero-inner">
     <span class="hero-badge"><span class="dot"></span>v5.0 · Beta 公测 · 首批 100 名早鸟限量</span>
-    <h1>还在 5 个标签页里<br><span class="accent">轮流问 AI</span> 吗？</h1>
-    <p class="lead">让 <b style="color:#5ac8fa">9 大主流 AI</b> 在一个屏幕里同台辩论 —— 唯一的那个 Chrome 扩展。</p>
+    <h1>用 AI 干活，你是否被<br><span class="accent">这 3 件事</span>反复折磨？</h1>
+    <p class="lead">9 大主流 AI 同台 · 互相找茬 · 互相补盲 · <b style="color:#5ac8fa">1+1+1 &gt; 3</b> —— 唯一的那个 Chrome 扩展。</p>
+
+    <!-- 3 大用户痛点卡（D 体感切入） -->
+    <div class="pain-grid">
+      <div class="pain-card pain-1">
+        <div class="pain-emoji">📚</div>
+        <h3>AI 又编造了<br><span class="accent-pain">不存在的文献</span>？</h3>
+        <div class="pain-vs">
+          <div class="row bad"><span class="tag">❌ 单 AI</span>"参考《XX 期刊 2023》..." 翻官网查无此文</div>
+          <div class="row good"><span class="tag">✅ 圆桌</span>另外 2 家立刻反驳："这论文 arXiv 没收录"</div>
+        </div>
+      </div>
+      <div class="pain-card pain-2">
+        <div class="pain-emoji">🎯</div>
+        <h3>AI 又在不擅长的<br><span class="accent-pain">领域大放厥词</span>？</h3>
+        <div class="pain-vs">
+          <div class="row bad"><span class="tag">❌ 单 AI</span>让写代码的 AI 评诗 · 它也敢一本正经胡说</div>
+          <div class="row good"><span class="tag">✅ 圆桌</span>各家强项不同 · 弱项不抢话 · 强项当裁判</div>
+        </div>
+      </div>
+      <div class="pain-card pain-3">
+        <div class="pain-emoji">🤝</div>
+        <h3>能否让多个 AI<br><span class="accent-pain">1+1+1 &gt; 3 协作</span>？</h3>
+        <div class="pain-vs">
+          <div class="row bad"><span class="tag">❌ 单 AI</span>它的思维盲区 = 你的思维盲区</div>
+          <div class="row good"><span class="tag">✅ 圆桌</span>群策群力 · 接力棒 · @-mention · 一份提示词 3 个角度</div>
+        </div>
+      </div>
+    </div>
+
     <div class="hero-brands">
       <img src="v5.0-screenshots/brands/claude.svg" alt="Claude" />
       <img src="v5.0-screenshots/brands/gemini.svg" alt="Gemini" />
@@ -2228,9 +2341,9 @@
 
   <!-- ============== 4 硬实力 · 翻书页 ============== -->
   <section class="ch section" id="hard-section" data-ch-id="hard">
-    <div class="book-intro" data-big="4">
-      <h2><em>4 道护城河</em></h2>
-      <p class="book-intro-sub">看不见的硬核底座 · 鲁棒性 / 统计 / 气泡 / Markdown 渲染</p>
+    <div class="book-intro" data-big="5">
+      <h2><em>5 道护城河</em></h2>
+      <p class="book-intro-sub">看不见的硬核底座 · 鲁棒性 / 统计 / 气泡 / Markdown / 安全守门员</p>
       <a class="book-intro-arrow" href="#hard-section">⚡ ← → 翻看每道护城河</a>
     </div>
 
@@ -2311,10 +2424,39 @@
         </div>
       </div></div>
 
+      <!-- E 安全守门员 v4.9.0 -->
+      <div class="page hard-page"><div class="hard-card">
+        <div class="h"><div class="num">E</div><div class="ttl">🛡️ 敏感信息守门员 <span style="font-size:12px;font-weight:600;color:#34c759;background:rgba(52,199,89,0.15);padding:2px 8px;border-radius:6px;margin-left:8px;vertical-align:middle">v4.9.0 新增</span></div></div>
+        <div class="body">出站 prompt 自动扫一遍 —— 工号 / 内网 IP / 客户名 / 保密词，<b>拦在嘴边</b>，免去"手抖发出去就晚了"的恐慌。</div>
+        <ul>
+          <li><b>7 类内置规则</b>：工号 · 内网 IP · 内部邮箱 · 手机号 · 内部域名 · 客户 · 保密词</li>
+          <li><b>命中即弹窗</b>：自动打码后发 / 取消 / 加白名单 · 三档随心选</li>
+          <li><b>全平台拦截</b>：sidepanel · popup · PPT 工坊 · 接力棒 · 一处不漏</li>
+          <li><b>本地匹配 · 0 上传</b>：规则 + 命中记录全部 chrome.storage 落地</li>
+        </ul>
+        <div class="hard-thumb">
+          <svg viewBox="0 0 500 130" xmlns="http://www.w3.org/2000/svg">
+            <rect width="500" height="130" fill="#0f1419"/>
+            <text x="20" y="32" font-family="SF Mono,Consolas,monospace" font-size="13" font-weight="700" fill="#aeaeb2">📤 即将发送给 AI：</text>
+            <rect x="20" y="42" width="460" height="48" rx="6" fill="#1c1c1e" stroke="#3a3a3c"/>
+            <text x="30" y="63" font-family="SF Mono,Consolas,monospace" font-size="12" fill="#e5e5e7">请帮我整理客户 </text>
+            <rect x="116" y="50" width="56" height="18" rx="3" fill="#ff453a" opacity="0.85"/>
+            <text x="120" y="63" font-family="SF Mono,Consolas,monospace" font-size="12" font-weight="700" fill="#fff">华为</text>
+            <text x="148" y="63" font-family="SF Mono,Consolas,monospace" font-size="12" fill="#fff" font-style="italic">[客户]</text>
+            <text x="180" y="63" font-family="SF Mono,Consolas,monospace" font-size="12" fill="#e5e5e7"> 的 IT 决策人 </text>
+            <rect x="276" y="50" width="90" height="18" rx="3" fill="#ff453a" opacity="0.85"/>
+            <text x="280" y="63" font-family="SF Mono,Consolas,monospace" font-size="12" font-weight="700" fill="#fff">10.45.6.7</text>
+            <text x="338" y="63" font-family="SF Mono,Consolas,monospace" font-size="11" fill="#fff" font-style="italic">[内网IP]</text>
+            <text x="30" y="82" font-family="SF Mono,Consolas,monospace" font-size="12" fill="#e5e5e7">服务器上的部署日志</text>
+            <text x="20" y="112" font-family="-apple-system,system-ui" font-size="12" font-weight="600" fill="#ff9f0a">⚠ 守门员拦截 · 检测到 2 处敏感信息 · [自动打码后发] / [取消]</text>
+          </svg>
+        </div>
+      </div></div>
+
     </div>
     <div class="book-controls">
       <button class="book-btn" data-book-prev="hard">← 上一项</button>
-      <span class="book-idx">第 <b data-book-idx="hard">1</b> 项 / 共 4 项</span>
+      <span class="book-idx">第 <b data-book-idx="hard">1</b> 项 / 共 5 项</span>
       <button class="book-btn" data-book-next="hard">下一项 →</button>
     </div>
     <div class="book-dots" data-book-dots="hard"></div>
@@ -2851,9 +2993,9 @@
 (function () {
   const ORDER = ['hero', 'stories', 'hard', 'cta', 'numbers', 'play', 'roadmap'];
   const META = {
-    hero:    { tag: '第 0 章 · 开场',  big: '让 9 大 AI 同台', sub: '唯一让 9 大主流 AI 同台辩论的 Chrome 扩展' },
+    hero:    { tag: '第 0 章 · 开场',  big: '3 大痛点 · 1 个解药', sub: '9 AI 同台辩论 · 互找茬 · 互补盲 · 1+1+1 > 3' },
     stories: { tag: '第 1 章 · 王牌',  big: '7 张王牌',        sub: '装上就停不下来的 7 个理由' },
-    hard:    { tag: '第 2 章 · 底座',  big: '4 道护城河',      sub: '看不见的硬核底座 · 让王牌打得稳' },
+    hard:    { tag: '第 2 章 · 底座',  big: '5 道护城河',      sub: '鲁棒 · 统计 · 气泡 · Markdown · 安全守门员' },
     cta:     { tag: '第 3 章 · 上车',  big: '上车吗？',        sub: '首批 100 名 Beta · 30 秒后你就在指挥 3 个 AI' },
     numbers: { tag: '彩蛋 · 实证',     big: '数字不撒谎',      sub: 'v4.0 → v4.8.66 的硬核数据' },
     play:    { tag: '彩蛋 · 上瘾',     big: '装完就玩',        sub: '3 个挑战预设 · 截图发朋友圈' },
