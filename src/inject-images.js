@@ -259,7 +259,11 @@ async function postProcessBlobUrls(text) {
 // v5.2.16: NOISE_SEL 提到模块级 — extractTextSafe 的 plain 损坏基准也要用它清装饰
 //   （否则 fenced 清掉装饰后变短，被 0.6 阈值误判为 cloneNode 吞内容 → 回退裸 textContent
 //    把刚清掉的装饰又带回来。详见 extractTextSafe 注释）
-const ARENA_NOISE_SEL = [
+// v5.2.26: 改 const → globalThis guard — inject-images.js 不包 IIFE（文件头说明），
+//   原 const 在 ensureContentScriptInjected 多次注入时报 "Identifier ARENA_NOISE_SEL has
+//   already been declared" SyntaxError，整文件后续函数全部失效。改 globalThis 属性赋值
+//   + ?? guard，重复注入幂等。下面裸名引用通过 global scope chain 仍能找到。
+globalThis.ARENA_NOISE_SEL = globalThis.ARENA_NOISE_SEL || [
     'button',
     '[role="button"]',
     '[class*="action-bar"]',
