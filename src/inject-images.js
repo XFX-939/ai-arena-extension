@@ -456,7 +456,12 @@ function _doExtractWithFences(clone) {
       const items = [...list.children].filter(c => c.tagName === "LI");
       if (!items.length) return;
       const lines = items.map((li, idx) => {
-        const text = (li.innerText || li.textContent || "").trim().replace(/\n+/g, " ");
+        // v5.2.20: 去掉 li 文本里自带的 bullet 符号 — 元宝(及部分平台)的 <li> innerText
+        //   含 •/·/‣/◦/▪ 等符号（CSS ::marker 或实际文本渲染进 innerText），再加 "- " 前缀
+        //   会变成双重符号 "- •内容"（MCP 元宝实测实锤）。先剥离开头 bullet 再加 markdown 前缀。
+        const text = (li.innerText || li.textContent || "").trim().replace(/\n+/g, " ")
+          // 只剥真 bullet 符号，绝不含 *（行内 strong 已转成 **加粗**，含 * 会误删开头加粗标记）
+          .replace(/^[•·‣◦⁃∙▪●○]+\s*/, "");
         const prefix = isOl ? `${idx + 1}. ` : "- ";
         return prefix + text;
       });

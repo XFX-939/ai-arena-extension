@@ -67,9 +67,9 @@ try {
   // 2) 读 manifest version_name 验证版本同步（直接读源文件）
   const manifest = JSON.parse(fs.readFileSync(path.join(EXT_PATH, "manifest.json"), "utf8"));
   console.log(`[smoke] manifest version: ${manifest.version}, version_name: ${manifest.version_name}`);
-  check("manifest version_name = 5.2.19", manifest.version_name === "5.2.19", `actual: ${manifest.version_name}`);
-  // v5.2.19: 正式改名 AI圆桌派
-  check("v5.2.19: manifest name = AI圆桌派（品牌改名）", manifest.name === "AI圆桌派", `actual: ${manifest.name}`);
+  check("manifest version_name = 5.2.20", manifest.version_name === "5.2.20", `actual: ${manifest.version_name}`);
+  // v5.2.20: 正式改名 AI圆桌派
+  check("v5.2.20: manifest name = AI圆桌派（品牌改名）", manifest.name === "AI圆桌派", `actual: ${manifest.name}`);
 
   // 3) 打开 sidepanel.html（作为普通 tab），验证 DOM
   const sidepanelPage = await context.newPage();
@@ -77,10 +77,10 @@ try {
   await sidepanelPage.waitForLoadState("domcontentloaded");
 
   const versionBadge = await sidepanelPage.locator(".version").textContent();
-  check("sidepanel version badge", versionBadge === "v5.2.19", `actual: "${versionBadge}"`);
+  check("sidepanel version badge", versionBadge === "v5.2.20", `actual: "${versionBadge}"`);
 
   const footerVersion = await sidepanelPage.locator(".footer").textContent();
-  check("sidepanel footer version", footerVersion?.includes("v5.2.19"), `actual: "${footerVersion?.slice(0, 100)}"`);
+  check("sidepanel footer version", footerVersion?.includes("v5.2.20"), `actual: "${footerVersion?.slice(0, 100)}"`);
 
   const openChatBtn = await sidepanelPage.locator("#btn-open-chat").count();
   check('sidepanel has "🪟 群聊" button', openChatBtn === 1);
@@ -98,7 +98,7 @@ try {
   await popupPage.waitForLoadState("domcontentloaded");
 
   const popupVersion = await popupPage.locator(".chat-version").textContent();
-  check("popup chat-version = v5.2.19", popupVersion === "v5.2.19", `actual: "${popupVersion}"`);
+  check("popup chat-version = v5.2.20", popupVersion === "v5.2.20", `actual: "${popupVersion}"`);
 
   // 图标资产验证（v4.0.11）
   const assetsOk = await popupPage.evaluate(async (extId) => {
@@ -2654,12 +2654,12 @@ try {
     hasCurrentVersion: typeof window.ChatUpdateCheck?.currentVersion === "function",
     hasNewerHelper: typeof window.ChatUpdateCheck?._hasNewer === "function",
     curVer: window.ChatUpdateCheck?.currentVersion?.(),
-    hasNewerSelfTest: window.ChatUpdateCheck?._hasNewer?.("5.2.19", "v5.3.0-beta"),
-    hasNewerSameTest: window.ChatUpdateCheck?._hasNewer?.("5.2.19", "v5.2.19"),
+    hasNewerSelfTest: window.ChatUpdateCheck?._hasNewer?.("5.2.20", "v5.3.0-beta"),
+    hasNewerSameTest: window.ChatUpdateCheck?._hasNewer?.("5.2.20", "v5.2.20"),
   }));
-  check("v5.2.0 运行时: ChatUpdateCheck API 暴露 + currentVersion 返回 5.2.19 + hasNewer 比对逻辑正确",
+  check("v5.2.0 运行时: ChatUpdateCheck API 暴露 + currentVersion 返回 5.2.20 + hasNewer 比对逻辑正确",
     v52ApiRuntime.hasApi && v52ApiRuntime.hasCurrentVersion && v52ApiRuntime.hasNewerHelper &&
-    v52ApiRuntime.curVer === "5.2.19" &&
+    v52ApiRuntime.curVer === "5.2.20" &&
     v52ApiRuntime.hasNewerSelfTest === true &&
     v52ApiRuntime.hasNewerSameTest === false,
     JSON.stringify(v52ApiRuntime));
@@ -2842,6 +2842,23 @@ try {
   check("v5.2.13: chatgpt input ProseMirror 提到首位（避免 textarea 误抓 hidden fallback）",
     /div\.ProseMirror\[contenteditable='true'\]/.test(selSrc),
     "chatgpt input 缺 div.ProseMirror 显式主 selector");
+
+  // ── v5.2.20: MCP 登录态实测修复（元宝 hyc selector + 列表 bullet + pill 同源）──
+  check("v5.2.20: 元宝 response 加 hyc-content-md（MCP 实测真命名，修表格拆单列）",
+    /\[class\*="hyc-content-md"\]/.test(selSrc),
+    "元宝 response 缺 hyc-content-md");
+  check("v5.2.20: 元宝 streaming 删 [class*=loading]（太宽误命中持久占位）",
+    !/yuanbao:[\s\S]*?streaming:[\s\S]*?'\[class\*="loading"\]'/.test(selSrc),
+    "元宝 streaming 仍含过宽 loading");
+  const injSrc20 = fs.readFileSync(path.join(EXT_PATH, "inject-images.js"), "utf8");
+  check("v5.2.20: 列表项剥离自带 bullet 符号（修元宝双 bullet，且不含 * 防误删加粗）",
+    /replace\(\/\^\[•·‣◦⁃∙▪●○\]\+\\s\*\//.test(injSrc20),
+    "inject-images 列表 bullet 剥离正则缺失或含 *");
+  const rosterSrc = fs.readFileSync(path.join(EXT_PATH, "popup-roster.js"), "utf8");
+  check("v5.2.20: roster pill 监听 chatStreamUpdate 同源（修气泡已提取但 pill 不同步）",
+    /streamPreview/.test(rosterSrc) &&
+    /chatStreamUpdate"[\s\S]*?streamPreview\.set/.test(rosterSrc),
+    "popup-roster 未接入 streamPreview 同源");
 
   // ── v5.2.14: NOISE_SEL 加 banner/popup/ads/advert（修豆包"下载电脑版"等横幅污染）──
   check("v5.2.14: NOISE_SEL 含 banner（豆包下载横幅污染修复）",

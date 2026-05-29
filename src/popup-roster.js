@@ -30,6 +30,11 @@
   let selected = new Set();
   let lastKnownServices = new Set();
   let editingPid = null;   // 当前编辑中的 participant.id
+  // v5.2.20: pill 流式预览缓存（service → 最新 chatStreamUpdate 文本）
+  //   修"气泡已提取但 pill 还显示等待回复"——根因：pill 旧逻辑只认 p.response（stateUpdate
+  //   驱动，background 完成时走 CDP readOneResponse 设值，可能慢/失败），气泡认 chatStreamUpdate
+  //   （实时）。两条数据源不同步。改用同一 chatStreamUpdate 源喂 pill，与气泡逻辑完全一致。
+  const streamPreview = new Map();
   // v4.8.60 F7 fix: popup 重启时 lastKnownServices 初始为空 → 现有 AI 都被视为"新加入"
   //   → 强制覆盖用户的取消选择（破坏用户偏好）。加 firstRefresh 标志跳过首次"自动选中"
   let firstRefresh = true;
@@ -79,7 +84,8 @@
       const sel = selected.has(p.service);
       const src = BRAND_SVG[p.service] || "icons/brands/claude.svg";
       const name = NAME[p.service] || p.service;
-      const resp = (p.response || "").trim();
+      // v5.2.20: p.response（完成态权威值）优先，fallback 流式缓存（实时同步气泡）
+      const resp = (p.response || streamPreview.get(p.service) || "").trim();
       const previewText = resp ? truncate(resp, 18) : "等待回复…";
       const isEmpty = !resp;
       const userEdited = !!p.userEdited;
@@ -209,8 +215,12 @@
       }
       return;
     }
-    if (msg.type === "chatStreamUpdate" && msg.role === "ai" && msg.isDone && msg.text) {
-      checkAndHideHint();
+    // v5.2.20: pill 跟气泡同源 — 监听 chatStreamUpdate 实时更新 pill 预览（不再只靠 stateUpdate）
+    if (msg.type === "chatStreamUpdate" && msg.role === "ai" && msg.participantId) {
+      if (msg.text) streamPreview.set(msg.participantId, msg.text);
+      else streamPreview.delete(msg.participantId);  // text="" = 新一轮开始，清旧预览 → 显示"等待回复"
+      render();
+      if (msg.isDone && msg.text) checkAndHideHint();
     }
     if (msg.type === "chatClear" || msg.type === "hardReset") {
       _anyAiResponded = false;

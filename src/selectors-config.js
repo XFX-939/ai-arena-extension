@@ -270,22 +270,30 @@ const DEFAULT_SELECTORS = {
       '#chat-input'
     ],
     response: [
-      // v4.3.10 优先精确 markdown 容器，避免包含底部推荐/工具栏/安装按钮等噪声
+      // v5.2.20: MCP 登录态实测真命名（腾讯混元 hyc-* 命名空间）— 修"表格被拆成单列"
+      //   元宝 AI 回答容器是 hyc-content-md（内含原生 <table>），旧 selector 全是
+      //   markdown/bot-message/answer → 0 命中 → 走 heuristic 抓错容器 → table 没识别 →
+      //   每个单元格 innerText 各自换行 → 单列。实测 hyc-content-md 命中后 table→md 正确。
+      '[class*="hyc-content-md"]',                // 主 — AI 回答主容器（含 table），实测精准命中
+      '[class*="hyc-common-markdown"]',           // markdown 渲染层兜底
+      '[class*="hyc-component-text"]',            // 文本组件兜底
+      // 历史兜底（旧版本 / 其他形态）
       '[class*="bot-message"] [class*="markdown"]',
       '[class*="assistant"] [class*="markdown"]',
       '[class*="answer"] [class*="markdown"]',
       '[class*="markdown-body"]',
-      // 兜底（旧匹配）
       '[class*="bot-message"]',
       '[class*="answer"]',
       '[class*="assistant"] [class*="content"]'
     ],
     streaming: [
+      // v5.2.20: 强信号 — hyc-content-md 完成后加 hyc-content-md-done 标记，无 done = 生成中
+      '[class*="hyc-content-md"]:not([class*="hyc-content-md-done"])',
       'button[class*="stop"]',
       'button[aria-label*="停止"]',
       'button[aria-label*="Stop"]',
-      '[class*="generating"]',
-      '[class*="loading"]'
+      '[class*="generating"]'
+      // v5.2.20: 删 [class*="loading"] — 太宽，误命中元宝页面持久 loading 占位致 isStreaming 卡 true
     ],
     sendButton: [
       // v5.2.15: 防御加强 — 元宝真 send 按钮未实测，加 aria-label 兜底

@@ -56,9 +56,46 @@
     try { el.dispatchEvent(new Event("input", { bubbles: true })); } catch (_) {}
   }
 
+  // v5.2.20: 判定元素当前是否落在视口纵向可见区域（排除滚出视口的历史残留 + 隐藏元素）
+  //   旧逻辑只看 getBoundingClientRect().width > 0 —— 滚出视口的残留 width 照样 > 0 → 误判。
+  function _visibleInViewport(el, win) {
+    const r = el.getBoundingClientRect?.();
+    if (!r) return false;
+    if (r.width <= 0 || r.height <= 0) return false;
+    const vh = (win && win.innerHeight) || 0;
+    return r.bottom > 0 && (vh ? r.top < vh : true);
+  }
+
+  // v5.2.20: streaming 信号判定 —— 治本替代各 content 脚本里
+  //   `queryBySelectors("streaming")`（全文档 querySelector 取第一个）+ 裸 width>0 的旧逻辑。
+  //   旧逻辑第二/三轮起会命中上方历史轮残留（千问未完成 qk-markdown / 残留 Stop 按钮 /
+  //   宽通配 [class*="stop"]），isStreaming 卡 true → 完成判定永远差 !isStreaming →
+  //   拖到 12s 兜底、甚至 5min 超时（截图实锤：千问"超时 5 分钟强制结束"）。
+  //   新规则：streaming selector 命中的元素，只在以下任一成立时才算"正在生成"：
+  //     ① 属于最新回答容器（容器自身或其子节点）—— 当前这条回答在流式
+  //     ② 当前视口内可见 —— 覆盖全局 Stop 按钮 / 与回答同级的 loading 指示器，
+  //        同时排除滚出视口上方的历史残留。
+  function detectStreaming(streamingSelectors, latestEl, win, doc) {
+    win = win || (typeof window !== "undefined" ? window : globalThis);
+    doc = doc || (typeof document !== "undefined" ? document : null);
+    if (!doc) return false;
+    const sels = Array.isArray(streamingSelectors) ? streamingSelectors : [];
+    for (const sel of sels) {
+      let els;
+      try { els = doc.querySelectorAll(sel); } catch (_) { continue; }
+      for (const el of els) {
+        if (!el) continue;
+        if (latestEl && (el === latestEl || (latestEl.contains && latestEl.contains(el)))) return true;
+        if (_visibleInViewport(el, win)) return true;
+      }
+    }
+    return false;
+  }
+
   globalThis.ArenaShared = {
     _loaded: true,
     getLastNonEmpty,
     setEditableLines,
+    detectStreaming,
   };
 })();

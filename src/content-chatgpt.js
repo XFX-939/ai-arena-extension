@@ -63,6 +63,15 @@ function getHeuristicElement(action, options = {}) {
   return options.all ? [] : null;
 }
 
+// v5.2.20: streaming 判定改用 ArenaShared.detectStreaming（限定最新回答容器 + 视口可见，
+//   不再全文档 querySelector + 裸 width>0），修第二/三轮起 isStreaming 误卡 true 导致提取拖延/超时。
+function _detectStreaming() {
+  let latest = null;
+  const rs = queryBySelectors("response", { all: true });
+  if (rs && rs.length) latest = globalThis.ArenaShared?.getLastNonEmpty?.(rs) || rs[rs.length - 1];
+  return globalThis.ArenaShared?.detectStreaming?.(selectors?.streaming || [], latest, window, document) || false;
+}
+
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   try {
     if (msg.action === "ping") {
@@ -78,8 +87,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         if (typeof postProcessBlobUrls === "function") { text = await postProcessBlobUrls(text); }
         const { hasRichContent, richTypes } = detectRichContent();
         // v4.6.8 F18: readResponse 返回 isStreaming 让 chat-bus pollOnce 判完成时纳入条件
-        const streamingEl = queryBySelectors("streaming");
-        const isStreaming = !!(streamingEl && streamingEl.getBoundingClientRect?.().width > 0);
+        const isStreaming = _detectStreaming();
         sendResponse({ site: SITE, text, hasRichContent, richTypes, isStreaming });
       }).catch(e => sendResponse({ site: SITE, text: "", error: e.message }));
       return true;
@@ -90,8 +98,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     }
     if (msg.action === "checkCompletion") {
       const text = getLastResponseText();
-      const streamingEl = queryBySelectors("streaming");
-      const isStreaming = !!(streamingEl && streamingEl.getBoundingClientRect?.().width > 0);
+      const isStreaming = _detectStreaming();
       sendResponse({
         site: SITE,
         textLength: text.length,
