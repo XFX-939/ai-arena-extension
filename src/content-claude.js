@@ -195,20 +195,21 @@ async function injectAndSend(text) {
     }
 
     // v5.2.24: Claude ProseMirror 首次提问 bug — welcome 屏过渡期 ProseMirror state 同步慢，
-    //   dispatch Enter (untrusted) 被 ProseMirror onKeyDown 识别为换行而非 submit，导致用户气泡推了
-    //   但 Claude 网页没真正发送（输入框残留 prompt，用户必须手动再敲一次回车）。修：在 Enter dispatch
-    //   之前先尝试 send button click —— button 已 enable 就直接点（绕开 Enter 不稳定），未 enable
-    //   才落 Enter 兜底（保留原流程兼容性）。
-    {
-      const btnFirst = findSendButton();
-      const btnFirstDisabled = btnFirst && (btnFirst.disabled || btnFirst.getAttribute("aria-disabled") === "true");
-      if (btnFirst && !btnFirstDisabled) {
-        btnFirst.click();
+    //   dispatch Enter (untrusted) 被 ProseMirror onKeyDown 识别为换行而非 submit。修：Enter 之前
+    //   先尝试 send button click 绕开 Enter 不稳定。
+    // v5.0.3: 升级为短轮询等 button enable — v5.2.24 只检查 1 次，robustInject 刚结束的第 1 帧 React
+    //   state 还在异步同步 execCommand insertText 的效果，button 几百 ms 才 enable → 跳过 → 走 Enter
+    //   兜底 → 复现 bug。改 10 × 200ms = 2s 轮询覆盖 React 同步窗口，仍 disabled 则落 Enter 兜底。
+    for (let i = 0; i < 10; i++) {
+      const btn = findSendButton();
+      if (btn && !btn.disabled && btn.getAttribute("aria-disabled") !== "true") {
+        btn.click();
         await sleep(400);
         const remaining = (el.tagName === "TEXTAREA" ? el.value : el.innerText).trim();
         if (remaining.length < text.length * 0.3) return { site: SITE, status: "sent" };
-        // button 点了但 textbox 未清空 → 落 Enter 兜底
+        break; // click 触发但 textbox 没清空 → 落 Enter 兜底
       }
+      await sleep(200);
     }
 
     el.focus();
