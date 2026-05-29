@@ -473,7 +473,7 @@ function _doExtractWithFences(clone) {
     clone.querySelectorAll("hr").forEach(hr => {
       hr.parentNode?.replaceChild(document.createTextNode("\n\n---\n\n"), hr);
     });
-    // table
+    // table — 原生 <table>
     clone.querySelectorAll("table").forEach(table => {
       const rows = [...table.querySelectorAll("tr")];
       if (rows.length < 2) return;
@@ -485,6 +485,28 @@ function _doExtractWithFences(clone) {
       if (!cells[0]?.length) return;
       const headers = cells[0];
       const body = cells.slice(1);
+      const md = `\n\n| ${headers.join(" | ")} |\n|${headers.map(() => "---").join("|")}|\n` +
+                 body.map(r => `| ${r.join(" | ")} |`).join("\n") + "\n\n";
+      table.parentNode?.replaceChild(document.createTextNode(md), table);
+    });
+    // v5.2.18: ARIA role 模拟表格 — 元宝/腾讯系等用 div[role="table"] 而非原生 <table>，
+    //   原逻辑 querySelectorAll("table") 不命中 → 每个单元格 div 各自 innerText 换行 →
+    //   提取成单列（用户截图：4 列对比表被拆成"维度/豆包-1/千问-1/元宝/表达方式/..."一列）。
+    //   修复：识别 [role="table"]，按 [role="row"] + [role="cell"|"columnheader"|"gridcell"] 重组。
+    clone.querySelectorAll('[role="table"], [role="grid"]').forEach(table => {
+      const rows = [...table.querySelectorAll('[role="row"]')];
+      if (rows.length < 2) return;
+      const cells = rows.map(tr =>
+        [...tr.querySelectorAll('[role="cell"], [role="columnheader"], [role="gridcell"], [role="rowheader"]')].map(c =>
+          (c.innerText || c.textContent || "").trim().replace(/\|/g, "\\|").replace(/\n+/g, " ")
+        )
+      );
+      // 至少 2 行且首行有单元格才转（否则保持原样，避免误伤）
+      if (!cells[0]?.length || cells.every(r => r.length === 0)) return;
+      const colCount = Math.max(...cells.map(r => r.length));
+      const pad = r => { const a = r.slice(); while (a.length < colCount) a.push(""); return a; };
+      const headers = pad(cells[0]);
+      const body = cells.slice(1).map(pad);
       const md = `\n\n| ${headers.join(" | ")} |\n|${headers.map(() => "---").join("|")}|\n` +
                  body.map(r => `| ${r.join(" | ")} |`).join("\n") + "\n\n";
       table.parentNode?.replaceChild(document.createTextNode(md), table);

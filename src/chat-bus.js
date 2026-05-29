@@ -272,7 +272,14 @@ const ChatBus = (() => {
   // pollers: Map<participantId, { intervalId, lastText, sameCount, msgId }>
   const pollers = new Map();
   const POLL_INTERVAL_MS = 1500;
-  const STREAM_DONE_THRESHOLD = 3;  // 连续 N 次相同视为完成
+  const STREAM_DONE_THRESHOLD = 3;  // 连续 N 次相同 + !isStreaming 视为完成（streaming 信号可信路径）
+  // v5.2.18: streaming 信号误报兜底阈值 — 文本连续 N 次（8×1.5s=12s）不变则无视 isStreaming 强制完成
+  //   根因：完成判定 `!isStreaming` 过度依赖 streaming selector。第二轮起 DOM 变脏
+  //   （第一轮残留 stop 按钮 / loading 占位 / 千问 qk-markdown complete 标记滞后 / 多轮 DOM 复杂），
+  //   streaming selector 误命中 → isStreaming 卡 true → 完成判定永远差 `!isStreaming`
+  //   → 拖到 MAX_POLL_TICKS(5min) 超时才放行。用户现象："页面早回答完了，扩展过很久才提取"。
+  //   12s 文本不变 = AI 几乎不可能还在生成（停顿规划下一段也不会停 12s），强制完成安全。
+  const STREAM_DONE_THRESHOLD_FORCE = 8;
   // v4.5.5 F5: 全局 polling tick 上限，~5 分钟兜底防 imagesPending 抖动让 stableKey 永不稳定
   // 实测场景：mock readResponse 返回 text 不变但 imagesPending 0/1 抖动 → polling 跑 12s
   // 仍未完成，理论可无限跑。到达上限按当前文本强制 isDone:true 完成。
@@ -595,7 +602,14 @@ const ChatBus = (() => {
         // 防 ChatGPT/Claude 等模型"输出第一段后停顿规划下一段"时被早判完成（截图证据：
         // 复杂技术问题 ChatGPT 输出 "我" 后停顿 4.5s → polling 误判 → 气泡卡在"我"）
         // streaming selector 失效时 isStreaming 退化为 false，行为同老版本，向后兼容
-        if (state.sameCount >= STREAM_DONE_THRESHOLD && text.length > 0 && !r?.isStreaming) {
+        //
+        // v5.2.18 双阈值：
+        //   - 快路径 sameCount>=3(4.5s) + !isStreaming：streaming 信号可信时快速完成（原逻辑）
+        //   - 兜底 sameCount>=8(12s)：无视 isStreaming 强制完成，解决 streaming selector 误报
+        //     导致第二轮起拖到 5min 超时的问题（详见 STREAM_DONE_THRESHOLD_FORCE 注释）
+        const doneFast = state.sameCount >= STREAM_DONE_THRESHOLD && !r?.isStreaming;
+        const doneForce = state.sameCount >= STREAM_DONE_THRESHOLD_FORCE;
+        if ((doneFast || doneForce) && text.length > 0) {
           // 完成
           clearInterval(state.intervalId);
           pollers.delete(service);

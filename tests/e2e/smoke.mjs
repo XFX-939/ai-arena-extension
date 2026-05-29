@@ -67,7 +67,7 @@ try {
   // 2) 读 manifest version_name 验证版本同步（直接读源文件）
   const manifest = JSON.parse(fs.readFileSync(path.join(EXT_PATH, "manifest.json"), "utf8"));
   console.log(`[smoke] manifest version: ${manifest.version}, version_name: ${manifest.version_name}`);
-  check("manifest version_name = 5.2.17-review-fixes-inject-safety", manifest.version_name === "5.2.17-review-fixes-inject-safety", `actual: ${manifest.version_name}`);
+  check("manifest version_name = 5.2.18-poll-dual-threshold-aria-table", manifest.version_name === "5.2.18-poll-dual-threshold-aria-table", `actual: ${manifest.version_name}`);
 
   // 3) 打开 sidepanel.html（作为普通 tab），验证 DOM
   const sidepanelPage = await context.newPage();
@@ -75,10 +75,10 @@ try {
   await sidepanelPage.waitForLoadState("domcontentloaded");
 
   const versionBadge = await sidepanelPage.locator(".version").textContent();
-  check("sidepanel version badge", versionBadge === "v5.2.17-review-fixes-inject-safety", `actual: "${versionBadge}"`);
+  check("sidepanel version badge", versionBadge === "v5.2.18-poll-dual-threshold-aria-table", `actual: "${versionBadge}"`);
 
   const footerVersion = await sidepanelPage.locator(".footer").textContent();
-  check("sidepanel footer version", footerVersion?.includes("v5.2.17-review-fixes-inject-safety"), `actual: "${footerVersion?.slice(0, 100)}"`);
+  check("sidepanel footer version", footerVersion?.includes("v5.2.18-poll-dual-threshold-aria-table"), `actual: "${footerVersion?.slice(0, 100)}"`);
 
   const openChatBtn = await sidepanelPage.locator("#btn-open-chat").count();
   check('sidepanel has "🪟 群聊" button', openChatBtn === 1);
@@ -96,7 +96,7 @@ try {
   await popupPage.waitForLoadState("domcontentloaded");
 
   const popupVersion = await popupPage.locator(".chat-version").textContent();
-  check("popup chat-version = v5.2.17-review-fixes-inject-safety", popupVersion === "v5.2.17-review-fixes-inject-safety", `actual: "${popupVersion}"`);
+  check("popup chat-version = v5.2.18-poll-dual-threshold-aria-table", popupVersion === "v5.2.18-poll-dual-threshold-aria-table", `actual: "${popupVersion}"`);
 
   // 图标资产验证（v4.0.11）
   const assetsOk = await popupPage.evaluate(async (extId) => {
@@ -2652,12 +2652,12 @@ try {
     hasCurrentVersion: typeof window.ChatUpdateCheck?.currentVersion === "function",
     hasNewerHelper: typeof window.ChatUpdateCheck?._hasNewer === "function",
     curVer: window.ChatUpdateCheck?.currentVersion?.(),
-    hasNewerSelfTest: window.ChatUpdateCheck?._hasNewer?.("5.2.17-review-fixes-inject-safety", "v5.3.0-beta"),
-    hasNewerSameTest: window.ChatUpdateCheck?._hasNewer?.("5.2.17-review-fixes-inject-safety", "v5.2.17-review-fixes-inject-safety"),
+    hasNewerSelfTest: window.ChatUpdateCheck?._hasNewer?.("5.2.18-poll-dual-threshold-aria-table", "v5.3.0-beta"),
+    hasNewerSameTest: window.ChatUpdateCheck?._hasNewer?.("5.2.18-poll-dual-threshold-aria-table", "v5.2.18-poll-dual-threshold-aria-table"),
   }));
-  check("v5.2.0 运行时: ChatUpdateCheck API 暴露 + currentVersion 返回 5.2.17-review-fixes-inject-safety + hasNewer 比对逻辑正确",
+  check("v5.2.0 运行时: ChatUpdateCheck API 暴露 + currentVersion 返回 5.2.18-poll-dual-threshold-aria-table + hasNewer 比对逻辑正确",
     v52ApiRuntime.hasApi && v52ApiRuntime.hasCurrentVersion && v52ApiRuntime.hasNewerHelper &&
-    v52ApiRuntime.curVer === "5.2.17-review-fixes-inject-safety" &&
+    v52ApiRuntime.curVer === "5.2.18-poll-dual-threshold-aria-table" &&
     v52ApiRuntime.hasNewerSelfTest === true &&
     v52ApiRuntime.hasNewerSameTest === false,
     JSON.stringify(v52ApiRuntime));
@@ -2801,6 +2801,22 @@ try {
       return /ArenaShared\?\.setEditableLines/.test(src) || /p\.textContent = line/.test(src);
     }).length >= 8,
     "部分平台未改安全注入");
+
+  // ── v5.2.18: polling 双阈值完成判定（修第二轮起 streaming 误报拖到 5min 超时）+ ARIA 表格 ──
+  const busSrc = fs.readFileSync(path.join(EXT_PATH, "chat-bus.js"), "utf8");
+  check("v5.2.18: chat-bus 加 STREAM_DONE_THRESHOLD_FORCE 兜底阈值",
+    /const STREAM_DONE_THRESHOLD_FORCE\s*=\s*8/.test(busSrc),
+    "chat-bus 缺 STREAM_DONE_THRESHOLD_FORCE");
+  check("v5.2.18: pollOnce 双阈值完成判定（doneFast !isStreaming + doneForce 无视 isStreaming）",
+    /doneFast\s*=\s*state\.sameCount >= STREAM_DONE_THRESHOLD && !r\?\.isStreaming/.test(busSrc) &&
+    /doneForce\s*=\s*state\.sameCount >= STREAM_DONE_THRESHOLD_FORCE/.test(busSrc) &&
+    /\(doneFast \|\| doneForce\) && text\.length > 0/.test(busSrc),
+    "pollOnce 未实现双阈值完成判定");
+  check("v5.2.18: inject-images 加 ARIA role 表格提取（修元宝 div 表格被拆单列）",
+    /\[role="table"\], \[role="grid"\]/.test(injSrc) &&
+    /\[role="row"\]/.test(injSrc) &&
+    /role="columnheader"/.test(injSrc),
+    "inject-images 缺 ARIA role 表格支持");
   // 9 平台 _extractEl 全部走 extractTextSafe 优先
   const platforms2 = ["chatgpt", "claude", "deepseek", "doubao", "gemini", "grok", "kimi", "qwen", "yuanbao"];
   for (const p of platforms2) {
