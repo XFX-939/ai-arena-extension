@@ -604,18 +604,21 @@ const ChatBus = (() => {
       // v5.0.3: prompt-echo 自愈 — Claude (ProseMirror) 偶发 Enter 不识别 submit，导致 inject 假
       //   成功但 Claude 网页没真发送，polling 提取到的"回答"就是用户问题本身。检测到 echo 时一次
       //   补发兜底（让 content script 找 send button click），最多 1 次防循环。
-      const lastSent = (StateMachine.lastSentByPid?.[participant.id] || "").trim();
-      const t = text;
-      const isPromptEcho = !state.resubmitTried && lastSent && t && t.length >= 5 && (
-        t === lastSent ||
-        head100(t) === head100(lastSent)
-      );
-      if (isPromptEcho) {
-        state.resubmitTried = true;
-        state.lastStableKey = null;
-        state.sameCount = 0;
-        try { chrome.tabs.sendMessage(tabId, { action: "resubmit" }).catch(() => {}); } catch (_) {}
-        return;
+      // v5.0.4: 守卫只对 Claude 生效 — 其他 AI 未观察到此模式且无 resubmit handler，避免误触。
+      if (service === "claude") {
+        const lastSent = (StateMachine.lastSentByPid?.[participant.id] || "").trim();
+        const t = text;
+        const isPromptEcho = !state.resubmitTried && lastSent && t && t.length >= 5 && (
+          t === lastSent ||
+          head100(t) === head100(lastSent)
+        );
+        if (isPromptEcho) {
+          state.resubmitTried = true;
+          state.lastStableKey = null;
+          state.sameCount = 0;
+          try { chrome.tabs.sendMessage(tabId, { action: "resubmit" }).catch(() => {}); } catch (_) {}
+          return;
+        }
       }
 
       // v4.3.3: stableKey 把 imagesPending 计入稳定性判定
