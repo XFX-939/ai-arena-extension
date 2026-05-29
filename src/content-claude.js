@@ -194,6 +194,23 @@ async function injectAndSend(text) {
       if (current.length >= text.length * 0.3) break;
     }
 
+    // v5.2.24: Claude ProseMirror 首次提问 bug — welcome 屏过渡期 ProseMirror state 同步慢，
+    //   dispatch Enter (untrusted) 被 ProseMirror onKeyDown 识别为换行而非 submit，导致用户气泡推了
+    //   但 Claude 网页没真正发送（输入框残留 prompt，用户必须手动再敲一次回车）。修：在 Enter dispatch
+    //   之前先尝试 send button click —— button 已 enable 就直接点（绕开 Enter 不稳定），未 enable
+    //   才落 Enter 兜底（保留原流程兼容性）。
+    {
+      const btnFirst = findSendButton();
+      const btnFirstDisabled = btnFirst && (btnFirst.disabled || btnFirst.getAttribute("aria-disabled") === "true");
+      if (btnFirst && !btnFirstDisabled) {
+        btnFirst.click();
+        await sleep(400);
+        const remaining = (el.tagName === "TEXTAREA" ? el.value : el.innerText).trim();
+        if (remaining.length < text.length * 0.3) return { site: SITE, status: "sent" };
+        // button 点了但 textbox 未清空 → 落 Enter 兜底
+      }
+    }
+
     el.focus();
     el.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", code: "Enter", keyCode: 13, which: 13, bubbles: true, cancelable: true }));
     await sleep(50);
