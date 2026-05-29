@@ -833,6 +833,128 @@
   }
   .ppt-watermark b { color: var(--accent); font-weight: 700; }
 
+  /* ===== ⭐ Star 终章 ===== */
+  .ch-star {
+    background: radial-gradient(ellipse at top, rgba(255,215,0,0.10) 0%, transparent 55%),
+                radial-gradient(ellipse at bottom, rgba(10,132,255,0.08) 0%, transparent 55%),
+                #1d1d1f !important;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 48px 24px;
+  }
+  .star-inner {
+    max-width: 760px;
+    width: 100%;
+    text-align: center;
+    color: #fff;
+  }
+  .star-emoji {
+    font-size: 88px;
+    line-height: 1;
+    filter: drop-shadow(0 8px 20px rgba(255,215,0,0.45));
+    animation: star-float 3.5s ease-in-out infinite;
+    margin-bottom: 14px;
+  }
+  @keyframes star-float {
+    0%, 100% { transform: translateY(0) rotate(-4deg); }
+    50%      { transform: translateY(-10px) rotate(4deg); }
+  }
+  .star-title {
+    font-size: clamp(28px, 4.4vw, 44px);
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    margin: 0 0 12px;
+    line-height: 1.2;
+  }
+  .star-title em {
+    font-style: normal;
+    background: linear-gradient(120deg, #ffd700 0%, #ff9500 50%, #ff3b30 100%);
+    background-size: 200% 100%;
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    animation: gradient-shift 4s ease infinite;
+  }
+  .star-sub {
+    font-size: 16px;
+    color: rgba(255,255,255,0.75);
+    margin: 0 0 26px;
+    line-height: 1.6;
+  }
+  .star-sub b { color: #ffd700; font-weight: 700; }
+  .star-reasons {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+    margin: 0 auto 28px;
+    max-width: 640px;
+    text-align: left;
+  }
+  @media (max-width: 640px) { .star-reasons { grid-template-columns: 1fr; } }
+  .star-reason {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 16px;
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 10px;
+    font-size: 14px;
+    color: rgba(255,255,255,0.92);
+  }
+  .star-reason .r-icon { font-size: 22px; line-height: 1; flex-shrink: 0; }
+  .star-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    padding: 16px 32px;
+    background: linear-gradient(135deg, #ffd700 0%, #ff9500 100%);
+    color: #1d1d1f;
+    text-decoration: none;
+    font-size: 17px;
+    font-weight: 800;
+    border-radius: 999px;
+    box-shadow: 0 10px 32px rgba(255,159,0,0.45);
+    transition: transform 0.18s, box-shadow 0.18s;
+    letter-spacing: 0.01em;
+  }
+  .star-btn:hover {
+    transform: translateY(-2px) scale(1.02);
+    box-shadow: 0 14px 40px rgba(255,159,0,0.6);
+  }
+  .star-btn-arrow {
+    font-size: 18px;
+    transition: transform 0.18s;
+  }
+  .star-btn:hover .star-btn-arrow { transform: translateX(4px); }
+  .star-badge-row {
+    margin-top: 18px;
+    display: flex;
+    justify-content: center;
+  }
+  .star-badge-row img { height: 28px; }
+  .star-thanks {
+    margin-top: 28px;
+    padding: 22px 28px;
+    background: rgba(255,255,255,0.05);
+    border-left: 3px solid #ffd700;
+    border-radius: 10px;
+    font-size: 14.5px;
+    color: rgba(255,255,255,0.82);
+    line-height: 1.7;
+    text-align: left;
+  }
+  .star-thanks p { margin: 0 0 8px; }
+  .star-thanks p:last-child { margin: 0; }
+  .star-thanks b { color: #fff; font-weight: 700; }
+  .star-sign {
+    text-align: right;
+    font-style: italic;
+    color: rgba(255,255,255,0.55) !important;
+    margin-top: 12px !important;
+  }
+
   /* ===== Brand strip ===== */
   .brand-strip {
     display: flex;
@@ -2480,7 +2602,61 @@
           <li><b>锁定模式 + @-mention 联动</b>：精准追问，不广播</li>
         </ul>
         <div class="hard-thumb">
-          <img src="v5.0-screenshots/B-next-speaker-pill.png" alt="下轮发言 pill · 3 AI 气泡 + 锁定" />
+          <svg viewBox="0 0 520 200" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:auto;background:#0f1419;border-radius:8px">
+            <!-- 顶部 caption -->
+            <text x="260" y="22" text-anchor="middle" font-family="-apple-system,system-ui" font-size="11" font-weight="600" fill="#8e8e93" letter-spacing="0.05em">▼ 辩论中状态栏 ▼</text>
+
+            <!-- 主 pill bar 容器 -->
+            <rect x="20" y="38" width="480" height="78" rx="14" fill="#1c1c1e" stroke="#3a3a3c" stroke-width="1"/>
+
+            <!-- 下轮发言 标签（左侧绿色 pill） -->
+            <rect x="32" y="54" width="92" height="46" rx="23" fill="rgba(48,209,88,0.08)" stroke="#30d158" stroke-width="1.2"/>
+            <circle cx="48" cy="77" r="4" fill="#30d158">
+              <animate attributeName="opacity" values="1;0.3;1" dur="1.5s" repeatCount="indefinite"/>
+            </circle>
+            <text x="60" y="82" font-family="-apple-system,system-ui" font-size="13" font-weight="700" fill="#30d158">下轮发言</text>
+
+            <!-- AI 气泡 1: Gemini（被锁定 · 高亮边框） -->
+            <rect x="135" y="54" width="112" height="46" rx="23" fill="#2c2c2e" stroke="#0a84ff" stroke-width="2"/>
+            <circle cx="155" cy="77" r="13" fill="#fff"/>
+            <text x="155" y="82" text-anchor="middle" font-family="-apple-system" font-size="13" font-weight="700" fill="#5b8def">✦</text>
+            <circle cx="164" cy="85" r="5" fill="#30d158"/>
+            <text x="160" y="88" text-anchor="middle" font-family="-apple-system" font-size="7" font-weight="700" fill="#fff">✓</text>
+            <text x="173" y="74" font-family="-apple-system,system-ui" font-size="12" font-weight="700" fill="#fff">Gemini</text>
+            <text x="173" y="89" font-family="-apple-system,system-ui" font-size="10" fill="#8e8e93">等待回复…</text>
+
+            <!-- AI 气泡 2: ChatGPT -->
+            <rect x="257" y="54" width="112" height="46" rx="23" fill="#2c2c2e" stroke="#48484a" stroke-width="1"/>
+            <circle cx="277" cy="77" r="13" fill="#10a37f"/>
+            <text x="277" y="82" text-anchor="middle" font-family="-apple-system" font-size="11" font-weight="700" fill="#fff">⚛</text>
+            <circle cx="286" cy="85" r="5" fill="#30d158"/>
+            <text x="282" y="88" text-anchor="middle" font-family="-apple-system" font-size="7" font-weight="700" fill="#fff">✓</text>
+            <text x="295" y="74" font-family="-apple-system,system-ui" font-size="12" font-weight="700" fill="#fff">ChatGPT</text>
+            <text x="295" y="89" font-family="-apple-system,system-ui" font-size="10" fill="#8e8e93">等待回复…</text>
+
+            <!-- AI 气泡 3: 豆包 -->
+            <rect x="379" y="54" width="98" height="46" rx="23" fill="#2c2c2e" stroke="#48484a" stroke-width="1"/>
+            <circle cx="399" cy="77" r="13" fill="#ff7e5f"/>
+            <text x="399" y="82" text-anchor="middle" font-family="-apple-system" font-size="13" font-weight="700" fill="#fff">o</text>
+            <circle cx="408" cy="85" r="5" fill="#30d158"/>
+            <text x="404" y="88" text-anchor="middle" font-family="-apple-system" font-size="7" font-weight="700" fill="#fff">✓</text>
+            <text x="417" y="74" font-family="-apple-system,system-ui" font-size="12" font-weight="700" fill="#fff">豆包</text>
+            <text x="417" y="89" font-family="-apple-system,system-ui" font-size="10" fill="#8e8e93">等待回复…</text>
+
+            <!-- 锁图标（提示 Gemini 已锁定） -->
+            <text x="240" y="50" font-family="-apple-system" font-size="14" fill="#0a84ff">🔒</text>
+
+            <!-- 底部箭头 + 提示 -->
+            <path d="M 191 130 L 191 118" stroke="#0a84ff" stroke-width="2" fill="none" marker-end="url(#arrow)"/>
+            <defs>
+              <marker id="arrow" markerWidth="8" markerHeight="8" refX="4" refY="4" orient="auto">
+                <polygon points="0 0, 8 4, 0 8" fill="#0a84ff"/>
+              </marker>
+            </defs>
+            <rect x="56" y="138" width="408" height="44" rx="8" fill="rgba(10,132,255,0.10)" stroke="rgba(10,132,255,0.35)" stroke-width="1"/>
+            <text x="260" y="156" text-anchor="middle" font-family="-apple-system,system-ui" font-size="12" font-weight="600" fill="#0a84ff">👆 点 AI 气泡 = 锁定本轮发言对象</text>
+            <text x="260" y="172" text-anchor="middle" font-family="-apple-system,system-ui" font-size="11" fill="#8e8e93">本轮只发给 Gemini · 不广播给 ChatGPT/豆包 · 1v1 深聊不被打断</text>
+          </svg>
         </div>
       </div></div>
 
@@ -2687,6 +2863,42 @@
     </div>
     <div class="rm-vote">
       💡 上面有你想要的？<b>扫码投票</b> · 票数最高的优先开发 · <a href="#" data-spa-go="cta">→ 跳到上车章节</a>
+    </div>
+  </section>
+
+  <!-- ============== Ch · ⭐ Star 终章 · 致谢 ============== -->
+  <section class="ch ch-star section" data-ch-id="star">
+    <div class="star-inner">
+      <div class="star-emoji" aria-hidden="true">⭐</div>
+      <h2 class="star-title">觉得有用？<em>给个 Star 鼓励一下</em></h2>
+      <p class="star-sub">开源不易 · 9 大 AI 适配 · 50+ 次迭代 · 你的 Star <b>= 我继续维护的动力</b></p>
+
+      <div class="star-reasons">
+        <div class="star-reason"><span class="r-icon">🆓</span><span>永久免费 · MIT 开源 · 无广告</span></div>
+        <div class="star-reason"><span class="r-icon">🛠️</span><span>持续维护 · 跟进 AI 站点 DOM 变化</span></div>
+        <div class="star-reason"><span class="r-icon">🚀</span><span>Star 越多 · 我越有动力快速响应 issue</span></div>
+        <div class="star-reason"><span class="r-icon">📣</span><span>让更多被多 AI 折磨的人发现它</span></div>
+      </div>
+
+      <a class="star-btn" href="https://github.com/TianLin0509/ai-arena-extension" target="_blank" rel="noopener">
+        <svg width="22" height="22" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+          <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/>
+        </svg>
+        <span class="star-btn-text">⭐ Star this repo on GitHub</span>
+        <span class="star-btn-arrow">→</span>
+      </a>
+
+      <div class="star-badge-row">
+        <a href="https://github.com/TianLin0509/ai-arena-extension/stargazers" target="_blank" rel="noopener">
+          <img src="https://img.shields.io/github/stars/TianLin0509/ai-arena-extension?style=for-the-badge&color=ffd700&label=Stars" alt="Star 数实时统计" />
+        </a>
+      </div>
+
+      <div class="star-thanks">
+        <p>🙏 <b>感谢每一位看到这里的你</b> ——</p>
+        <p>不管装不装、Star 不 Star，能耐心翻完 8 章 + 6 道护城河 + 8 张未来牌，你已经是这个项目最重要的早期共建人。</p>
+        <p class="star-sign">—— 立花道雪 · AI 圆桌派维护者</p>
+      </div>
     </div>
   </section>
 
@@ -3110,15 +3322,16 @@
 <script>
 'use strict';
 (function () {
-  const ORDER = ['hero', 'stories', 'hard', 'cta', 'numbers', 'play', 'roadmap'];
+  const ORDER = ['hero', 'stories', 'hard', 'cta', 'numbers', 'play', 'roadmap', 'star'];
   const META = {
     hero:    { tag: '第 0 章 · 开场',  big: '3 大痛点 · 1 个解药', sub: '9 AI 同台辩论 · 互找茬 · 互补盲 · 1+1+1 > 3' },
-    stories: { tag: '第 1 章 · 王牌',  big: '8 张王牌',        sub: '装上就停不下来的 7 个理由' },
+    stories: { tag: '第 1 章 · 王牌',  big: '8 张王牌',        sub: '装上就停不下来的 8 个理由' },
     hard:    { tag: '第 2 章 · 底座',  big: '6 道护城河',      sub: '鲁棒 · 下轮调度 · 统计 · 气泡 · Markdown · 安全守门员' },
     cta:     { tag: '第 3 章 · 上车',  big: '上车吗？',        sub: '首批 100 名 Beta · 30 秒后你就在指挥 3 个 AI' },
     numbers: { tag: '彩蛋 · 实证',     big: '数字不撒谎',      sub: 'v4.0 → v5.0.1 的硬核数据' },
     play:    { tag: '彩蛋 · 上瘾',     big: '装完就玩',        sub: '3 个挑战预设 · 截图发朋友圈' },
-    roadmap: { tag: '终章 · 未来',     big: '敬请期待',        sub: 'v5.0 之后路线图 · 想到没做到的清单 · 投票决定优先级' }
+    roadmap: { tag: '番外 · 未来',     big: '敬请期待',        sub: 'v5.0 之后路线图 · 想到没做到的清单 · 投票决定优先级' },
+    star:    { tag: '终章 · 致谢',     big: '⭐ 给个 Star',     sub: '开源不易 · 你的 Star = 我继续维护的动力' }
   };
   const sections = {};
   ORDER.forEach(id => { sections[id] = document.querySelector('[data-ch-id="' + id + '"]'); });
