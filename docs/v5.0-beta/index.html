@@ -1793,6 +1793,72 @@
     border-radius: 5px;
   }
 
+  /* ===== Roadmap 敬请期待 章节 ===== */
+  .ch-roadmap .book-intro h2 em {
+    background: linear-gradient(120deg, #34c759 0%, #5ac8fa 50%, #af52de 100%);
+    background-size: 200% 100%;
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    color: transparent;
+  }
+  .roadmap-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+    width: 100%;
+    margin: 16px 0 14px;
+  }
+  @media (max-width: 1024px) { .roadmap-grid { grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 540px) { .roadmap-grid { grid-template-columns: 1fr; } }
+  .rm-card {
+    position: relative;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 16px 16px 14px;
+    transition: transform 0.18s, border-color 0.18s;
+  }
+  .rm-card:hover { transform: translateY(-3px); border-color: var(--accent); }
+  .rm-status {
+    position: absolute;
+    top: 12px; right: 12px;
+    font-size: 10px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+  }
+  .rm-card[data-rm="dev"]    .rm-status { background: rgba(10,132,255,0.20); color: #5ac8fa; }
+  .rm-card[data-rm="design"] .rm-status { background: rgba(175,82,222,0.22); color: #d97bff; }
+  .rm-card[data-rm="prep"]   .rm-status { background: rgba(255,159,10,0.22); color: #ffc14d; }
+  .rm-card[data-rm="idea"]   .rm-status { background: rgba(110,110,115,0.30); color: var(--ink-soft); }
+  .rm-card[data-rm="dev"]    { border-color: rgba(10,132,255,0.40); }
+  .rm-card[data-rm="design"] { border-color: rgba(175,82,222,0.40); }
+  .rm-card[data-rm="prep"]   { border-color: rgba(255,159,10,0.40); }
+  .rm-ico { font-size: 32px; line-height: 1; margin-bottom: 8px; }
+  .rm-ttl { font-size: 15px; font-weight: 700; margin-bottom: 6px; letter-spacing: -0.01em; }
+  .rm-desc { font-size: 12.5px; color: var(--ink-soft); line-height: 1.55; }
+  .rm-desc b { color: var(--ink); font-weight: 600; }
+  .rm-vote {
+    margin-top: 4px;
+    padding: 12px 18px;
+    background: var(--bg-soft);
+    border-radius: 10px;
+    text-align: center;
+    font-size: 13.5px;
+    color: var(--ink);
+    border: 1px dashed var(--border);
+  }
+  .rm-vote b { color: var(--accent); }
+  .rm-vote a {
+    color: var(--accent);
+    text-decoration: none;
+    border-bottom: 1px dashed var(--accent);
+    margin-left: 6px;
+  }
+  .rm-vote a:hover { color: #5ac8fa; }
+
 </style>
 </head>
 <body class="spa-body">
@@ -2208,6 +2274,68 @@
       </div>
     </div>
   </section>
+
+  <!-- ============== Ch · 敬请期待 · 路线图 ============== -->
+  <section class="ch ch-roadmap section" data-ch-id="roadmap">
+    <div class="book-intro" data-big="∞">
+      <h2><em>敬请期待</em></h2>
+      <p class="book-intro-sub">v5.0 之后路线图 · 想到没做到的清单 · 让作者听到你最想要哪一条</p>
+    </div>
+    <div class="roadmap-grid">
+      <div class="rm-card" data-rm="dev">
+        <span class="rm-status">开发中</span>
+        <div class="rm-ico">🥊</div>
+        <div class="rm-ttl">AI 大乱斗</div>
+        <div class="rm-desc">突破 3 AI 限制 · 圆桌派进化为 <b>会议室模式</b> · 9 AI 同台开会，毁灭吧</div>
+      </div>
+      <div class="rm-card" data-rm="dev">
+        <span class="rm-status">开发中</span>
+        <div class="rm-ico">💾</div>
+        <div class="rm-ttl">本地级会话存储</div>
+        <div class="rm-desc">随时读取 · <b>断点重续</b> · 关掉浏览器明天接着辩 · 永不丢失</div>
+      </div>
+      <div class="rm-card" data-rm="design">
+        <span class="rm-status">设计中</span>
+        <div class="rm-ico">📊</div>
+        <div class="rm-ttl">超级 PPT 工作流</div>
+        <div class="rm-desc">上千份 PPT 训练 · <b>华为 SSS 级</b> 专属 PPT 制作 prompt · 一键出图</div>
+      </div>
+      <div class="rm-card" data-rm="prep">
+        <span class="rm-status">筹备中</span>
+        <div class="rm-ico">💬</div>
+        <div class="rm-ttl">WeLink 交流群</div>
+        <div class="rm-desc">华为内部 <b>WeLink 群</b> · 找用户 · 收反馈 · 群答疑 · 早鸟优先进</div>
+      </div>
+      <div class="rm-card" data-rm="idea">
+        <span class="rm-status">想法</span>
+        <div class="rm-ico">🧠</div>
+        <div class="rm-ttl">AI 间互相 @</div>
+        <div class="rm-desc">不止用户 @ · <b>AI 之间互相指名</b>挑战 / 互怼 / 互相回答 · 真群聊</div>
+      </div>
+      <div class="rm-card" data-rm="idea">
+        <span class="rm-status">想法</span>
+        <div class="rm-ico">📰</div>
+        <div class="rm-ttl">一键导出文章</div>
+        <div class="rm-desc">辩论结果转排版好的 <b>公众号 / 知乎 markdown</b> · 一键复制</div>
+      </div>
+      <div class="rm-card" data-rm="idea">
+        <span class="rm-status">想法</span>
+        <div class="rm-ico">🔌</div>
+        <div class="rm-ttl">自定义模型接入</div>
+        <div class="rm-desc">OpenRouter / <b>Ollama 本地模型</b> / 自部署 · 私有模型也能上桌</div>
+      </div>
+      <div class="rm-card" data-rm="idea">
+        <span class="rm-status">想法</span>
+        <div class="rm-ico">📱</div>
+        <div class="rm-ttl">移动端 App</div>
+        <div class="rm-desc">iOS / Android · <b>手机也能开 AI 圆桌</b> · 通勤路上也辩论</div>
+      </div>
+    </div>
+    <div class="rm-vote">
+      💡 哪条让你眼前一亮？<b>扫码加作者微信投票</b> · 票数最高的优先开发 · <a href="#" data-spa-go="cta">→ 跳到上车章节看二维码</a>
+    </div>
+  </section>
+
   <!-- ============== CTA Final ============== -->
   <section class="ch cta-final" id="cta" data-ch-id="cta">
     <div class="urgency">⏰ 首批 100 名 Beta 用户限量 · 仅剩 X 个名额</div>
@@ -2628,14 +2756,15 @@
 <script>
 'use strict';
 (function () {
-  const ORDER = ['hero', 'stories', 'hard', 'cta', 'numbers', 'play'];
+  const ORDER = ['hero', 'stories', 'hard', 'cta', 'numbers', 'play', 'roadmap'];
   const META = {
     hero:    { tag: '第 0 章 · 开场',  big: '让 9 大 AI 同台', sub: '唯一让 9 大主流 AI 同台辩论的 Chrome 扩展' },
     stories: { tag: '第 1 章 · 王牌',  big: '7 张王牌',        sub: '装上就停不下来的 7 个理由' },
     hard:    { tag: '第 2 章 · 底座',  big: '4 道护城河',      sub: '看不见的硬核底座 · 让王牌打得稳' },
     cta:     { tag: '第 3 章 · 上车',  big: '上车吗？',        sub: '首批 100 名 Beta · 30 秒后你就在指挥 3 个 AI' },
     numbers: { tag: '彩蛋 · 实证',     big: '数字不撒谎',      sub: 'v4.0 → v4.8.66 的硬核数据' },
-    play:    { tag: '终章 · 上瘾',     big: '装完就玩',        sub: '3 个挑战预设 · 截图发朋友圈' }
+    play:    { tag: '彩蛋 · 上瘾',     big: '装完就玩',        sub: '3 个挑战预设 · 截图发朋友圈' },
+    roadmap: { tag: '终章 · 未来',     big: '敬请期待',        sub: 'v5.0 之后路线图 · 想到没做到的清单 · 投票决定优先级' }
   };
   const sections = {};
   ORDER.forEach(id => { sections[id] = document.querySelector('[data-ch-id="' + id + '"]'); });
