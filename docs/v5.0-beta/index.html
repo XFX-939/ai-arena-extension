@@ -1841,13 +1841,13 @@
   .rm-desc { font-size: 12.5px; color: var(--ink-soft); line-height: 1.55; }
   .rm-desc b { color: var(--ink); font-weight: 600; }
   .rm-vote {
-    margin-top: 4px;
-    padding: 12px 18px;
+    margin-top: 8px;
+    padding: 10px 18px;
     background: var(--bg-soft);
     border-radius: 10px;
     text-align: center;
-    font-size: 13.5px;
-    color: var(--ink);
+    font-size: 12.5px;
+    color: var(--ink-soft);
     border: 1px dashed var(--border);
   }
   .rm-vote b { color: var(--accent); }
@@ -1858,6 +1858,92 @@
     margin-left: 6px;
   }
   .rm-vote a:hover { color: #5ac8fa; }
+
+  /* 共创 banner · 水平布局节省高度 */
+  .rm-cocreate {
+    margin-top: 4px;
+    padding: 12px 20px;
+    background:
+      linear-gradient(135deg, rgba(52,199,89,0.12) 0%, rgba(90,200,250,0.12) 50%, rgba(175,82,222,0.14) 100%),
+      var(--card);
+    border: 1px solid rgba(175,82,222,0.35);
+    border-radius: 12px;
+    position: relative;
+    overflow: hidden;
+    box-shadow: 0 8px 24px rgba(175,82,222,0.10);
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+  @media (max-width: 720px) { .rm-cocreate { flex-direction: column; text-align: center; gap: 10px; } }
+  .rm-cocreate-text { flex: 1; position: relative; z-index: 1; }
+  .rm-cocreate::before {
+    content: '';
+    position: absolute;
+    top: -50%; left: -10%;
+    width: 60%; height: 200%;
+    background: linear-gradient(135deg, transparent 40%, rgba(90,200,250,0.10) 50%, transparent 60%);
+    transform: rotate(20deg);
+    animation: rm-shine 5s ease-in-out infinite;
+    pointer-events: none;
+  }
+  @keyframes rm-shine {
+    0%, 100% { transform: translateX(-30%) rotate(20deg); }
+    50% { transform: translateX(180%) rotate(20deg); }
+  }
+  .rm-cocreate h3 {
+    margin: 0 0 2px;
+    font-size: 17px;
+    font-weight: 800;
+    letter-spacing: -0.01em;
+    position: relative;
+    z-index: 1;
+  }
+  .rm-cocreate h3 em {
+    font-style: normal;
+    background: linear-gradient(120deg, #34c759 0%, #5ac8fa 50%, #af52de 100%);
+    background-size: 200% 100%;
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    color: transparent;
+    animation: spa-gradient-shift 4s ease infinite;
+    padding: 0 4px;
+    font-weight: 800;
+  }
+  .rm-cocreate p {
+    margin: 0;
+    font-size: 12.5px;
+    color: var(--ink-soft);
+    line-height: 1.5;
+    position: relative;
+    z-index: 1;
+  }
+  .rm-cocreate p b { color: var(--ink); font-weight: 700; }
+  .rm-cocreate-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 10px 22px;
+    background: linear-gradient(135deg, #34c759, #5ac8fa, #af52de);
+    background-size: 200% 100%;
+    color: #fff;
+    border-radius: 999px;
+    font-size: 14px;
+    font-weight: 700;
+    text-decoration: none;
+    box-shadow: 0 6px 18px rgba(90,200,250,0.40);
+    transition: all 0.2s;
+    animation: spa-gradient-shift 4s ease infinite;
+    position: relative;
+    z-index: 1;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+  .rm-cocreate-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 10px 28px rgba(90,200,250,0.55);
+  }
 
 </style>
 </head>
@@ -2331,8 +2417,15 @@
         <div class="rm-desc">iOS / Android · <b>手机也能开 AI 圆桌</b> · 通勤路上也辩论</div>
       </div>
     </div>
+    <div class="rm-cocreate">
+      <div class="rm-cocreate-text">
+        <h3>✨ 你的 idea，<em>可以写进 v6.0 changelog</em></h3>
+        <p>有好的想法 / 想加入开发？<b>欢迎加盟 · 邀你共创</b></p>
+      </div>
+      <a class="rm-cocreate-btn" href="#" data-spa-go="cta">📱 扫码加作者微信 · 一起做 →</a>
+    </div>
     <div class="rm-vote">
-      💡 哪条让你眼前一亮？<b>扫码加作者微信投票</b> · 票数最高的优先开发 · <a href="#" data-spa-go="cta">→ 跳到上车章节看二维码</a>
+      💡 上面有你想要的？<b>扫码投票</b> · 票数最高的优先开发 · <a href="#" data-spa-go="cta">→ 跳到上车章节</a>
     </div>
   </section>
 
