@@ -539,9 +539,15 @@ function extractTextSafe(el) {
   // 终极兜底：clone 失败时用裸 textContent（v1.0 鲁棒策略，跨场景最稳）
   const plainRaw = (el.textContent || "").trim();
 
-  // fenced 比 plainClean 短太多（< 60%）= cloneNode 后 innerText 吞内容 → 用 plainClean
+  // fenced 比 plainClean 短太多 = cloneNode 后 innerText 吞内容 → 用 plainClean
   // 两者都已清装饰，差异纯粹来自 innerText（游离 DOM 不稳）vs textContent（稳）
-  if (fenced && fenced.length >= plainClean.length * 0.6) return fenced;
+  //
+  // v5.2.17 阈值 0.6 → 0.7（多方审查 DeepSeek 高 + Codex 中）：0.6 容忍 fenced 丢 40%
+  //   内容仍被选用，可能"差于 v1/v2 的全量 textContent"。张力：textContent 含 HTML 缩进
+  //   空白通常比 innerText 长，fenced/plainClean 正常比值约 0.7-0.95，阈值不能太高（如 0.9
+  //   会因空白膨胀误判正常 fenced 损坏 → 回退丢失富文本结构）。0.7 = 丢 30% 以上才回退，
+  //   兼顾"保留富文本结构"与"不差于 v1/v2 全文"。
+  if (fenced && fenced.length >= plainClean.length * 0.7) return fenced;
   return plainClean || fenced || plainRaw;  // 逐级兜底，永不返回空（除非真没内容）
 }
 

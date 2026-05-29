@@ -163,10 +163,15 @@ async function robustInject(el, text) {
     if (el.innerText.trim().length > 0) return;
   } catch {}
 
-  // 方法3: innerHTML 兜底
-  const paragraphs = text.split("\n").map(line => `<p>${line || "<br>"}</p>`).join("");
-  el.innerHTML = paragraphs;
-  el.dispatchEvent(new Event("input", { bubbles: true }));
+  // 方法3: 安全兜底
+  // v5.2.17: 安全注入（多方审查 Codex 高危）— 杜绝 innerHTML 拼接用户 prompt（防 < > & 被解析篡改/XSS）
+  if (globalThis.ArenaShared?.setEditableLines) {
+    globalThis.ArenaShared.setEditableLines(el, text);
+  } else {
+    el.innerHTML = "";
+    text.split("\n").forEach(line => { const p = document.createElement("p"); if (line) p.textContent = line; else p.appendChild(document.createElement("br")); el.appendChild(p); });
+    el.dispatchEvent(new Event("input", { bubbles: true }));
+  }
 }
 
 async function injectAndSend(text) {

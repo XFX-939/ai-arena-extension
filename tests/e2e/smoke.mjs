@@ -67,7 +67,7 @@ try {
   // 2) 读 manifest version_name 验证版本同步（直接读源文件）
   const manifest = JSON.parse(fs.readFileSync(path.join(EXT_PATH, "manifest.json"), "utf8"));
   console.log(`[smoke] manifest version: ${manifest.version}, version_name: ${manifest.version_name}`);
-  check("manifest version_name = 5.2.16-extract-safe-decoration-fix", manifest.version_name === "5.2.16-extract-safe-decoration-fix", `actual: ${manifest.version_name}`);
+  check("manifest version_name = 5.2.17-review-fixes-inject-safety", manifest.version_name === "5.2.17-review-fixes-inject-safety", `actual: ${manifest.version_name}`);
 
   // 3) 打开 sidepanel.html（作为普通 tab），验证 DOM
   const sidepanelPage = await context.newPage();
@@ -75,10 +75,10 @@ try {
   await sidepanelPage.waitForLoadState("domcontentloaded");
 
   const versionBadge = await sidepanelPage.locator(".version").textContent();
-  check("sidepanel version badge", versionBadge === "v5.2.16-extract-safe-decoration-fix", `actual: "${versionBadge}"`);
+  check("sidepanel version badge", versionBadge === "v5.2.17-review-fixes-inject-safety", `actual: "${versionBadge}"`);
 
   const footerVersion = await sidepanelPage.locator(".footer").textContent();
-  check("sidepanel footer version", footerVersion?.includes("v5.2.16-extract-safe-decoration-fix"), `actual: "${footerVersion?.slice(0, 100)}"`);
+  check("sidepanel footer version", footerVersion?.includes("v5.2.17-review-fixes-inject-safety"), `actual: "${footerVersion?.slice(0, 100)}"`);
 
   const openChatBtn = await sidepanelPage.locator("#btn-open-chat").count();
   check('sidepanel has "🪟 群聊" button', openChatBtn === 1);
@@ -96,7 +96,7 @@ try {
   await popupPage.waitForLoadState("domcontentloaded");
 
   const popupVersion = await popupPage.locator(".chat-version").textContent();
-  check("popup chat-version = v5.2.16-extract-safe-decoration-fix", popupVersion === "v5.2.16-extract-safe-decoration-fix", `actual: "${popupVersion}"`);
+  check("popup chat-version = v5.2.17-review-fixes-inject-safety", popupVersion === "v5.2.17-review-fixes-inject-safety", `actual: "${popupVersion}"`);
 
   // 图标资产验证（v4.0.11）
   const assetsOk = await popupPage.evaluate(async (extId) => {
@@ -2652,12 +2652,12 @@ try {
     hasCurrentVersion: typeof window.ChatUpdateCheck?.currentVersion === "function",
     hasNewerHelper: typeof window.ChatUpdateCheck?._hasNewer === "function",
     curVer: window.ChatUpdateCheck?.currentVersion?.(),
-    hasNewerSelfTest: window.ChatUpdateCheck?._hasNewer?.("5.2.16-extract-safe-decoration-fix", "v5.3.0-beta"),
-    hasNewerSameTest: window.ChatUpdateCheck?._hasNewer?.("5.2.16-extract-safe-decoration-fix", "v5.2.16-extract-safe-decoration-fix"),
+    hasNewerSelfTest: window.ChatUpdateCheck?._hasNewer?.("5.2.17-review-fixes-inject-safety", "v5.3.0-beta"),
+    hasNewerSameTest: window.ChatUpdateCheck?._hasNewer?.("5.2.17-review-fixes-inject-safety", "v5.2.17-review-fixes-inject-safety"),
   }));
-  check("v5.2.0 运行时: ChatUpdateCheck API 暴露 + currentVersion 返回 5.2.16-extract-safe-decoration-fix + hasNewer 比对逻辑正确",
+  check("v5.2.0 运行时: ChatUpdateCheck API 暴露 + currentVersion 返回 5.2.17-review-fixes-inject-safety + hasNewer 比对逻辑正确",
     v52ApiRuntime.hasApi && v52ApiRuntime.hasCurrentVersion && v52ApiRuntime.hasNewerHelper &&
-    v52ApiRuntime.curVer === "5.2.16-extract-safe-decoration-fix" &&
+    v52ApiRuntime.curVer === "5.2.17-review-fixes-inject-safety" &&
     v52ApiRuntime.hasNewerSelfTest === true &&
     v52ApiRuntime.hasNewerSameTest === false,
     JSON.stringify(v52ApiRuntime));
@@ -2749,9 +2749,9 @@ try {
   check("v5.2.12: inject-images.js 加 extractTextSafe 双路提取函数",
     /function extractTextSafe/.test(injSrc) && /el\.textContent/.test(injSrc),
     "inject-images.js 缺 extractTextSafe");
-  check("v5.2.12/16: extractTextSafe 含 fenced 损坏回退（< plainClean * 0.6 阈值）",
-    /fenced\.length\s*>=\s*plainClean\.length\s*\*\s*0\.6/.test(injSrc),
-    "extractTextSafe 缺 0.6 阈值损坏检测");
+  check("v5.2.12/16/17: extractTextSafe 含 fenced 损坏回退（plainClean * 阈值，v5.2.17 收紧到 0.7）",
+    /fenced\.length\s*>=\s*plainClean\.length\s*\*\s*0\.7/.test(injSrc),
+    "extractTextSafe 缺阈值损坏检测");
 
   // ── v5.2.16: NOISE_SEL 提模块级 + extractTextSafe plainClean 也清装饰（修损坏检测歧义）──
   check("v5.2.16: ARENA_NOISE_SEL 提到模块级常量",
@@ -2767,6 +2767,40 @@ try {
   check("v5.2.16: _doExtractWithFences 不再有局部 NOISE_SEL 定义（避免与模块级重复）",
     !/function _doExtractWithFences[\s\S]*?const NOISE_SEL\s*=\s*\[/.test(injSrc),
     "_doExtractWithFences 仍有局部 NOISE_SEL 残留");
+
+  // ── v5.2.17: 多方审查修复（inject 安全 + getLastNonEmpty 健壮 + 阈值收紧）──
+  const sharedSrc2 = fs.readFileSync(path.join(EXT_PATH, "content-shared.js"), "utf8");
+  check("v5.2.17: content-shared.js 加 setEditableLines 安全注入 helper（createElement+textContent）",
+    /function setEditableLines/.test(sharedSrc2) &&
+    /p\.textContent = line/.test(sharedSrc2),
+    "content-shared.js 缺 setEditableLines 安全 helper");
+  check("v5.2.17: getLastNonEmpty 分别 trim innerText/textContent（修空白不回退）",
+    /const it = \(el\.innerText \|\| ""\)\.trim\(\)/.test(sharedSrc2) &&
+    /const tc = \(el\.textContent \|\| ""\)\.trim\(\)/.test(sharedSrc2),
+    "getLastNonEmpty 未分别 trim");
+  check("v5.2.17: getLastNonEmpty 防御单元素（Array.isArray / length number 判断）",
+    /Array\.isArray\(elements\)/.test(sharedSrc2) &&
+    /typeof elements\.length === "number"/.test(sharedSrc2),
+    "getLastNonEmpty 缺单元素防御");
+  check("v5.2.17: extractTextSafe 阈值 0.6→0.7（防 fenced 丢 40% 仍被选）",
+    /plainClean\.length \* 0\.7/.test(injSrc),
+    "extractTextSafe 阈值未收紧到 0.7");
+  // 8 个 contenteditable 平台 robustInject 不再用 innerHTML 拼接用户文本
+  const ceditPlatforms = ["chatgpt", "claude", "deepseek", "doubao", "gemini", "grok", "kimi", "qwen", "yuanbao"];
+  let unsafeInjectCount = 0;
+  for (const p of ceditPlatforms) {
+    const src = fs.readFileSync(path.join(EXT_PATH, `content-${p}.js`), "utf8");
+    if (/innerHTML = text\.split\("\\n"\)\.map/.test(src)) unsafeInjectCount++;
+  }
+  check("v5.2.17: 所有平台 robustInject 已移除 innerHTML 拼接用户文本（防篡改/XSS）",
+    unsafeInjectCount === 0,
+    `仍有 ${unsafeInjectCount} 个平台用 innerHTML 拼接`);
+  check("v5.2.17: 平台 robustInject 改用 setEditableLines 或安全 createElement 兜底",
+    ceditPlatforms.filter(p => {
+      const src = fs.readFileSync(path.join(EXT_PATH, `content-${p}.js`), "utf8");
+      return /ArenaShared\?\.setEditableLines/.test(src) || /p\.textContent = line/.test(src);
+    }).length >= 8,
+    "部分平台未改安全注入");
   // 9 平台 _extractEl 全部走 extractTextSafe 优先
   const platforms2 = ["chatgpt", "claude", "deepseek", "doubao", "gemini", "grok", "kimi", "qwen", "yuanbao"];
   for (const p of platforms2) {
